@@ -49,9 +49,49 @@ class TimeParser:
         self.max_retries = max_retries
         self.client = client or OpenAI(api_key=api_key, base_url=base_url)
 
+    def has_time_terms(self, query: str) -> bool:
+        """
+        快速预检测查询中是否包含明显的时间词。
+
+        Args:
+            query (str): 用户查询文本
+
+        Returns:
+            bool: True表示包含时间词，应调用LLM解析；False表示无需解析
+        """
+        # 相对时间词
+        relative_patterns = [
+            r"去年|今年|前年|明年",
+            r"上个月|下个月|这个月|上上个月",
+            r"上周|下周|本周|上周|下周|这周",
+            r"上个?星期|下个?星期|这个星期",
+            r"前几天|最近|之前|之后"
+        ]
+
+        # 季节词
+        season_patterns = [
+            r"春天|夏天|秋天|冬天",
+            r"春季|夏季|秋季|冬季",
+            r"春|夏|秋|冬"
+        ]
+
+        # 绝对日期模式
+        date_patterns = [
+            r"\d{4}年",
+            r"\d{4}-\d{1,2}(-\d{1,2})?",
+            r"\d{1,2}月(\d{1,2}日?)?",
+            r"\d{1,2}日"
+        ]
+
+        all_patterns = relative_patterns + season_patterns + date_patterns
+
+        return any(re.search(pattern, query) for pattern in all_patterns) if isinstance(query, str) else False
+
     def extract_time_constraints(self, query: str) -> Dict[str, Any]:
         """
         使用LLM语义理解解析时间约束。
+
+        优化：先进行预检测，无时间词直接返回None，节省API成本。
 
         Args:
             query (str): 用户查询文本
@@ -59,6 +99,10 @@ class TimeParser:
         Returns:
             Dict[str, Any]: 时间约束字典
         """
+        # 预检测：快速过滤无时间词的查询
+        if not self.has_time_terms(query):
+            return {"start_date": None, "end_date": None, "precision": "none"}
+
         current_date = datetime.now().strftime("%Y-%m-%d")
         prompt = f"""当前日期：{current_date}（格式：YYYY-MM-DD）
 

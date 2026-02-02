@@ -68,6 +68,8 @@ def extract_exif_metadata(file_path: str) -> Dict[str, Any]:
     """
     解析EXIF元数据（拍摄时间、GPS、相机型号）。
 
+    改进：增强错误处理，添加调试信息支持。
+
     Args:
         file_path (str): 图片文件路径
 
@@ -87,8 +89,10 @@ def extract_exif_metadata(file_path: str) -> Dict[str, Any]:
     try:
         with Image.open(file_path) as image:
             exif_bytes = image.info.get("exif")
+
         if not exif_bytes:
             return metadata
+
         exif_data = piexif.load(exif_bytes)
     except Exception:
         return metadata

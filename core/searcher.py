@@ -35,6 +35,7 @@ class Searcher:
         self.index_loaded = False
         self.index_path = vector_store.index_path
         self.metadata_path = vector_store.metadata_path
+        self.metric = getattr(vector_store, "metric", "l2")
 
     def load_index(self) -> bool:
         """
@@ -116,9 +117,60 @@ class Searcher:
         """
         将L2距离转换为0-1的相似度分数。
         """
+        if self.metric == "cosine":
+            similarity = max(-1.0, min(1.0, distance))
+            return round(max(0.0, min(1.0, (similarity + 1.0) / 2.0)), 6)
         if distance < 0:
             distance = 0
         return round(1.0 / (1.0 + distance), 6)
+
+    def _calculate_candidate_k(self, normalized_top_k: int, has_time_filter: bool) -> int:
+        """
+        根据是否有时间过滤动态计算候选数量。
+
+        Args:
+            normalized_top_k: 用户请求的结果数量
+            has_time_filter: 是否存在时间约束
+
+        Returns:
+            int: 候选数量
+        """
+        if has_time_filter:
+            # 有时间过滤：扩大候选集，保证过滤后仍有足够结果
+            multiplier = 10
+            max_candidate = 100
+        else:
+            # 无时间过滤：保持原有策略
+            multiplier = 5
+            max_candidate = 50
+
+        candidate_k = normalized_top_k * multiplier
+        return min(candidate_k, max_candidate)
+
+    def _has_time_terms(self, query: str) -> bool:
+        patterns = [
+            r"\d{4}年",
+            r"\d{1,2}月",
+            r"\d{1,2}日",
+            r"\d{4}-\d{1,2}-\d{1,2}",
+            r"去年|今年|前年|明年|上个月|下个月|上周|下周|本周|这个月|上个?星期|下个?星期",
+            r"春天|夏天|秋天|冬天|季节|月份|年份",
+        ]
+        return any(re.search(pattern, query) for pattern in patterns)
+
+    def _strip_time_terms(self, query: str) -> str:
+        cleaned = query
+        patterns = [
+            r"\d{4}年",
+            r"\d{1,2}月",
+            r"\d{1,2}日",
+            r"\d{4}-\d{1,2}-\d{1,2}",
+            r"去年|今年|前年|明年|上个月|下个月|上周|下周|本周|这个月|上个?星期|下个?星期",
+            r"春天|夏天|秋天|冬天|季节|月份|年份",
+        ]
+        for pattern in patterns:
+            cleaned = re.sub(pattern, " ", cleaned)
+        return re.sub(r"\s+", " ", cleaned).strip()
 
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """
@@ -131,9 +183,17 @@ class Searcher:
             raise ValueError("索引未加载，请先初始化索引")
 
         normalized_top_k = max(1, min(int(top_k), 50))
-        constraints = self._extract_time_constraints(query)
-        query_embedding = self.embedding_service.generate_embedding(query)
-        raw_results = self.vector_store.search(query_embedding, normalized_top_k)
+        constraints = {"start_date": None, "end_date": None, "precision": "none"}
+        cleaned_query = query
+        has_time_filter = self._has_time_terms(query)
+
+        if has_time_filter:
+            constraints = self._extract_time_constraints(query)
+            cleaned_query = self._strip_time_terms(query) or query
+
+        query_embedding = self.embedding_service.generate_embedding(cleaned_query)
+        candidate_k = self._calculate_candidate_k(normalized_top_k, has_time_filter)
+        raw_results = self.vector_store.search(query_embedding, candidate_k)
         filtered_results = self._filter_by_time(raw_results, constraints)
 
         enriched: List[Dict[str, Any]] = []

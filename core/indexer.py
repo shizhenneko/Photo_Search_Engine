@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
@@ -122,13 +123,15 @@ class Indexer:
         for photo_path in photo_paths:
             try:
                 description = self.generate_description(photo_path)
-                embedding = self.embedding_service.generate_embedding(description)
                 exif_data = extract_exif_metadata(photo_path)
                 file_time = get_file_time(photo_path)
+                search_text = self._build_search_text(description, photo_path, exif_data, file_time)
+                embedding = self.embedding_service.generate_embedding(search_text)
                 results.append(
                     {
                         "photo_path": photo_path,
                         "description": description,
+                        "search_text": search_text,
                         "embedding": embedding,
                         "exif_data": exif_data,
                         "file_time": file_time,
@@ -149,6 +152,89 @@ class Indexer:
                     }
                 )
         return results
+
+    def _build_search_text(
+        self,
+        description: str,
+        photo_path: str,
+        exif_data: Optional[Dict[str, Any]],
+        file_time: Optional[str],
+    ) -> str:
+        """
+        构建用于向量化的搜索文本，包含丰富的语义信息。
+
+        结构：描述 | 文件名 | 相机 | 年月季节 | 星期 | 时段
+        """
+        parts = []
+
+        if description:
+            parts.append(description.strip())
+
+        name = os.path.splitext(os.path.basename(photo_path))[0]
+        tokens = [token for token in re.split(r"[\W_]+", name) if token and not token.isdigit()]
+        if tokens:
+            parts.append(f"文件名: {' '.join(tokens)}")
+
+        if exif_data:
+            camera = exif_data.get("camera")
+            if camera:
+                parts.append(f"相机: {camera}")
+
+        photo_date = self._get_photo_datetime(exif_data, file_time)
+        if photo_date:
+            parts.append(f"{photo_date.year}年{photo_date.month}月")
+            season = self._month_to_season(photo_date.month)
+            if season:
+                parts.append(f"季节: {season}")
+
+            weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+            parts.append(weekday[photo_date.weekday()])
+
+            hour = photo_date.hour
+            if 5 <= hour < 9:
+                period = "早晨"
+            elif 9 <= hour < 12:
+                period = "上午"
+            elif 12 <= hour < 14:
+                period = "中午"
+            elif 14 <= hour < 18:
+                period = "下午"
+            elif 18 <= hour < 22:
+                period = "傍晚"
+            else:
+                period = "夜晚"
+            parts.append(f"时段: {period}")
+
+        return " | ".join(parts).strip()
+
+    def _get_photo_datetime(
+        self, exif_data: Optional[Dict[str, Any]], file_time: Optional[str]
+    ) -> Optional[datetime]:
+        if exif_data:
+            raw = exif_data.get("datetime")
+            if raw:
+                try:
+                    return datetime.fromisoformat(raw)
+                except Exception:
+                    pass
+        if file_time:
+            try:
+                return datetime.fromisoformat(file_time)
+            except Exception:
+                return None
+        return None
+
+    @staticmethod
+    def _month_to_season(month: int) -> Optional[str]:
+        if month in {3, 4, 5}:
+            return "春天"
+        if month in {6, 7, 8}:
+            return "夏天"
+        if month in {9, 10, 11}:
+            return "秋天"
+        if month in {12, 1, 2}:
+            return "冬天"
+        return None
 
     def build_index(self) -> Dict[str, Any]:
         """
@@ -189,6 +275,7 @@ class Indexer:
                             metadata = {
                                 "photo_path": item["photo_path"],
                                 "description": item["description"],
+                                "search_text": item.get("search_text"),
                                 "exif_data": item["exif_data"],
                                 "file_time": item["file_time"],
                             }
@@ -252,8 +339,24 @@ class Indexer:
     def get_status(self) -> Dict[str, Any]:
         """
         获取索引构建状态，包含锁文件与状态文件的综合判断。
+
+        改进：添加EXIF覆盖率统计。
         """
         status = self._read_status_file()
+        
+        # 添加EXIF覆盖率统计
+        if self.vector_store.metadata:
+            exif_count = sum(1 for item in self.vector_store.metadata
+                            if item.get("exif_data", {}).get("datetime"))
+            if len(self.vector_store.metadata) > 0:
+                status["exif_coverage"] = round(
+                    exif_count / len(self.vector_store.metadata), 4
+                )
+            else:
+                status["exif_coverage"] = 0.0
+        else:
+            status["exif_coverage"] = 0.0
+
         if os.path.exists(self._lock_path):
             status["status"] = "processing"
             status["message"] = "索引构建中"

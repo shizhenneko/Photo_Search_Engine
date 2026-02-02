@@ -42,6 +42,7 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher]:
         dimension=int(config.get("EMBEDDING_DIMENSION", 768)),
         index_path=str(config.get("INDEX_PATH", os.path.join(data_dir, "photo_search.index"))),
         metadata_path=str(config.get("METADATA_PATH", os.path.join(data_dir, "metadata.json"))),
+        metric=str(config.get("VECTOR_METRIC", "cosine")),
     )
 
     vision_service = OpenRouterVisionLLMService(

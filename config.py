@@ -53,6 +53,7 @@ def load_config() -> Dict[str, Any]:
         "TOP_K": _get_int("TOP_K", 10),
         "INDEX_PATH": os.getenv("INDEX_PATH", os.path.join(data_dir, "photo_search.index")),
         "METADATA_PATH": os.getenv("METADATA_PATH", os.path.join(data_dir, "metadata.json")),
+        "VECTOR_METRIC": os.getenv("VECTOR_METRIC", "cosine"),  # 确保默认使用余弦相似度，适合中文语义检索
         "SECRET_KEY": os.getenv("SECRET_KEY", "dev-secret-key"),
         "USE_BASE64": os.getenv("USE_BASE64", "true").lower() in ("true", "1", "yes"),
         "IMAGE_MAX_SIZE": _get_int("IMAGE_MAX_SIZE", 1024),
