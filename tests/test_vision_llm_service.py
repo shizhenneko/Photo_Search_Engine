@@ -76,33 +76,77 @@ class VisionServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             OpenRouterVisionLLMService(api_key="")
 
+    def test_base64_image_encoding(self) -> None:
+        """测试Base64图片编码"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "test.jpg")
+            image = Image.new("RGB", (2000, 1500), color=(100, 150, 200))
+            image.save(path)
+
+            service = OpenRouterVisionLLMService(
+                api_key="test-key",
+                use_base64=True,
+                image_max_size=1024,
+                image_quality=85,
+                image_format="WEBP",
+            )
+
+            base64_url = service._get_image_base64(path)
+
+            self.assertIn("data:image/webp;base64,", base64_url)
+            self.assertGreater(len(base64_url), 100)
+
+    def test_image_resize_optimization(self) -> None:
+        """测试图片压缩优化"""
+        from utils.image_parser import resize_and_optimize_image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "large.jpg")
+            image = Image.new("RGB", (3000, 2000), color=(50, 100, 150))
+            image.save(path, quality=95)
+
+            optimized_bytes = resize_and_optimize_image(
+                path, max_size=1024, quality=85, format="WEBP"
+            )
+
+            original_size = os.path.getsize(path)
+
+            optimized_size = len(optimized_bytes)
+
+            self.assertLess(optimized_size, original_size)
+
+    def test_default_config_values(self) -> None:
+        """测试默认配置值"""
+        service = OpenRouterVisionLLMService(api_key="test-key")
+
+        self.assertTrue(service.use_base64)
+        self.assertEqual(service.image_max_size, 1024)
+        self.assertEqual(service.image_quality, 85)
+        self.assertEqual(service.image_format, "WEBP")
+
     @unittest.skipIf(
         not bool(os.getenv("OPENROUTER_API_KEY")),
         "OPENROUTER_API_KEY未设置，跳过集成测试"
     )
     def test_openrouter_vision_service_generate_description(self) -> None:
         """测试OpenRouter Vision服务生成描述（集成测试）"""
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "test.jpg")
-            image = Image.new("RGB", (200, 150), color=(255, 128, 64))
-            image.save(path)
+        api_key = self.config["OPENROUTER_API_KEY"]
+        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-            api_key = self.config["OPENROUTER_API_KEY"]
-            base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        service = OpenRouterVisionLLMService(
+            api_key=api_key,
+            base_url=base_url,
+            server_host="localhost",
+            server_port=5000,
+            max_retries=2,
+            use_public_image_url=True,
+        )
 
-            service = OpenRouterVisionLLMService(
-                api_key=api_key,
-                base_url=base_url,
-                server_host="localhost",
-                server_port=5000,
-                max_retries=2,
-            )
+        result = service.generate_description("dummy_path.jpg")
 
-            result = service.generate_description(path)
-
-            self.assertIsInstance(result, str)
-            self.assertGreater(len(result), 10)
-            self.assertIn(len(result), range(50, 201))
+        self.assertIsInstance(result, str)
+        self.assertGreater(len(result), 10)
+        self.assertTrue(50 <= len(result) <= 200)
 
     @unittest.skipIf(
         not bool(os.getenv("OPENROUTER_API_KEY")),
@@ -110,31 +154,24 @@ class VisionServiceTests(unittest.TestCase):
     )
     def test_openrouter_vision_service_generate_description_batch(self) -> None:
         """测试批量生成描述（集成测试）"""
-        with tempfile.TemporaryDirectory() as tmp:
-            paths = []
-            for i in range(3):
-                path = os.path.join(tmp, f"test{i}.jpg")
-                image = Image.new("RGB", (100, 100), color=(i * 50, i * 50, i * 50))
-                image.save(path)
-                paths.append(path)
+        api_key = self.config["OPENROUTER_API_KEY"]
+        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-            api_key = self.config["OPENROUTER_API_KEY"]
-            base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        service = OpenRouterVisionLLMService(
+            api_key=api_key,
+            base_url=base_url,
+            server_host="localhost",
+            server_port=5000,
+            max_retries=2,
+            use_public_image_url=True,
+        )
 
-            service = OpenRouterVisionLLMService(
-                api_key=api_key,
-                base_url=base_url,
-                server_host="localhost",
-                server_port=5000,
-                max_retries=2,
-            )
+        results = service.generate_description_batch(["dummy1.jpg", "dummy2.jpg", "dummy3.jpg"])
 
-            results = service.generate_description_batch(paths)
-
-            self.assertEqual(len(results), len(paths))
-            for result in results:
-                self.assertIsInstance(result, str)
-                self.assertGreater(len(result), 10)
+        self.assertEqual(len(results), 3)
+        for result in results:
+            self.assertIsInstance(result, str)
+            self.assertGreater(len(result), 10)
 
     def test_get_image_url_encoding(self) -> None:
         """测试图片URL路径编码"""

@@ -196,6 +196,10 @@ class IndexerTests(unittest.TestCase):
             os.makedirs(photo_dir)
             os.makedirs(data_dir)
 
+            # 创建10张测试图片
+            for i in range(10):
+                _create_image(os.path.join(photo_dir, f"photo_{i}.jpg"))
+
             index_path = os.path.join(data_dir, "index.bin")
             metadata_path = os.path.join(data_dir, "metadata.json")
             vector_store = VectorStore(768, index_path=index_path, metadata_path=metadata_path)
@@ -206,6 +210,7 @@ class IndexerTests(unittest.TestCase):
                 embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
                 vector_store=vector_store,
                 data_dir=data_dir,
+                batch_size=5,
             )
 
             result = indexer.build_index()

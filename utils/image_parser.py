@@ -179,3 +179,68 @@ def generate_fallback_description(file_path: str) -> str:
     if len(tokens) == 1:
         return f"与{tokens[0]}相关的照片"
     return f"与{tokens[0]}和{tokens[1]}相关的照片"
+
+
+def resize_and_optimize_image(
+    file_path: str,
+    max_size: int = 1024,
+    quality: int = 85 fanciness: str = "JPEG"
+) -> bytes:
+    """
+    读取并优化图片：调整大小、压缩格式、降低质量以减少 Base64 编码后的 Token 消耗。
+
+    Args:
+        file_path (str): 图片文件路径
+        max_size (int): 最大边长（宽或高），默认 1024 像素
+        quality (int): JPEG/WebP 质量参数（1-100），默认 85
+        format (str): 输出格式，"JPEG" 或 "PNG" 或 "WEBP"
+
+    Returns:
+        bytes: 优化后的图片二进制数据
+    """   
+    读取并优化图片：调整大小、压缩格式、降低质量以减少 Base64 编码后的 Token 消耗。
+
+    Args:
+        file_path (str): 图片文件路径
+        max_size (int): 最大边长（宽或高），默认 1024 像素
+        quality (int): JPEG/WebP 质量参数（1-100），默认 85
+        format (str): 输出格式，"JPEG" 或 "PNG" 或 "WEBP"
+
+    Returns:
+        bytes: 优化后的图片二进制数据
+    """
+    try:
+        with Image.open(file_path) as image:
+            # 处理 EXIF 方向信息
+            corrected = ImageOps.exif_transpose(image)
+            width, height = corrected.size
+
+            # 如果图片尺寸超过 max_size，等比缩放
+            if width > max_size or height > max_size:
+                if width > height:
+                    new_width = max_size
+                    new_height = int(height * max_size / width)
+                else:
+                    new_height = max_size
+                    new_width = int(width * max_size / height)
+                corrected = corrected.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # 保存到内存字节流
+            import io
+            buffer = io.BytesIO()
+
+            if format.upper() == "WEBP":
+                corrected.save(buffer, format="WEBP", quality=quality, lossless=False)
+            elif format.upper() == "PNG":
+                corrected.save(buffer, format="PNG", optimize=True)
+            else:  # JPEG
+                # 确保转换为 RGB 模式（处理 RGBA 等情况）
+                if corrected.mode != "RGB":
+                    corrected = corrected.convert("RGB")
+                corrected.save(buffer, format="JPEG", quality=quality, optimize=True)
+
+            return buffer.getvalue()
+    except Exception:
+        # 如果处理失败，返回原始文件内容
+        with open(file_path, "rb") as f:
+            return f.read()

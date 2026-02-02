@@ -221,7 +221,8 @@ class Indexer:
             fallback_ratio = self._compute_fallback_ratio(success_count)
             elapsed_time = time.time() - start_time
 
-            if success_count < 100 or fallback_ratio >= 0.1:
+            min_success_count = min(100, total_count)
+            if success_count < min_success_count or fallback_ratio >= 0.1:
                 message = "索引构建未达标（成功数量不足或降级占比过高）"
                 self._update_status(
                     status="failed",

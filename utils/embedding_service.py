@@ -142,6 +142,17 @@ class T5EmbeddingService(EmbeddingService):
         os.environ["TRANSFORMERS_NO_TF"] = "1"
         os.environ["TRANSFORMERS_USE_TORCH"] = "1"
 
+        if device is not None and device.lower() == "cuda":
+            if not torch.cuda.is_available():
+                import warnings
+                warnings.warn(
+                    "CUDA requested but not available. Falling back to CPU. "
+                    "This is expected if PyTorch was not compiled with CUDA support.",
+                    RuntimeWarning,
+                    stacklevel=2
+                )
+                device = "cpu"
+
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
 

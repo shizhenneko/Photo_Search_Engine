@@ -47,7 +47,8 @@ class VectorStoreTests(unittest.TestCase):
             results = store.search(vec1, top_k=1)
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0]["metadata"]["id"], 1)
-            self.assertGreater(results[0]["metadata"], 0.0)
+            # 搜索自己时L2距离为0（完全匹配），这是预期行为
+            self.assertGreaterEqual(results[0]["distance"], 0.0)
 
     def test_save_and_load_index(self) -> None:
         """测试保存和加载索引"""

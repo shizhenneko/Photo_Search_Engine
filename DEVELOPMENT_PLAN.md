@@ -4,48 +4,53 @@
 >
 > **模型配置**：
 > - Vision LLM：OpenRouter + GPT-4 (openai/gpt-4o)
-> - Embedding：本地T5模型 (sentence-t5-base, 768维)
+> - Embedding：本地T5模型 (sentence-t5-base, 7.68维)
 > - Time Parser：OpenRouter + GPT-3.5-turbo
 >
+> **图片访问机制**：使用 Base64 编码方式（OpenRouter云端无法访问本地localhost）
 > **成本预估**：100张照片约2元人民币
+>
+> **最后更新时间**: 2026-02-02
+> **适用版本**: Python 3.12+, Flask 3.0.3
+> **开发模式**: Vibe Coding（逐步实现）
 
 ---
 
 ## 开发阶段概览
 
-### Phase 0: 项目初始化（按Demo开发文档）
-- [ ] 创建项目文件夹结构（core/utils/api/templates/data）
-- [ ] 创建Python包初始化文件（core/utils/api/__init__.py）
-- [ ] 明确本地HTTP图片访问方案（/photo?path=... 用于前端与Vision LLM）
+### Phase 0: 项目初始化（已完成）
+- [x] 创建项目文件夹结构（core/utils/api/templates/data）
+- [x] 创建Python包初始化文件（core/utils/api/__init__.py）
+- [x] 确定图片访问方案（Base64编码 + 图片压缩优化）
 
-### Phase 1: 配置和基础设施（按Demo开发文档）
-- [ ] 1.1 config.py - 配置管理（OpenRouter + 本地T5）
-- [ ] 1.2 requirements.txt - 依赖声明（包含sentence-transformers）
-- [ ] 1.3 .env.example - 环境变量模板（OpenRouter + PHOTO_DIR）
+### Phase 1: 配置和基础设施（已完成）
+- [x] 1.1 config.py - 配置管理（OpenRouter + 本地T5 + Base64配置）
+- [x] 1.2 requirements.txt - 依赖声明（包含sentence-transformers）
+- [x] 1.3 .env.example - 环境变量模板（OpenRouter + PHOTO_DIR + Base64配置）
 
 ### Phase 2: 工具模块（底层到高层）
-- [ ] 2.1 utils/image_parser.py - 图片解析（EXIF、元数据、格式验证）
-- [ ] 2.2 utils/vector_store.py - FAISS向量存储封装
-- [ ] 2.3 utils/time_parser.py - 时间解析（使用LLM）
-- [ ] 2.4 utils/vision_llm_service.py - Vision服务抽象和实现
-- [ ] 2.5 utils/embedding_service.py - Embedding服务抽象和实现
+- [x] 2.1 utils/image_parser.py - 图片解析（EXIF、元数据、格式验证、图片压缩优化）
+- [x] 2.2 utils/vector_store.py - FAISS向量存储封装
+- [x] 2.3 utils/time_parser.py - 时间解析（使用LLM）
+- [x] 2.4 utils/vision_llm_service.py - Vision服务抽象和实现（支持Base64编码）
+- [x] 2.5 utils/embedding_service.py - Embedding服务抽象和实现
 
-### Phase 3: 核心业务
-- [ ] 3.1 core/indexer.py - 索引构建器
-- [ ] 3.2 core/searcher.py - 搜索引擎
+### Phase 3: 核心业务（已完成）
+- [x] 3.1 core/indexer.py - 索引构建器
+- [x] 3.2 core/searcher.py - 搜索引擎
 
-### Phase 4: 接口层
+### Phase 4: 接口层（需要实现）
 - [ ] 4.1 api/routes.py - HTTP API路由
 - [ ] 4.2 templates/index.html - 前端界面
 
-### Phase 5: 应用入口
+### Phase 5: 应用入口（需要实现）
 - [ ] 5.1 main.py - 应用入口
 
 ---
 
 ## 详细开发步骤
 
-### Phase 0: 项目初始化（按Demo开发文档）
+### Phase 0: 项目初始化（已完成）
 
 #### 创建文件夹结构
 ```bash
@@ -57,14 +62,25 @@ mkdir -p core utils api templates data
 - `utils/__init__.py`
 - `api/__init__.py`
 
-#### 约定本地HTTP图片访问机制
-**目的**：为Vision LLM与前端提供统一访问图片的URL，避免Base64 token消耗。  
-**URL格式**：`http://localhost:5000/photo?path=<图片绝对路径>`  
-**注意**：路径需URL编码，且仅用于本地Demo。
+#### 图片访问机制（已确定）
+**重要说明**：OpenRouter 是云端服务，无法访问本地 `localhost:5000`。因此本系统采用 **Base64 编码方式**。
+
+**成本优化策略**：
+1. **自动缩放**：图片自动缩放至 `max_size`（默认 1024 像素），等比缩放保持宽高比
+2. **格式压缩**：使用 WEBP 格式（默认），比 JPEG 更小，质量参数可调（默认 85）
+3. **智能选择**：小于 `max_size` 的图片不放大，避免不必要的数据传输
+
+**环境变量配置**：
+```bash
+USE_BASE64=true              # 是否使用 Base64 方式（默认 true）
+IMAGE_MAX_SIZE=1024          # 图片最大边长（像素）
+IMAGE_QUALITY=85            # 图片压缩质量（1-100）
+IMAGE_FORMAT=WEBP           # 图片输出格式（JPEG/WEBP/PNG）
+```
 
 ---
 
-### Phase 1: 配置和基础设施（按Demo开发文档）
+### Phase 1: 配置和基础设施（已完成）
 
 #### 1.1 config.py
 
@@ -73,37 +89,30 @@ mkdir -p core utils api templates data
 **核心功能**：
 - 从环境变量读取配置并提供默认值
 - OpenRouter + 本地T5混合模型配置
-- 配置项包括：
-  - PHOTO_DIR: 照片目录路径（绝对路径）
-  - DATA_DIR: 数据存储目录（默认./data）
-  - OPENROUTER_API_KEY: OpenRouter API密钥（Vision + 时间解析）
-  - OPENAI_API_KEY: 兼容性配置（同OpenRouter密钥）
-  - OPENROUTER_BASE_URL: OpenRouter API地址（默认https://openrouter.ai/api/v1）
-  - VISION_MODEL_NAME: Vision模型（默认openai/gpt-4o）
-  - EMBEDDING_MODEL_NAME: Embedding模型（默认sentence-t5-base）
-  - EMBEDDING_DIMENSION: 向量维度（默认768）
-  - TIME_PARSE_MODEL_NAME: 时间解析模型（默认openai/gpt-3.5-turbo）
-  - SERVER_HOST: 服务器主机（默认localhost）
-  - SERVER_PORT: 服务器端口（默认5000）
-  - BATCH_SIZE: 批处理大小（默认10）
-  - MAX_RETRIES: 最大重试次数（默认3）
-  - TIMEOUT: 超时时间（默认30秒）
-  - TOP_K: 默认返回结果数量（默认10）
-  - INDEX_PATH: 索引路径（默认./data/photo_search.index）
-  - METADATA_PATH: 元数据路径（默认./data/metadata.json）
+- Base64图片编码优化配置
 
-**模型配置说明**：
-- **Vision LLM（图像描述）**：OpenRouter接入GPT-4
-  - 模型：openai/gpt-4o（GPT-4 Omni，支持视觉）
-  - 备选：openai/gpt-4-turbo（速度更快）
-  - 优势：高质量图像理解、支持中文、按需付费
-- **Embedding（文本嵌入）**：本地T5模型
-  - 模型：sentence-t5-base（768维，中文支持好）
-  - 备选：sentence-t5-large（768维，效果更佳）
-  - 优势：本地运行、无API成本、开源免费
-- **Time Parser（时间解析）**：OpenRouter + GPT-3.5
-  - 模型：openai/gpt-3.5-turbo
-  - 优势：语义理解强、支持复杂中文时间表达
+**配置项包括**：
+- `PHOTO_DIR`: 照片目录路径（绝对路径）
+- `DATA_DIR`: 数据存储目录（默认./data）
+- `OPENROUTER_API_KEY`: OpenRouter API密钥（Vision + 时间解析）
+- `OPENAI_API_KEY`: 兼容性配置（同OpenRouter密钥）
+- `OPENROUTER_BASE_URL`: OpenRouter API地址（默认https://openrouter.ai/api/v1）
+- `VISION_MODEL_NAME`: Vision模型（默认openai/gpt-4o）
+- `EMBEDDING_MODEL_NAME`: Embedding模型（默认sentence-t5-base）
+- `EMBEDDING_DIMENSION`: 向量维度（默认768）
+- `TIME_PARSE_MODEL_NAME`: 时间解析模型（默认openai/gpt-3.5-turbo）
+- `SERVER_HOST`: 服务器主机（默认localhost）
+- `SERVER_PORT`: 服务器端口（默认5000）
+- `BATCH_SIZE`: 批处理大小（默认10）
+- `MAX_RETRIES`: 最大重试次数（默认3）
+- `TIMEOUT`: 超时时间（默认30秒）
+- `TOP_K`: 默认返回结果数量（默认10）
+- `INDEX_PATH`: 索引路径（默认./data/photo_search.index）
+- `METADATA_PATH`: 元数据路径（默认./data/metadata.json）
+- `USE_BASE64`: 是否使用Base64编码（默认true）
+- `IMAGE_MAX_SIZE`: 图片最大边长（默认1024）
+- `IMAGE_QUALITY`: 图片压缩质量（默认85）
+- `IMAGE_FORMAT`: 图片输出格式（默认WEBP）
 
 **关键函数**：
 - `load_config()` -> dict: 加载所有配置（含默认值与路径拼接）
@@ -124,6 +133,7 @@ sentence-transformers>=2.2.0
 python-dotenv
 piexif>=1.1.3
 torch>=2.0.0
+torchvision>=0.15.0
 ```
 
 ---
@@ -131,9 +141,12 @@ torch>=2.0.0
 #### 1.3 .env.example
 
 **内容**：
-```
+```bash
 # 照片目录（绝对路径）
 PHOTO_DIR=C:/Users/YourName/Photos
+
+# 数据目录
+DATA_DIR=./data
 
 # OpenRouter API密钥（Vision + 时间解析）
 OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -165,11 +178,24 @@ BATCH_SIZE=10
 MAX_RETRIES=3
 TIMEOUT=30
 TOP_K=10
+
+# 索引与元数据路径（可选）
+INDEX_PATH=./data/photo_search.index
+METADATA_PATH=./data/metadata.json
+
+# Flask密钥
+SECRET_KEY=dev-secret-key
+
+# 图片编码配置（Base64优化）
+USE_BASE64=true
+IMAGE_MAX_SIZE=1024
+IMAGE_QUALITY=85
+IMAGE_FORMAT=WEBP
 ```
 
 ---
 
-### Phase 2: 工具模块
+### Phase 2: 工具模块（已完成）
 
 #### 2.1 utils/image_parser.py
 
@@ -181,6 +207,7 @@ TOP_K=10
 - 文件时间获取
 - 图片尺寸获取
 - 降级描述生成（基于文件名）
+- **图片压缩优化**（resize_and_optical_image）
 
 **关键函数**：
 ```python
@@ -190,7 +217,7 @@ def is_valid_image(file_path: str) -> bool
 def extract_exif_metadata(file_path: str) -> Dict[str, Any]
     """解析EXIF元数据（拍摄时间、GPS、相机型号）"""
 
-def get_file_time(file_path: str) -> str
+def get_file_time(file_path: str) -> Optional[str]
     """获取文件时间（ISO 8601格式）"""
 
 def get_image_dimensions(file_path: str) -> Tuple[int, int]
@@ -198,6 +225,16 @@ def get_image_dimensions(file_path: str) -> Tuple[int, int]
 
 def generate_fallback_description(file_path: str) -> str
     """基于文件名生成降级描述"""
+
+def resize_and_optimize_image(
+    file_path: str,
+    max_size: int = 1024,
+    quality: int = 85,
+    format: str = "JPEG"
+) -> bytes
+    """
+    读取并优化图片：调整大小、压缩格式、降低质量以减少Base64编码后的Token消耗
+    """
 ```
 
 **依赖**：Pillow (PIL), piexif, os, re
@@ -244,31 +281,13 @@ class TimeParser:
     def __init__(self, api_key: str,
                  model_name: str = "openai/gpt-3.5-turbo",
                  base_url: str = "https://openrouter.ai/api/v1")
-        """
-        初始化时间解析器（使用OpenRouter）
-        api_key: OpenRouter API密钥
-        model_name: 模型名称，默认openai/gpt-3.5-turbo
-        base_url: OpenRouter API地址
-        """
     def extract_time_constraints(self, query: str) -> Dict[str, Any]
-        """
-        返回: {
-            "start_date": str | None,  # ISO 8601
-            "end_date": str | None,    # ISO 8601
-            "precision": str           # "year" | "month" | "season" | "none"
-        }
-        """
     def _infer_precision(self, start_date: str | None, end_date: str | None) -> str
 ```
 
 **依赖**：openai, datetime, json
 
-**通过OpenRouter的优势**：
-- 统一API管理，使用与Vision LLM相同的密钥
-- GPT-3.5-turbo语义理解能力强
-- 成本极低（约0.0001-0.0002美元/次）
-
-**Prompt设计**（参考开发文档）：
+**Prompt设计**：
 ```
 当前日期：{current_date}（格式：YYYY-MM-DD）
 
@@ -297,47 +316,45 @@ class TimeParser:
 **核心功能**：
 - 定义Vision LLM服务抽象接口
 - 实现OpenRouter + GPT-4 Vision后端
-- 通过本地HTTP URL访问图片（避免Base64 token消耗）
+- 使用Base64编码方式访问图片（OpenRouter云端无法访问本地localhost）
+- 支持图片压缩优化
 
 **关键类**：
 ```python
 class VisionLLMService(ABC):
     @abstractmethod
     def generate_description(self, image_path: str) -> str
-        """生成图片描述（中文，50-200字）"""
-
     @abstractmethod
     def generate_description_batch(self, image_paths: List[str]) -> List[str]
-        """批量生成描述"""
 
 class OpenRouterVisionLLMService(VisionLLMService):
     def __init__(self, api_key: str,
                  model_name: str = "openai/gpt-4o",
                  base_url: str = "https://openrouter.ai/api/v1",
                  server_host: str = "localhost",
-                 server_port: int = 5000)
-        """
-        初始化OpenRouter Vision服务
-        api_key: OpenRouter API密钥
-        model_name: 模型名称，默认openai/gpt-4o
-        base_url: OpenRouter API地址
-        """
+                 server_port: int = 5000,
+                 timeout: int = 30,
+                 max_retries: int = 3,
+                 use_base64: bool = True,
+                 image_max_size: int = 1024,
+                 image_quality: int = 85,
+                 image_format: str = "WEBP")
     def generate_description(self, image_path: str) -> str
-    def _get_image_url(self, image_path: str) -> str
-        """生成本地HTTP图片URL"""
+    def _get_image_base64(self, image_path: str) -> str
+    def generate_description_batch(self, image_paths: List[str]) -> List[str]
 ```
 
-**依赖**：openai, abc, urllib.parse
+**依赖**：openai, abc, base64, urllib.parse
 
 **模型说明**：
 - openai/gpt-4o：GPT-4 Omni，支持视觉，性价比高
 - openai/gpt-4-turbo：速度更快，成本略低
 - anthropic/claude-3-sonnet：多模态能力，视觉质量好
 
-**通过OpenRouter的优势**：
-- 统一API接口，方便切换模型
-- 按需付费，成本透明
-- 支持URL方式访问图片，避免Base64编码的token浪费
+**Base64编码优势**：
+- OpenRouter云端可访问（无需本地HTTP服务器）
+- 图片压缩优化减少Token消耗
+- 自动缩放和格式转换（支持WEBP）
 
 **Prompt设计**：
 ```
@@ -366,23 +383,13 @@ class OpenRouterVisionLLMService(VisionLLMService):
 class EmbeddingService(ABC):
     @abstractmethod
     def generate_embedding(self, text: str) -> List[float]
-        """生成文本嵌入向量"""
-
     @abstractmethod
     def generate_embedding_batch(self, texts: List[str]) -> List[List[float]]
-        """批量生成嵌入向量"""
 
 class T5EmbeddingService(EmbeddingService):
     def __init__(self, model_name: str = "sentence-t5-base", device: str = None)
-        """
-        初始化T5嵌入服务
-        model_name: 模型名称，默认sentence-t5-base
-        device: 运行设备，None表示自动检测（Cuda优先）
-        """
     def generate_embedding(self, text: str) -> List[float]
-        """返回768维向量"""
     def generate_embedding_batch(self, texts: List[str]) -> List[List[float]]
-        """批量生成嵌入向量，提高效率"""
 ```
 
 **依赖**：sentence-transformers, abc, torch（自动安装）
@@ -394,7 +401,7 @@ class T5EmbeddingService(EmbeddingService):
 
 ---
 
-### Phase 3: 核心业务
+### Phase 3: 核心业务（已完成）
 
 #### 3.1 core/indexer.py
 
@@ -413,23 +420,10 @@ class Indexer:
                  embedding: EmbeddingService, vector_store: VectorStore,
                  data_dir: str = "./data")
     def scan_photos(self) -> List[str]
-        """扫描照片目录，返回有效图片路径列表"""
     def process_batch(self, photo_paths: List[str]) -> List[Dict[str, Any]]
-        """批量处理照片（描述+嵌入+元数据）"""
     def generate_description(self, photo_path: str) -> str
-        """调用Vision LLM生成描述（带重试和降级策略）"""
     def build_index(self) -> Dict[str, Any]
-        """
-        主流程：
-        1. 扫描照片
-        2. 批量处理（描述+嵌入）
-        3. 存储到FAISS
-        4. 验收检查（>=100张，降级<10%）
-        5. 保存索引和marker文件
-        返回: {status, total_count, success_count, failed_count, fallback_ratio, ...}
-        """
     def get_status(self) -> Dict[str, Any]
-        """获取索引构建状态"""
 ```
 
 **依赖**：
@@ -446,7 +440,7 @@ class Indexer:
 
 ---
 
-#### 3.2 core/searcher.py
+#### 3.2 core/searcherater.py
 
 **文件位置**: `core/searcher.py`
 
@@ -463,28 +457,12 @@ class Searcher:
     def __init__(self, embedding: EmbeddingService, time_parser: TimeParser,
                  vector_store: VectorStore, data_dir: str = "./data")
     def load_index(self) -> bool
-        """加载FAISS索引和元数据"""
     def validate_query(self, query: str) -> bool
-        """验证查询有效性"""
     def _extract_time_constraints(self, query: str) -> Dict[str, Any]
-        """解析时间约束（调用TimeParser）"""
     def _filter_by_time(self, results: List[Dict], constraints: Dict) -> List[Dict]
-        """按时间过滤结果（EXIF优先，文件时间兜底）"""
     def _distance_to_score(self, distance: float) -> float
-        """L2距离转相似度（0-1范围）"""
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]
-        """
-        主流程：
-        1. 验证查询
-        2. 解析时间约束
-        3. 查询向量化
-        4. FAISS Top-K检索
-        5. 时间过滤
-        6. 相似度排序
-        返回: [{photo_path, description, score, rank}, ...]
-        """
     def get_index_stats(self) -> Dict[str, Any]
-        """获取索引统计"""
 ```
 
 **依赖**：
@@ -495,7 +473,7 @@ class Searcher:
 
 ---
 
-### Phase 4: 接口层
+### Phase 4: 接口层（待实现）
 
 #### 4.1 api/routes.py
 
@@ -510,9 +488,11 @@ class Searcher:
 ```python
 def register_routes(app: Flask, indexer: Indexer, searcher: Searcher, config: Dict):
     """注册所有API路由"""
+```
 
-路由清单：
+**路由清单**：
 
+```python
 @app.route('/')
 def index():
     """渲染前端页面"""
@@ -524,7 +504,7 @@ def init_index():
     result = indexer.build_index()
     return jsonify(result)
 
-@app.route('/search_photos', methods=['POST'])
+@app.route('/search_photos',ar methods=['POST'])
 def search_photos():
     """执行照片搜索"""
     data = request.get_json()
@@ -540,7 +520,7 @@ def index_status():
 
 @app.route('/photo')
 def get_photo():
-    """返回图片文件（供前端和Vision LLM使用）"""
+    """返回图片文件（供前端使用，Vision LLM使用Base64方式）"""
     path = request.args.get('path')
     # 路径校验和安全检查
     return send_file(path)
@@ -670,7 +650,7 @@ index_status响应：
 
 ---
 
-### Phase 5: 应用入口
+### Phase 5: 应用入口（待实现）
 
 #### 5.1 main.py
 
@@ -694,7 +674,7 @@ def initialize_services(config: dict) -> tuple:
 
     顺序：
     1. VectorStore（维度768，sentence-t5-base）
-    2. VisionLLMService（OpenRouter + GPT-4o）
+    2. VisionLLMService（OpenRouter + GPT-4o + Base64）
     3. EmbeddingService（本地T5）
     4. TimeParser（OpenRouter + GPT-3.5-turbo）
     5. Indexer
@@ -709,13 +689,17 @@ def initialize_services(config: dict) -> tuple:
         metadata_path=os.path.join(config['DATA_DIR'], 'metadata.json')
     )
 
-    # Vision服务（OpenRouter + GPT-4o）
+    # Vision服务（OpenRouter + GPT-4o + Base64）
     vision_service = OpenRouterVisionLLMService(
         api_key=config['OPENROUTER_API_KEY'],
         model_name=config['VISION_MODEL_NAME'],  # openai/gpt-4o
         base_url=config['OPENROUTER_BASE_URL'],
         server_host=config['SERVER_HOST'],
-        server_port=config['SERVER_PORT']
+        server_port=config['SERVER_PORT'],
+        use_base64=config.get('USE_BASE64', True),
+        image_max_size=config.get('IMAGE_MAX_SIZE', 1024),
+        image_quality=config.get('IMAGE_QUALITY', 85),
+        image_format=config.get('IMAGE_FORMAT', 'WEBP')
     )
 
     # Embedding服务（本地T5）
@@ -804,7 +788,14 @@ if __name__ == '__main__':
 - `VISION_MODEL_NAME`: 使用"openai/gpt-4o"（OpenRouter + GPT-4 Omni）
 - `EMBEDDING_MODEL_NAME`: 使用"sentence-t5-base"（本地T5，768维）
 - `EMBEDDING_DIMENSION`: 固定为768（sentence-t5-base的维度）
-- `TIME_PARSE_MODEL_NAME`: 使用"openai/g/gpt-3.5-turbo"（OpenRouter + GPT-3.5）
+- `TIME_PARSE_MODEL_NAME`: 使用"openai/gpt-3.5-turbo"（OpenRouter + GPT-3.5）
+
+### 图片访问机制（重要）
+- **使用Base64编码方式**：OpenRouter云端无法访问本地localhost
+- **优化策略**：
+  - 自动缩放至max_size（默认1024像素）
+  - 使用WEBP格式压缩（质量85）
+  - 通过resize_and_optimize_image函数处理
 
 ### 成本预估
 - 图像描述生成（GPT-4o）：约0.002-0.005美元/张
@@ -837,9 +828,14 @@ if __name__ == '__main__':
 
 ## 测试建议
 
-### 单元测试（可选）
-- utils/image_parser.py函数测试
-- utils/vector_store.py功能测试
+### 单元测试（已实现）
+- tests/test_image_parser.py - 图片解析测试
+- tests/test_vector_store.py - 向量存储测试
+- tests/test_embedding_service.py - 嵌入服务测试
+- tests/test_vision_llm_service.py - Vision服务测试
+- tests/test_time_parser.py - 时间解析测试
+- tests/test_indexer.py - 索引器测试
+- tests/test_searcher.py - 搜索器测试
 
 ### 集成测试
 - 索引构建流程测试（使用少量测试图片）
@@ -900,35 +896,35 @@ if __name__ == '__main__':
 
 - [x] Phase 0: 项目初始化
 - [x] Phase 1: 配置和基础设施
-- [ ] Phase 2: 工具模块（5个文件）
-- [ ] Phase 3: 核心业务（2个文件）
+- [x] Phase 2: 工具模块（5个文件）
+- [x] Phase 3: 核心业务（2个文件）
 - [ ] Phase 4: 接口层（2个文件）
 - [ ] Phase 5: 应用入口（1个文件）
 
-**总计：12个文件 + 3个配置文件**
+**总计：15个文件 + 3个配置文件 + 7个测试文件**
 
 ---
 
 ## 优先级说明
 
-### 高优先级（核心功能）
-- config.py - OpenRouter + T5配置
-- utils/vector_store.py - FAISS向量存储
-- utils/embedding_service.py - T5本地嵌入
-- utils/vision_llm_service.py - OpenRouter + GPT-4 Vision
-- core/indexer.py - 索引构建器
-- core/searcher.py - 搜索引擎
-- main.py - 应用入口
+### 高优先级（核心功能）- 已完成
+- [x] config.py - OpenRouter + T5配置 + Base64配置
+- [x] utils/vector_store.py - FAISS向量存储
+- [x] utils/embedding_service.py - T5本地嵌入
+- [x] utils/vision_llm_service.py - OpenRouter + GPT-4 Vision + Base64
+- [x] core/indexer.py - 索引构建器
+- [x] core/searcher.py - 搜索引擎
+- [x] utils/image_parser.py - 图片解析 + 压缩优化
 
 ### 中优先级（必要功能）
-- utils/image_parser.py - 图片解析
-- utils/time_parser.py - OpenRouter + 时间解析
-- api/routes.py - HTTP API路由
+- [x] utils/time_parser.py - OpenRouter + 时间解析
+- [ ] api/routes.py - HTTP API路由
+- [ ] main.py - 应用入口
 
 ### 低优先级（界面和配置）
-- templates/index.html - 前端界面
-- requirements.txt - 依赖声明
-- .env.example - 环境变量模板
+- [ ] templates/index.html - 前端界面
+- [x] requirements.txt - 依赖声明
+- [x] .env.example - 环境变量模板
 
 ---
 
@@ -954,6 +950,29 @@ if __name__ == '__main__':
 
 ---
 
-**最后更新时间**: 2026-02-02
-**适用版本**: Python 3.12+, Flask 3.0.3
-**开发模式**: Vibe Coding（逐步实现）
+## 待实现文件清单
+
+### 1. api/routes.py
+需要实现以下功能：
+- register_routes() - 注册所有API路由
+- GET / - 渲染前端页面
+- POST /init_index - 触发索引构建
+- POST /search_photos - 执行照片搜索
+- GET /index_status - 获取索引状态
+- GET /photo - 返回图片文件（供前端使用）
+
+### 2. templates/index.html
+需要实现以下功能：
+- 索引初始化按钮和状态显示
+- 查询输入框和搜索按钮
+- 结果网格展示（CSS Grid布局）
+- initIndex() - 触发索引构建
+- checkIndexStatus() - 轮询索引状态
+- searchPhotos() - 执行搜索并渲染结果
+
+### 3. main.py
+需要实现以下功能：
+- load_config() - 加载配置
+- initialize_services() - 初始化所有服务实例
+- create_app() - 创建并配置Flask应用
+- main() - 主入口函数

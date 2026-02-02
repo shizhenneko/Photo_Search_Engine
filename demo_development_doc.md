@@ -47,31 +47,45 @@ python main.py
 - **向量化检索**：基于FAISS的高效向量相似度搜索
 - **多维度查询**：支持场景、人物、活动、时间、情感等多种查询类型
 - **时间检索**：基于EXIF元数据或文件时间，支持"去年"、"冬天"等时间词
-- **低Token消耗**：通过本地HTTP服务URL访问图片，避免Base64编码的token浪费
+- **成本优化**：使用Base64编码+图片压缩策略，大幅降低 Token 消耗
 
 ### 图片访问机制
 
-本系统采用**本地HTTP服务URL方式**让Vision LLM访问图片，相比传统Base64编码方式具有以下优势：
+**重要说明**：OpenRouter 是云端服务，无法访问本地 `localhost:5000`。因此本系统采用 **Base64 编码方式**。
 
-| 方式 | Token消耗 | 实现复杂度 | 适用场景 |
-|------|----------|-----------|---------|
-| Base64编码 | 高（约图片大小/3） | 简单 | 生产环境（需要上传到云存储） |
-| **本地HTTP URL** | **低（仅URL字符串）** | **中等** | **本地Demo（推荐）** |
+| 方式 | Token消耗 | 实现复杂度 | 适用场景 | OpenRouter支持 |
+|------|----------|-----------|---------|--------------|
+| Base64编码（优化） | **中等**（压缩后约50-200KB） | 中等 | **本地Demo（推荐）** | ✅ 支持 |
+| Base64编码（原始） | 高（约图片大小/3） | 简单 | 生产环境 | ✅ 支持 |
+| 本地HTTP URL | 低（仅URL字符串） | 中等 | 本地服务器 | ❌ 不支持（云端无法访问） |
+
+**成本优化策略**：
+1. **自动缩放**：图片自动缩放至 `max_size`（默认 1024 像素），等比缩放保持宽高比
+2. **格式压缩**：使用 WEBP 格式（默认），比 JPEG 更小，质量参数可调（默认 85）
+3. **智能选择**：小于 `max_size` 的图片不放大，避免不必要的数据传输
 
 实现原理：
-1. Flask应用启动本地HTTP服务器（默认localhost:5000）
-2. 提供`/photo?path=<绝对路径>`接口返回图片二进制
-3. Vision LLM通过`http://localhost:5000/photo?path=xxx`访问图片
-4. 前端通过相同URL渲染搜索结果图片
+1. 读取本地图片文件
+2. 使用 PIL/Pillow 进行 EXIF 方向校正和尺寸优化
+3. 压缩为 WEBP/JPEG 格式（可配置）
+4. Base64 编码并生成 `data:image/...;base64,...` URL
+5. 发送给 OpenRouter Vision API
 
 示例代码：
 ```python
-# 生成图片URL
-image_url = f"http://localhost:5000/photo?path={urllib.parse.quote(photo_path)}"
+# 优化并编码图片
+image_bytes = resize_and_optimize_image(
+    photo_path,
+    max_size=1024,      # 最大边长
+    quality=85,          # 压缩质量
+    format="WEBP"        # 输出格式
+)
+base64_str = base64.b64encode(image_bytes).decode("utf-8")
+image_url = f"data:image/webp;base64,{base64_str}"
 
-# OpenAI Vision API调用
+# OpenRouter Vision API调用
 response = client.chat.completions.create(
-    model="gpt-4-vision-preview",
+    model="openai/gpt-4o",
     messages=[{
         "role": "user",
         "content": [
@@ -80,6 +94,21 @@ response = client.chat.completions.create(
         ]
     }]
 )
+```
+
+**环境变量配置**（可选）：
+```bash
+# 是否使用 Base64 方式（默认 true，推荐保持）
+USE_BASE64=true
+
+# 图片最大边长（像素，默认 1024）
+IMAGE_MAX_SIZE=1024
+
+# 图片压缩质量（1-100，默认 85）
+IMAGE_QUALITY=85
+
+# 图片输出格式（JPEG/WEBP/PNG，默认 WEBP）
+IMAGE_FORMAT=WEBP
 ```
 
 ### 技术架构

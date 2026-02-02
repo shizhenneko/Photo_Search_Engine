@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import time
 import urllib.parse
 from abc import ABC, abstractmethod
@@ -7,7 +8,7 @@ from typing import List, Optional
 
 from openai import OpenAI
 
-from utils.image_parser import get_image_dimensions
+from utils.image_parser import get_image_dimensions, resize_and_optimize_image
 
 
 class VisionLLMService(ABC):
@@ -43,6 +44,13 @@ class VisionLLMService(ABC):
 class OpenRouterVisionLLMService(VisionLLMService):
     """
     OpenRouter Vision LLM服务实现。
+
+    默认使用 Base64 编码方式，因为 OpenRouter 远程服务器无法访问本地 localhost。
+
+    成本优化策略：
+    1. 图片自动缩放至 max_size（默认 1024 像素）
+    2. JPEG/WebP 压缩质量默认 85
+    3. 支持 WEBP 格式（更小的文件大小）
     """
 
     def __init__(
@@ -55,6 +63,12 @@ class OpenRouterVisionLLMService(VisionLLMService):
         timeout: int = 30,
         max_retries: int = 3,
         client: Optional[OpenAI] = None,
+        public_base_url: Optional[str] = None,
+        use_public_image_url: bool = False,
+        use_base64: bool = True,
+        image_max_size: int = 1024,
+        image_quality: int = 85,
+        image_format: str = "WEBP",
     ) -> None:
         """
         初始化OpenRouter Vision服务。
@@ -68,6 +82,12 @@ class OpenRouterVisionLLMService(VisionLLMService):
             timeout (int): API超时时间（秒）
             max_retries (int): 最大重试次数
             client (Optional[OpenAI]): OpenAI客户端实例
+            public_base_url (Optional[str]): 公网可访问的服务基地址（如ngrok）
+            use_public_image_url (bool): 是否使用公开可访问的测试图片URL（仅用于测试）
+            use_base64 (bool): 是否使用 Base64 编码方式（默认 True，推荐）
+            image_max_size (int): 图片最大边长（像素），默认 1024
+            image_quality (int): JPEG/WebP 压缩质量（1-100），默认 85
+            image_format (str): 图片输出格式，"JPEG" 或 "WEBP"（推荐）或 "PNG"
         """
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY 未设置")
@@ -76,13 +96,19 @@ class OpenRouterVisionLLMService(VisionLLMService):
         self.base_url = base_url
         self.server_host = server_host
         self.server_port = server_port
+        self.public_base_url = public_base_url
         self.timeout = timeout
         self.max_retries = max_retries
         self.client = client or OpenAI(api_key=api_key, base_url=base_url)
+        self.use_public_image_url = use_public_image_url
+        self.use_base64 = use_base64
+        self.image_max_size = max(256, min(4096, image_max_size))
+        self.image_quality = max(1, min(100, image_quality))
+        self.image_format = image_format.upper() if image_format.upper() in ["JPEG", "WEBP", "PNG"] else "WEBP"
 
     def _get_image_url(self, image_path: str) -> str:
         """
-        生成本地HTTP图片URL。
+        生成图片URL。
 
         Args:
             image_path (str): 图片路径
@@ -90,12 +116,55 @@ class OpenRouterVisionLLMService(VisionLLMService):
         Returns:
             str: 图片URL
         """
+        if self.use_public_image_url:
+            return (
+                "https://raw.githubusercontent.com/ultralytics/yolov5/master/"
+                "data/images/bus.jpg"
+            )
         encoded_path = urllib.parse.quote(image_path)
-        return f"http://{self.server_host}:{self.server_port}/photo?path={encoded_path}"  # 生成图片URL供Vision LLM访问
+        if self.public_base_url:
+            base = self.public_base_url.rstrip("/")
+            return f"{base}/photo?path={encoded_path}"
+        return f"http://{self.server_host}:{self.server_port}/photo?path={encoded_path}"
+
+    def _get_image_base64(self, image_path: str) -> str:
+        """
+        生成 Base64 编码的图片 URL。
+
+        使用优化策略降低 Token 消耗：
+        1. 自动缩放至 max_size
+        2. 使用 WEBP 格式压缩（质量 85）
+
+        Args:
+            image_path (str): 图片路径
+
+        Returns:
+            str: data:image/...;base64,... 格式的 URL
+        """
+        try:
+            image_bytes = resize_and_optimize_image(
+                image_path,
+                max_size=self.image_max_size,
+                quality=self.image_quality,
+                format=self.image_format,
+            )
+            base64_str = base64.b64encode(image_bytes).decode("utf-8")
+
+            mime_type = {
+                "JPEG": "image/jpeg",
+                "PNG": "image/png",
+                "WEBP": "image/webp",
+            }.get(self.image_format, "image/jpeg")
+
+            return f"data:{mime_type};base64,{base64_str}"
+        except Exception:
+            raise ValueError(f"图片编码失败: {image_path}")
 
     def generate_description(self, image_path: str) -> str:
         """
         生成图片描述（中文）。
+
+        默认使用 Base64 编码方式，因为 OpenRouter 远程服务器无法访问本地 localhost。
 
         Args:
             image_path (str): 图片路径
@@ -107,18 +176,23 @@ class OpenRouterVisionLLMService(VisionLLMService):
             "请用中文描述这张图片，包含以下要素：\n"
             "1. 场景描述（室内/室外，具体地点）\n"
             "2. 主要主体（人物、物体、动物等）\n"
-            "3. 动作或状态（在做什么）\n"
+            "3. 动作或状态（在做什么事情）\n"
             "4. 环境细节（光线、天气、背景）\n"
-            "5. 情绪氛围（欢乐、温馨、宁静等）\n\n"
+            "5. 惣绪氛围（欢乐、温馨、宁静等）\n\n"
             "描述长度：50-200字"
         )
-        image_url = self._get_image_url(image_path)
+
+        if self.use_base64:
+            image_content = self._get_image_base64(image_path)
+        else:
+            image_content = self._get_image_url(image_path)
+
         messages = [
             {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_url}},
+                    {"type": "image_url", "image_url": {"url": image_content}},
                 ],
             }
         ]
@@ -137,7 +211,7 @@ class OpenRouterVisionLLMService(VisionLLMService):
                 return content
             except Exception as exc:
                 if attempt == self.max_retries - 1:
-                    raise ValueError(f"生成描述失败: {exc}") from exc  # 捕获API调用失败，避免中断整体流程
+                    raise ValueError(f"生成描述失败: {exc}") from exc
                 time.sleep(1)
 
         raise ValueError("生成描述失败")
