@@ -1,0 +1,10 @@
+flask==3.0.3
+numpy==1.26.4
+pillow==10.3.0
+faiss-cpu
+openai>=1.0.0
+sentence-transformers>=2.2.0
+python-dotenv
+piexif>=1.1.3
+torch>=2.0.0
+torchvision>=0.15.0

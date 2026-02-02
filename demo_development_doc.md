@@ -11,7 +11,8 @@ pip install -r requirements.txt
 # 2. 配置环境变量
 # 创建 .env 文件：
 # PHOTO_DIR=/path/to/your/photos
-# OPENAI_API_KEY=your_api_key_here
+# OPENROUTER_API_KEY=your_openrouter_api_key_here
+# OPENAI_API_KEY=your_openrouter_api_key_here  # 兼容性配置
 
 # 3. 启动服务
 python main.py
@@ -92,8 +93,8 @@ api/routes.py（HTTP API）
     ↓
 core/indexer.py（索引构建）  core/searcher.py（检索引擎）
     ↓                        ↓
-utils/vision_llm_service.py（Vision LLM）
-utils/embedding_service.py（文本Embedding）
+utils/vision_llm_service.py（Vision LLM - OpenRouter + GPT-4）
+utils/embedding_service.py（文本Embedding - T5模型）
 utils/vector_store.py（FAISS向量存储）
 ```
 
@@ -127,6 +128,92 @@ utils/vector_store.py（FAISS向量存储）
 
 ---
 
+## 模型配置说明
+
+本项目采用混合模型策略，结合云端和本地模型的优势：
+
+### Vision LLM（图像描述生成）
+
+**配置**：
+- API网关：OpenRouter（https://openrouter.ai/api/v1）
+- 底层模型：GPT-4 Vision（openai/gpt-4o）
+- API密钥：OPENROUTER_API_KEY（环境变量）
+
+**选择理由**：
+- OpenRouter提供统一API接口，支持多种视觉模型
+- GPT-4o具备优秀的图像理解能力和中文输出质量
+- 按需付费，成本透明，适合Demo阶段
+- 支持URL方式访问图片，避免Base64编码的token浪费
+
+**备选模型**（可在config.py中切换）：
+- openai/gpt-4-turbo：速度更快，成本略低
+- anthropic/claude-3-sonnet：多模态能力，视觉质量好
+- google/gemini-pro-vision：Google的视觉模型
+
+### Embedding模型（文本向量嵌入）
+
+**配置**：
+- 模型：sentence-t5-base（sentence-transformers）
+- 向量维度：768
+- 运行方式：本地运行（CPU/GPU）
+
+**选择理由**：
+- sentence-transformers基于T5，中文语义理解能力强
+- 本地运行，无API调用成本，适合大批量文本处理
+- 开源免费，无需额外API密钥
+- 向量维度适中（768），FAISS检索效率高
+
+**备选模型**（可在config.py中切换）：
+- sentence-t5-large：768维，效果更佳，但运行速度稍慢
+- sentence-t5-xxl：768维，效果最佳，需更多内存
+- paraphrase-multilingual-MiniLM-L12-v2：384维，速度快，适合资源受限场景
+
+**依赖安装**：
+```bash
+pip install torch sentence-transformers>=2.2.0
+```
+
+**模型首次使用**：
+- 模型会自动从Hugging Face下载到本地缓存（~/.cache/huggingface）
+- sentence-t5-base约需下载1-2GB数据
+- 下载后本地运行，无需网络
+
+### 环境变量配置
+
+在项目根目录创建 `.env` 文件：
+
+```bash
+# OpenRouter API密钥（用于Vision LLM和时间解析）
+OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# 兼容性配置（如果使用原始OpenAI密钥）
+OPENAI_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# OpenRouter API地址（通常无需修改）
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+
+# 照片目录（绝对路径）
+PHOTO_DIR=C:/Users/YourName/Photos
+```
+
+**获取OpenRouter API密钥**：
+1. 访问 https://openrouter.ai/
+2. 注册/登录账号
+3. 在设置中创建API密钥
+4. 将密钥复制到 .env 文件
+
+**成本预估**：
+- 图像描述生成（GPT-4o）：约0.002-0.005美元/张
+- 时间解析（GPT-3.5-turbo）：约0.0001-0.0002美元/次
+- 文本嵌入（T5本地）：免费（首次下载模型后）
+
+**100张照片索引成本估算**：
+- 图像描述：100 × 0.003美元 = 0.3美元
+- 文本嵌入：0美元
+- 总计：约0.3美元（约2元人民币）
+
+---
+
 ## 0. 方案可行性分析
 
 ### 0.1 技术依赖验证
@@ -139,10 +226,11 @@ utils/vector_store.py（FAISS向量存储）
 
 需要额外安装的依赖：
 - faiss-cpu（向量存储与检索）
-- openai>=1.0.0（OpenAI API客户端）
+- openai>=1.0.0（OpenAI API客户端，兼容OpenRouter）
+- sentence-transformers（T5文本嵌入模型）
 - python-dotenv（环境变量管理）
 - piexif（EXIF元数据解析）
-- pillow（图像处理，已验证10.3.0）
+- torch（PyTorch，sentence-transformers后端）
 
 完整的requirements.txt：
 ```
@@ -151,8 +239,10 @@ numpy==1.26.4
 pillow==10.3.0
 faiss-cpu
 openai>=1.0.0
+sentence-transformers>=2.2.0
 python-dotenv
 piexif>=1.1.3
+torch>=2.0.0
 ```
 
 ### 0.2 可行性结论
@@ -359,7 +449,7 @@ class TimeParser:
         
         try:
             response = self.client.chat.completions.create(
-                model=self.model_name,
+                model=self.model_name,  # 使用OpenRouter模型，如"openai/gpt-3.5-turbo"
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 response_format={"type": "json_object"},
@@ -508,9 +598,9 @@ class TimeParser:
    - 质量约束：降级描述占比必须<10%，否则索引结果标记为failed
 
 5. 嵌入生成阶段
-   - 将描述文本发送到Embedding服务
-   - 获取固定维度的向量（维度与最终选择的模型一致，暂未定）
-   - 验证向量维度一致性
+    - 将描述文本发送到Embedding服务（T5模型）
+    - 获取固定维度的向量（sentence-t5-base为768维）
+    - 验证向量维度一致性
 
 6. 索引存储阶段
    - 将向量添加到FAISS索引
@@ -782,7 +872,7 @@ def _extract_time_constraints(query: str) -> Dict[str, Any]:
     prompt = f"当前日期：{current_date}\n\n用户查询：{query}\n\n请分析..."
     
     response = self.llm_client.chat.completions.create(
-        model="gpt-3.5-turbo",  # 或配置中的模型
+        model="openai/gpt-3.5-turbo",  # OpenRouter模型格式
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
         response_format={"type": "json_object"}
@@ -963,25 +1053,40 @@ generate_description_batch(image_paths: List[str]) -> List[str]
 
 ##### 3.2.2.2 类：OpenAIVisionLLMService（继承VisionLLMService）
 
-职责：使用OpenAI GPT-4V生成图像描述，作为默认后端。通过本地HTTP服务URL访问图片，避免Base64编码的token消耗
+职责：使用OpenRouter接入GPT-4生成图像描述。通过本地HTTP服务URL访问图片，避免Base64编码的token消耗
+
+**模型配置**：
+- 使用OpenRouter作为API网关
+- 底层模型：GPT-4 Vision（gpt-4o或gpt-4-turbo）
+- 兼容OpenAI API客户端，只需修改base_url和api_key
 
 属性：
-- api_key: str - OpenAI API密钥，从环境变量读取
-- model_name: str - 模型名称（待定，后续确认）
+- api_key: str - OpenRouter API密钥，从环境变量OPENROUTER_API_KEY或OPENAI_API_KEY读取
+- base_url: str - OpenRouter API地址，默认"https://openrouter.ai/api/v1"
+- model_name: str - 模型名称，默认"openai/gpt-4o"（GPT-4 Omni，支持视觉）
 - max_tokens: int - 最大生成token数，默认300
-- client: OpenAI - OpenAI客户端实例
+- client: OpenAI - OpenAI客户端实例（配置为OpenRouter）
 - server_host: str - 本地服务器主机地址，默认"localhost"
 - server_port: int - 本地服务器端口，默认5000
 
 方法：
 
-__init__(api_key: str, model_name: str = "TBD")
-- 功能：初始化OpenAI Vision服务
+__init__(api_key: str, model_name: str = "openai/gpt-4o", base_url: str = "https://openrouter.ai/api/v1")
+- 功能：初始化OpenRouter Vision服务
 - 输入：
-  - api_key: str - OpenAI API密钥
-  - model_name: str - 模型名称
+  - api_key: str - OpenRouter API密钥
+  - model_name: str - 模型名称，默认为OpenRouter上的GPT-4 Omni
+  - base_url: str - OpenRouter API地址
 - 输出：无
-- 注释要求：需说明API Key验证、客户端初始化
+- 注释要求：需说明API Key验证、客户端初始化、base_url配置
+
+**OpenRouter配置说明**：
+OpenRouter是一个AI API网关，提供统一接口访问多种模型。本项目使用OpenRouter接入GPT-4 Vision模型。
+
+优势：
+- 统一API接口，方便切换模型
+- 支持多种视觉模型（GPT-4o、GPT-4-turbo、Claude 3等）
+- 按需付费，成本透明
 
 generate_description(image_path: str) -> str
 - 功能：调用OpenAI API生成图像描述
@@ -1020,30 +1125,55 @@ generate_embedding_batch(texts: List[str]) -> List[List[float]]
 - 输出：List[List[float]] - 嵌入向量列表
 - 注释要求：需说明批处理效率优化
 
-##### 3.2.3.2 类：OpenAIEmbeddingService（继承EmbeddingService）
+##### 3.2.3.2 类：T5EmbeddingService（继承EmbeddingService）
 
-职责：使用OpenAI Embeddings API生成向量，作为默认后端
+职责：使用Hugging Face的T5模型生成文本嵌入，作为本地嵌入方案
+
+**模型配置**：
+- 使用sentence-transformers库
+- 底层模型：sentence-t5-base或sentence-t5-large
+- 支持中文和英文文本嵌入
+- 向量维度：768（sentence-t5-base）
 
 属性：
-- api_key: str - OpenAI API密钥
-- model_name: str - 模型名称（待定，后续确认）
-- client: OpenAI - OpenAI客户端实例
+- model_name: str - 模型名称，默认"sentence-t5-base"
+- model: Any - sentence-transformers模型实例
+- device: str - 运行设备，默认"cuda"（如果有GPU），否则"cpu"
 
 方法：
 
-__init__(api_key: str, model_name: str = "TBD")
-- 功能：初始化OpenAI Embedding服务
+__init__(model_name: str = "sentence-t5-base", device: str = None)
+- 功能：初始化T5嵌入服务
 - 输入：
-  - api_key: str - OpenAI API密钥
-  - model_name: str - 模型名称
+  - model_name: str - 模型名称，默认"sentence-t5-base"
+  - device: str - 运行设备，None表示自动检测
 - 输出：无
-- 注释要求：需说明客户端初始化
+- 注释要求：需说明模型首次下载、设备检测、内存占用
 
 generate_embedding(text: str) -> List[float]
-- 功能：调用OpenAI API生成嵌入向量
+- 功能：调用T5模型生成嵌入向量
 - 输入：text: str - 待嵌入的文本
-- 输出：List[float] - 嵌入向量（维度与模型一致，暂未定）
-- 注释要求：需说明文本长度限制、API速率限制
+- 输出：List[float] - 嵌入向量（维度为768）
+- 注释要求：需说明文本预处理、向量归一化、异常处理
+
+generate_embedding_batch(texts: List[str]) -> List[List[float]]
+- 功能：批量生成嵌入向量（提高效率）
+- 输入：texts: List[str] - 文本列表
+- 输出：List[List[float]] - 嵌入向量列表
+- 注释要求：需说明批处理效率、batch_size限制
+
+**T5模型说明**：
+T5（Text-to-Text Transfer Transformer）是Google提出的预训练模型，sentence-transformers基于T5提供了高质量的文本嵌入能力。
+
+优势：
+- 本地运行，无API调用成本
+- 支持中文语义理解
+- 开源免费，无需API密钥
+- 向量维度适中（768），检索效率高
+
+模型推荐：
+- sentence-t5-base：768维，速度较快，适合一般场景
+- sentence-t5-large：768维，效果更好，适合追求质量的场景
 
 
 #### 3.2.4 vector_store.py
@@ -1234,10 +1364,21 @@ get_total_items() -> int
 - DATA_DIR: str - 数据存储目录，默认"./data"
 
 **API配置**
-- OPENAI_API_KEY: str - OpenAI API密钥，从环境变量OPENAI_API_KEY读取
-- VISION_MODEL_NAME: str - Vision模型名称（待定，后续确认）
-- EMBEDDING_MODEL_NAME: str - 嵌入模型名称（待定，后续确认）
-- TIME_PARSE_MODEL_NAME: str - 时间解析使用的LLM模型名称，默认"gpt-3.5-turbo"（用于_extract_time_constraints函数）
+- OPENROUTER_API_KEY: str - OpenRouter API密钥，从环境变量OPENROUTER_API_KEY或OPENAI_API_KEY读取（优先OPENROUTER_API_KEY）
+- OPENROUTER_BASE_URL: str - OpenRouter API地址，默认"https://openrouter.ai/api/v1"
+- VISION_MODEL_NAME: str - Vision模型名称，默认"openai/gpt-4o"（通过OpenRouter接入）
+- EMBEDDING_MODEL_NAME: str - 嵌入模型名称，默认"sentence-t5-base"（本地T5模型）
+- TIME_PARSE_MODEL_NAME: str - 时间解析使用的LLM模型名称，默认"openai/gpt-3.5-turbo"（通过OpenRouter）
+
+**模型配置说明**：
+- **Vision LLM（图像描述）**：使用OpenRouter接入GPT-4 Vision模型
+  - 模型：openai/gpt-4o（GPT-4 Omni，支持视觉，性价比高）
+  - 备选：openai/gpt-4-turbo（GPT-4 Turbo，速度更快）
+  - 优势：高质量图像理解，支持中文输出
+- **Embedding（文本嵌入）**：使用本地T5模型
+  - 模型：sentence-t5-base（768维，中文支持好）
+  - 备选：sentence-t5-large（768维，效果更佳）
+  - 优势：本地运行，无API成本，速度快
 
 **服务器配置**
 - SERVER_HOST: str - 服务器主机地址，默认"localhost"
@@ -1416,8 +1557,51 @@ def initialize_services(config: dict) -> tuple:
     Returns:
         tuple: (indexer, searcher)
     """
-    # 初始化Vision LLM服务
+    # 初始化Vision LLM服务（使用OpenRouter）
     vision_service = OpenAIVisionLLMService(
+        api_key=config.get('OPENROUTER_API_KEY'),
+        model_name=config.get('VISION_MODEL_NAME', 'openai/gpt-4o'),
+        base_url=config.get('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+    )
+    
+    # 初始化Embedding服务（使用本地T5模型）
+    embedding_service = T5EmbeddingService(
+        model_name=config.get('EMBEDDING_MODEL_NAME', 'sentence-t5-base')
+    )
+    
+    # 初始化时间解析器（使用OpenRouter）
+    time_parser = TimeParser(
+        api_key=config.get('OPENROUTER_API_KEY'),
+        model_name=config.get('TIME_PARSE_MODEL_NAME', 'openai/gpt-3.5-turbo'),
+        base_url=config.get('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+    )
+    
+    # 初始化向量存储
+    vector_store = VectorStore(
+        dimension=768,  # sentence-t5-base的维度
+        index_path=config.get('INDEX_PATH'),
+        metadata_path=config.get('METADATA_PATH')
+    )
+    
+    # 初始化索引构建器
+    indexer = Indexer(
+        photo_dir=config.get('PHOTO_DIR'),
+        vision_service=vision_service,
+        embedding_service=embedding_service,
+        vector_store=vector_store,
+        data_dir=config.get('DATA_DIR')
+    )
+    
+    # 初始化检索器
+    searcher = Searcher(
+        embedding_service=embedding_service,
+        time_parser=time_parser,
+        vector_store=vector_store,
+        data_dir=config.get('DATA_DIR')
+    )
+    
+    return indexer, searcher
+```
         api_key=config['OPENAI_API_KEY'],
         model_name=config.get('VISION_MODEL_NAME'),
         server_host=config['SERVER_HOST'],
