@@ -184,7 +184,8 @@ def generate_fallback_description(file_path: str) -> str:
 def resize_and_optimize_image(
     file_path: str,
     max_size: int = 1024,
-    quality: int = 85 fanciness: str = "JPEG"
+    quality: int = 85,
+    format: str = "JPEG"
 ) -> bytes:
     """
     读取并优化图片：调整大小、压缩格式、降低质量以减少 Base64 编码后的 Token 消耗。
@@ -193,18 +194,7 @@ def resize_and_optimize_image(
         file_path (str): 图片文件路径
         max_size (int): 最大边长（宽或高），默认 1024 像素
         quality (int): JPEG/WebP 质量参数（1-100），默认 85
-        format (str): 输出格式，"JPEG" 或 "PNG" 或 "WEBP"
-
-    Returns:
-        bytes: 优化后的图片二进制数据
-    """   
-    读取并优化图片：调整大小、压缩格式、降低质量以减少 Base64 编码后的 Token 消耗。
-
-    Args:
-        file_path (str): 图片文件路径
-        max_size (int): 最大边长（宽或高），默认 1024 像素
-        quality (int): JPEG/WebP 质量参数（1-100），默认 85
-        format (str): 输出格式，"JPEG" 或 "PNG" 或 "WEBP"
+        format (str): 输出格式，"JPEG"。
 
     Returns:
         bytes: 优化后的图片二进制数据

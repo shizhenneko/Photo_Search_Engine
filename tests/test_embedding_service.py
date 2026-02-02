@@ -8,6 +8,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from config import get_config
+import torch
 
 from utils.embedding_service import OpenAIEmbeddingService, T5EmbeddingService
 
@@ -18,6 +19,7 @@ class EmbeddingServiceTests(unittest.TestCase):
         """加载配置"""
         cls.config = get_config()
         cls.has_openrouter_key = bool(cls.config.get("OPENROUTER_API_KEY"))
+        cls.cuda_available = torch.cuda.is_available()
 
     def test_config_loading(self) -> None:
         """测试配置从.env正确加载"""
@@ -76,8 +78,23 @@ class EmbeddingServiceTests(unittest.TestCase):
     def test_t5_embedding_service_init(self) -> None:
         """测试T5 Embedding服务初始化"""
         try:
-            service = T5EmbeddingService(model_name="sentence-t5-base", device="cuda")
+            if self.cuda_available:
+                service = T5EmbeddingService(model_name="sentence-t5-base", device="cuda")
+            else:
+                service = T5EmbeddingService(model_name="sentence-t5-base", device="cpu")
             self.assertIsNotNone(service.model)
+        except ImportError:
+            self.skipTest("未安装sentence-transformers")
+
+    def test_t5_embedding_device_selection(self) -> None:
+        """测试T5 Embedding设备选择（GPU优先）"""
+        try:
+            if self.cuda_available:
+                service = T5EmbeddingService(model_name="sentence-t5-base")
+                self.assertEqual(service.model.device.type, "cuda")
+            else:
+                service = T5EmbeddingService(model_name="sentence-t5-base")
+                self.assertEqual(service.model.device.type, "cpu")
         except ImportError:
             self.skipTest("未安装sentence-transformers")
 

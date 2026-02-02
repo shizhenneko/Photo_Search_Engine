@@ -1,10 +1,24 @@
+# Web框架
 flask==3.0.3
+jinja2
+
+# 核心依赖
 numpy==1.26.4
 pillow==10.3.0
+
+# 向量存储（CPU版本，符合设计要求）
 faiss-cpu
+
+# AI服务
 openai>=1.0.0
 sentence-transformers>=2.2.0
+
+# 工具库
 python-dotenv
 piexif>=1.1.3
+
+# PyTorch（GPU版本 - 如果系统有CUDA会自动使用，否则回退到CPU）
+# 注意：首次安装时如果有NVIDIA GPU，建议先使用以下命令安装CUDA(以12.1驱动为例)版本：
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 torch>=2.0.0
 torchvision>=0.15.0

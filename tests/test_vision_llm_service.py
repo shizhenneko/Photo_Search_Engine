@@ -129,49 +129,63 @@ class VisionServiceTests(unittest.TestCase):
         "OPENROUTER_API_KEY未设置，跳过集成测试"
     )
     def test_openrouter_vision_service_generate_description(self) -> None:
-        """测试OpenRouter Vision服务生成描述（集成测试）"""
+        """测试OpenRouter Vision服务生成描述（Base64集成测试）"""
         api_key = self.config["OPENROUTER_API_KEY"]
         base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-        service = OpenRouterVisionLLMService(
-            api_key=api_key,
-            base_url=base_url,
-            server_host="localhost",
-            server_port=5000,
-            max_retries=2,
-            use_public_image_url=True,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "test_image.jpg")
+            image = Image.new("RGB", (200, 150), color=(100, 150, 200))
+            image.save(path, quality=90)
 
-        result = service.generate_description("dummy_path.jpg")
+            service = OpenRouterVisionLLMService(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=2,
+                use_base64=True,
+                image_max_size=1024,
+                image_quality=85,
+                image_format="WEBP",
+            )
 
-        self.assertIsInstance(result, str)
-        self.assertGreater(len(result), 10)
-        self.assertTrue(50 <= len(result) <= 200)
+            result = service.generate_description(path)
+
+            self.assertIsInstance(result, str)
+            self.assertGreater(len(result), 10)
 
     @unittest.skipIf(
         not bool(os.getenv("OPENROUTER_API_KEY")),
         "OPENROUTER_API_KEY未设置，跳过集成测试"
     )
     def test_openrouter_vision_service_generate_description_batch(self) -> None:
-        """测试批量生成描述（集成测试）"""
+        """测试批量生成描述（Base64集成测试）"""
         api_key = self.config["OPENROUTER_API_KEY"]
         base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-        service = OpenRouterVisionLLMService(
-            api_key=api_key,
-            base_url=base_url,
-            server_host="localhost",
-            server_port=5000,
-            max_retries=2,
-            use_public_image_url=True,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for i in range(3):
+                path = os.path.join(tmp, f"test_image_{i}.jpg")
+                image = Image.new("RGB", (200, 150), color=(50 + i * 50, 100, 150))
+                image.save(path, quality=90)
+                paths.append(path)
 
-        results = service.generate_description_batch(["dummy1.jpg", "dummy2.jpg", "dummy3.jpg"])
+            service = OpenRouterVisionLLMService(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=2,
+                use_base64=True,
+                image_max_size=1024,
+                image_quality=85,
+                image_format="WEBP",
+            )
 
-        self.assertEqual(len(results), 3)
-        for result in results:
-            self.assertIsInstance(result, str)
-            self.assertGreater(len(result), 10)
+            results = service.generate_description_batch(paths)
+
+            self.assertEqual(len(results), 3)
+            for result in results:
+                self.assertIsInstance(result, str)
+                self.assertGreater(len(result), 10)
 
     def test_get_image_url_encoding(self) -> None:
         """测试图片URL路径编码"""

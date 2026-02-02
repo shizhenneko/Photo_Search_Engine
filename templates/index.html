@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>照片搜索引擎</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+        }
+
+        /* 索引区域 */
+        .index-section {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+        }
+
+        .index-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-weight: 500;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .index-status {
+            flex: 1;
+            min-width: 200px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            background: #f8f9fa;
+            border-left: 4px solid #3498db;
+        }
+
+        .index-status.ready {
+            border-left-color: #2ecc71;
+            background: #d4edda;
+        }
+
+        .index-status.failed {
+            border-left-color: #e74c3c;
+            background: #f8d7da;
+        }
+
+        .index-status.processing {
+            border-left-color: #f39c12;
+            background: #fff3cd;
+        }
+
+        .progress-info {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 8px;
+        }
+
+        /* 搜索区域 */
+        .search-section {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+        }
+
+        .search-input-wrapper {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            flex: 1;
+            min-width: 250px;
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .search-input:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+
+        .search-hint {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            margin-top: 10px;
+        }
+
+        .search-hint span {
+            display: inline-block;
+            background: #ecf0f1;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-right: 8px;
+            margin-bottom: 4px;
+        }
+
+        /* 结果区域 */
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .results-header h2 {
+            font-size: 1.3rem;
+            color: #2c3e50;
+        }
+
+        .results-stats {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 25px;
+        }
+
+        .photo-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .photo-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+
+        .photo-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #f0f0f0;
+        }
+
+        .photo-info {
+            padding: 15px;
+        }
+
+        .photo-rank {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            margin-bottom: 8px;
+        }
+
+        .photo-description {
+            font-size: 0.9rem;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .photo-score {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+        }
+
+        .score-bar {
+            height: 4px;
+            background: #ecf0f1;
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .score-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.5s ease;
+        }
+
+        /* 消息提示 */
+        .message {
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #e74c3c;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #2ecc71;
+        }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+        }
+
+        .empty-state-icon {
+            font-size: 448rem;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+
+        .empty-state-text {
+            font-size: 1.1rem;
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ffffff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .search-input-wrapper {
+                flex-direction: column;
+            }
+
+            .search-input {
+                width: 100%;
+            }
+
+            .index-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📷 照片搜索引擎</h1>
+        <p class="subtitle">基于AI的自然语言照片检索 Demo</p>
+
+        <!-- 索引区域 -->
+        <div class="index-section">
+            <div class="index-header">
+                <button class="btn-primary" id="init-btn" onclick="initIndex()">
+                    初始化索引
+                </button>
+                <div class="index-status" id="index-status">
+                    <div id="status-text">状态：未初始化</div>
+                    <div class="progress-info" id="progress-info"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 消息提示 -->
+        <div class="message" id="message"></div>
+
+        <!-- 搜索区域 -->
+        <div class="search-section">
+            <div class="search-input-wrapper">
+                <input
+                    type="text"
+                    id="query-input"
+                    class="search-input"
+                    placeholder="输入查询（如：去年夏天在海边的照片）"
+                    disabled
+                >
+                <button class="btn-primary" id="search-btn" onclick="searchPhotos()" disabled>
+                    搜索
+                </button>
+            </div>
+            <div class="search-hint">
+                查询示例：<span>山上的照片</span><span>城市夜景</span><span>有人物的照片</span><span>聚餐</span><span>去年</span><span>冬天的风景</span>
+            </div>
+        </div>
+
+        <!-- 结果区域 -->
+        <div class="results-header">
+            <h2>搜索结果</h2>
+            <div class="results-stats" id="results-stats"></div>
+        </div>
+        <div id="results-grid" class="results-grid">
+            <div class="empty-state">
+                <div class="empty-state-icon">🔍</div>
+                <div class="empty-state-text">输入查询后开始搜索</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let statusPollingId = null;
+
+        function showMessage(text, type = 'error') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = `message show ${type}`;
+            setTimeout(() => {
+                messageDiv.className = 'message';
+            }, 5000);
+        }
+
+        function updateIndexStatus(status, message, progress = '') {
+            const statusDiv = document.getElementById('index-status');
+            const statusText = document.getElementById('status-text');
+            const progressInfo = document.getElementById('progress-info');
+            const initBtn = document.getElementById('init-btn');
+
+            statusDiv.className = `index-status ${status}`;
+            statusText.textContent = `状态：${message}`;
+            progressInfo.textContent = progress;
+
+            if (status === 'processing') {
+                initBtn.disabled = true;
+                initBtn.innerHTML = '构建中<span class="loading"></span>';
+            } else if (status === 'ready') {
+                initBtn.disabled = false;
+                initBtn.textContent = '重新初始化索引';
+                enableSearch(true);
+            } else {
+                initBtn.disabled = false;
+                initBtn.textContent = '初始化索引';
+            }
+        }
+
+        function enableSearch(enabled) {
+            document.getElementById('query-input').disabled = !enabled;
+            document.getElementById('search-btn').disabled = !enabled;
+        }
+
+        async function initIndex() {
+            try {
+                enableSearch(false);
+                const response = await fetch('/init_index', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'processing') {
+                    updateIndexStatus('processing', '索引构建中');
+                    startStatusPolling();
+                } else if (result.status === 'success') {
+                    updateIndexStatus('ready', '索引就绪',
+                        `共 ${result.indexed_count} 张照片，耗时 ${result.elapsed_time.toFixed(1)} 秒`);
+                    showMessage('索引初始化成功！', 'success');
+                } else {
+                    updateIndexStatus('failed', '索引构建失败',
+                        result.message || '请检查照片目录和API配置');
+                    showMessage('索引构建失败：' + result.message);
+                }
+            } catch (error) {
+                showMessage('请求失败：' + error.message);
+                updateIndexStatus('failed', '请求失败');
+            }
+        }
+
+        function startStatusPolling() {
+            if (statusPollingId) {
+                return;
+            }
+            statusPollingId = setInterval(checkIndexStatus, 2000);
+        }
+
+        function stopStatusPolling() {
+            if (statusPollingId) {
+                clearInterval(statusPollingId);
+                statusPollingId = null;
+            }
+        }
+
+        async function checkIndexStatus() {
+            try {
+                const response = await fetch('/index_status');
+                const status = await response.json();
+
+                if (status.status === 'processing') {
+                    const indexed = status.indexed_count || 0;
+                    const total = status.total_count || 0;
+                    const progress = total > 0 ? `${indexed}/${total}` : '0';
+                    updateIndexStatus('processing', '索引构建中',
+                        `进度：${progress}，耗时 ${status.elapsed_time.toFixed(1)} 秒`);
+                } else if (status.status === 'ready') {
+                    stopStatusPolling();
+                    updateIndexStatus('ready', '索引就绪',
+                        `共 ${status.indexed_count} 张照片`);
+                    enableSearch(true);
+                } else if (status.status === 'failed') {
+                    stopStatusPolling();
+                    updateIndexStatus('failed', '索引构建失败', status.message);
+                }
+            } catch (error) {
+                console.error('获取状态失败:', error);
+            }
+        }
+
+        async function searchPhotos() {
+            const queryInput = document.getElementById('query-input');
+            const query = queryInput.value.trim();
+
+            if (!query) {
+                showMessage('请输入查询内容');
+                return;
+            }
+
+            if (query.length < 5) {
+                showMessage('查询内容至少需要5个字符');
+                return;
+            }
+
+            const searchBtn = document.getElementById('search-btn');
+            searchBtn.disabled = true;
+            searchBtn.innerHTML = '搜索中<span class="loading"></span>';
+
+            try {
+                const response = await fetch('/search_photos', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        top_k: 10
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    renderResults(result.results, result.elapsed_time);
+                } else {
+                    showMessage('搜索失败：' + result.message);
+                    document.getElementById('results-grid').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">❌</div>
+                            <div class="empty-state-text">搜索失败：${result.message}</div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                showMessage('请求失败：' + error.message);
+                document.getElementById('results-grid').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">❌</div>
+                        <div class="empty-state-text">请求失败：${error.message}</div>
+                    </div>
+                `;
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.textContent = '搜索';
+            }
+        }
+
+        function renderResults(results, elapsedTime) {
+            const resultsGrid = document.getElementById('results-grid');
+            const resultsStats = document.getElementById('results-stats');
+
+            if (!results || results.length === 0) {
+                resultsGrid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div class="empty-state-text">未找到匹配的照片</div>
+                    </div>
+                `;
+                resultsStats.textContent = '耗时 0.00 秒';
+                return;
+            }
+
+            resultsStats.textContent = `共 ${results.length} 个结果，耗时 ${elapsedTime.toFixed(2)} 秒`;
+
+            const html = results.map(item => {
+                const scorePercent = Math.round(item.score * 100);
+                return `
+                    <div class="photo-card">
+                        <img src="${item.photo_url}" alt="照片" class="photo-image" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22280%22 height=%22200%22><rect fill=%22%23f0f0f0%22 width=%22100%25%22 height=%22100%25%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23999%22>图片加载失败</text></svg>'">
+                        <div class="photo-info">
+                            <span class="photo-rank">#${item.rank}</span>
+                            <p class="photo-description">${escapeHtml(item.description || '无描述')}</p>
+                            <div class="photo-score">相似度：${(item.score * 100).toFixed(1)}%</div>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: ${scorePercent}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            resultsGrid.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 页面加载时检查索引状态
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/index_status');
+                const status = await response.json();
+
+                if (status.status === 'ready') {
+                    updateIndexStatus('ready', '索引就绪',
+                        `共 ${status.indexed_count} 张照片`);
+                } else if (status.status === 'processing') {
+                    updateIndexStatus('processing', '索引构建中');
+                    startStatusPolling();
+                }
+            } catch (error) {
+                console.error('获取初始状态失败:', error);
+            }
+        });
+    </script>
+</body>
+</html>
