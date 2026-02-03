@@ -142,6 +142,77 @@ class SearcherTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             searcher.search("test query")
 
+    def test_calculate_dynamic_threshold_high_quality(self) -> None:
+        """测试动态阈值计算-高质量查询场景"""
+        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
+        searcher = Searcher(
+            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
+            time_parser=TimeParser(api_key="test-key"),
+            vector_store=vector_store,
+        )
+
+        scores = [0.92, 0.88, 0.85, 0.45, 0.42, 0.38, 0.35, 0.30, 0.28, 0.25, 0.22, 0.20, 0.18, 0.15, 0.12, 0.10]
+        threshold = searcher._calculate_dynamic_threshold(scores, top_k=10)
+
+        self.assertGreater(threshold, 0.15)
+        self.assertLess(threshold, 0.5)
+
+    def test_calculate_dynamic_threshold_uniform_distribution(self) -> None:
+        """测试动态阈值计算-均匀分布场景"""
+        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
+        searcher = Searcher(
+            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
+            time_parser=TimeParser(api_key="test-key"),
+            vector_store=vector_store,
+        )
+
+        scores = [0.65, 0.62, 0.58, 0.55, 0.52, 0.50, 0.48, 0.45, 0.42, 0.40, 0.38, 0.35, 0.32, 0.30, 0.28]
+        threshold = searcher._calculate_dynamic_threshold(scores, top_k=10)
+
+        self.assertGreater(threshold, 0.15)
+        self.assertLess(threshold, 0.5)
+
+    def test_calculate_dynamic_threshold_low_scores(self) -> None:
+        """测试动态阈值计算-低分场景"""
+        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
+        searcher = Searcher(
+            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
+            time_parser=TimeParser(api_key="test-key"),
+            vector_store=vector_store,
+        )
+
+        scores = [0.32, 0.30, 0.28, 0.25, 0.22, 0.20, 0.18, 0.15, 0.12, 0.10, 0.08, 0.06, 0.05, 0.04, 0.03]
+        threshold = searcher._calculate_dynamic_threshold(scores, top_k=10)
+
+        self.assertGreaterEqual(threshold, 0.1)
+        self.assertLess(threshold, 0.3)
+
+    def test_calculate_dynamic_threshold_few_candidates(self) -> None:
+        """测试动态阈值计算-候选数不足场景"""
+        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
+        searcher = Searcher(
+            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
+            time_parser=TimeParser(api_key="test-key"),
+            vector_store=vector_store,
+        )
+
+        scores = [0.85, 0.80, 0.75]
+        threshold = searcher._calculate_dynamic_threshold(scores, top_k=10)
+
+        self.assertEqual(threshold, 0.05)
+
+    def test_calculate_dynamic_threshold_empty_scores(self) -> None:
+        """测试动态阈值计算-空分数列表"""
+        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
+        searcher = Searcher(
+            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
+            time_parser=TimeParser(api_key="test-key"),
+            vector_store=vector_store,
+        )
+
+        threshold = searcher._calculate_dynamic_threshold([], top_k=10)
+        self.assertEqual(threshold, 0.1)
+
 
 if __name__ == "__main__":
     unittest.main()

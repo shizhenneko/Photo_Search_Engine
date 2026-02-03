@@ -120,7 +120,7 @@ class T5EmbeddingService(EmbeddingService):
 
     def __init__(
         self,
-        model_name: str = "sentence-t5-base",
+        model_name: str = "BAAI/bge-small-zh-v1.5",
         device: Optional[str] = None,
         model: Optional[object] = None,
     ) -> None:

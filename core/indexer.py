@@ -161,25 +161,27 @@ class Indexer:
         file_time: Optional[str],
     ) -> str:
         """
-        构建用于向量化的搜索文本，包含丰富的语义信息。
+        构建用于向量化的搜索文本，包含高价值语义信息。
 
-        结构：描述 | 文件名 | 相机 | 年月季节 | 星期 | 时段
+        优化后结构：描述 | 文件名 | 年月 | 季节 | 时段(简化)
+        
+        移除的低价值信息：
+        - 相机信息（用户几乎从不搜索相机型号）
+        - 星期信息（搜索场景极罕见）
         """
         parts = []
 
-        if description:
+        # 1. 核心描述（最高价值，必须保留）
+        if description and len(description) >= 20:
             parts.append(description.strip())
 
+        # 2. 文件名tokens（中高价值，保留有意义的部分）
         name = os.path.splitext(os.path.basename(photo_path))[0]
-        tokens = [token for token in re.split(r"[\W_]+", name) if token and not token.isdigit()]
-        if tokens:
+        tokens = [t for t in re.split(r"[\W_]+", name) if t and not t.isdigit() and len(t) > 2]
+        if tokens and len(tokens) <= 3:
             parts.append(f"文件名: {' '.join(tokens)}")
 
-        if exif_data:
-            camera = exif_data.get("camera")
-            if camera:
-                parts.append(f"相机: {camera}")
-
+        # 3. 时间信息（高价值，保留并简化）
         photo_date = self._get_photo_datetime(exif_data, file_time)
         if photo_date:
             parts.append(f"{photo_date.year}年{photo_date.month}月")
@@ -187,19 +189,11 @@ class Indexer:
             if season:
                 parts.append(f"季节: {season}")
 
-            weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-            parts.append(weekday[photo_date.weekday()])
-
+            # 简化为3个时段（白天、傍晚、夜晚）- 去掉过于细分的"早晨"、"上午"、"中午"
             hour = photo_date.hour
-            if 5 <= hour < 9:
-                period = "早晨"
-            elif 9 <= hour < 12:
-                period = "上午"
-            elif 12 <= hour < 14:
-                period = "中午"
-            elif 14 <= hour < 18:
-                period = "下午"
-            elif 18 <= hour < 22:
+            if 6 <= hour < 17:
+                period = "白天"
+            elif 17 <= hour < 21:
                 period = "傍晚"
             else:
                 period = "夜晚"

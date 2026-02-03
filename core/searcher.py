@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+import numpy as np
 from utils.vector_store import VectorStore
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ class Searcher:
         self.index_loaded = False
         self.index_path = vector_store.index_path
         self.metadata_path = vector_store.metadata_path
-        self.metric = getattr(vector_store, "metric", "l2")
+        self.metric = getattr(vector_store, "metric", "cosine")
 
     def load_index(self) -> bool:
         """
@@ -92,7 +93,8 @@ class Searcher:
             return results
 
         start = self._parse_date(start_date) if start_date else None
-        end = self._parse_date(end_date) if end_date else None
+        # 修复边界问题：end_date包含到当天结束，所以使用<=比较
+        end = self._parse_date(end_date, is_end_date=True) if end_date else None
         if start is None and end is None:
             return results
 
@@ -115,18 +117,148 @@ class Searcher:
 
     def _distance_to_score(self, distance: float) -> float:
         """
-        将L2距离转换为0-1的相似度分数。
+        将距离转换为0-1的相似度分数。
+
+        改进：Cosine使用Sigmoid映射增强高分区，L2使用指数衰减。
         """
         if self.metric == "cosine":
+            # Cosine相似度范围 [-1, 1]，映射到 [0, 1]
             similarity = max(-1.0, min(1.0, distance))
-            return round(max(0.0, min(1.0, (similarity + 1.0) / 2.0)), 6)
+            score = (similarity + 1.0) / 2.0
+            # 高分区拉伸，低分区压缩
+            if score > 0.7:
+                score = 0.7 + (score - 0.7) * 1.3
+            elif score < 0.3:
+                score = score * 0.8
+            return round(max(0.0, min(1.0, score)), 6)
+        # L2距离：使用指数衰减替代线性反比，更平滑
         if distance < 0:
             distance = 0
-        return round(1.0 / (1.0 + distance), 6)
+        # alpha=0.5 在 distance=1 时给出约0.61，比 1/2=0.5 更合理
+        return round(round(float(np.exp(-0.5 * distance)), 6), 6)
+
+    def _calculate_dynamic_threshold(
+        self,
+        scores: List[float],
+        top_k: int,
+    ) -> float:
+        """
+        基于分数分布计算动态自适应阈值（简化版）。
+
+        改进：使用简单有效的策略，移除复杂且不稳定的多种方法组合。
+        """
+        if not scores:
+            return 0.1
+
+        n = len(scores)
+
+        # 如果候选数量很少，使用第top_k位置的分数作为基准
+        if n <= top_k * 2:
+            return max(scores[-1] * 0.9, 0.05)
+
+        # 使用第一四分位数作为基础阈值
+        q25 = np.percentile(scores, 25)
+        q75 = np.percentile(scores, 75)
+        median = np.median(scores)
+
+        # 计算变异系数，判断分数分布的稳定性
+        if median > 0:
+            cv = (q75 - q25) / median
+        else:
+            cv = 1.0
+
+        # 根据分布特征选择阈值
+        if cv < 0.2:
+            # 分数集中：使用稍严格阈值
+            threshold = max(median * 0.85, q25 * 0.9)
+        elif cv < 0.5:
+            # 分数中等分散：使用分位数阈值
+            threshold = q25
+        else:
+            # 分数高度分散：使用宽松阈值，保留更多结果
+            threshold = max(q25 * 0.7, median * 0.7)
+
+        # 确保top_k结果有机会返回
+        if n >= top_k:
+            min_threshold = scores[top_k - 1] * 0.8
+            threshold = max(threshold, min_threshold)
+
+        # 下限保护
+        return round(max(threshold, 0.05), 6)
+
+    def _get_gradient_threshold(
+        self,
+        scores: List[float],
+        top_k: int,
+    ) -> float:
+        """
+        基于分数梯度检测自然断点。
+
+        寻找分数骤降的位置,即"自然边界"。
+        如果最大降阶超过30%,则使用该位置分数作为阈值。
+
+        Args:
+            scores: 降序排列的分数列表
+            top_k: 用户请求的结果数量
+
+        Returns:
+            float: 基于梯度的阈值
+        """
+        if len(scores) < 2:
+            return 0.1
+
+        import numpy as np
+
+        # 计算相邻分数的梯度
+        gradients = []
+        for i in range(len(scores) - 1):
+            drop_ratio = (scores[i] - scores[i + 1]) / (scores[i] + 1e-6)
+            gradients.append(drop_ratio)
+
+        # 找到最大降阶的位置（下降比例最大的地方）
+        max_drop_index = np.argmax(gradients)
+        max_drop = gradients[max_drop_index]
+
+        # 如果最大降阶超过30%,使用该位置分数作为阈值
+        if max_drop > 0.3:
+            return scores[max_drop_index + 1]
+
+        # 否则,使用第一四分位数作为回退
+        return max(np.percentile(scores, 25), 0.05)
+
+    def _get_statistical_threshold(
+        self,
+        scores: List[float],
+        top_k: int,
+    ) -> float:
+        """
+        基于分数统计特性计算阈值。
+
+        使用均值和标准差,低于均值-1.5倍标准差视为异常。
+
+        Args:
+            scores: 降序排列的分数列表
+            top_k: 用户请求的结果数量
+
+        Returns:
+            float: 基于统计特性的阈值
+        """
+        import numpy as np
+
+        mean = np.mean(scores)
+        std = np.std(scores)
+
+        # 使用1.5倍标准差(比传统的2倍更严格)
+        threshold = max(mean - 1.5 * std, 0.1)
+
+        # 保护下限:不低于0.05
+        return max(threshold, 0.05)
 
     def _calculate_candidate_k(self, normalized_top_k: int, has_time_filter: bool) -> int:
         """
-        根据是否有时间过滤动态计算候选数量。
+        根据数据集规模和时间过滤动态计算候选数量。
+
+        改进：考虑数据集规模的自适应策略，避免大数据集召回不足。
 
         Args:
             normalized_top_k: 用户请求的结果数量
@@ -135,17 +267,33 @@ class Searcher:
         Returns:
             int: 候选数量
         """
-        if has_time_filter:
-            # 有时间过滤：扩大候选集，保证过滤后仍有足够结果
-            multiplier = 10
-            max_candidate = 100
-        else:
-            # 无时间过滤：保持原有策略
-            multiplier = 5
-            max_candidate = 50
+        total_items = self.vector_store.get_total_items()
 
-        candidate_k = normalized_top_k * multiplier
-        return min(candidate_k, max_candidate)
+        # 基础乘数：有过滤时扩大候选集
+        base_multiplier = 10 if has_time_filter else 5
+
+        # 数据集规模自适应
+        if total_items <= 50:
+            # 微型数据集：检索全部
+            candidate_k = total_items
+        elif total_items <= 500:
+            # 小数据集：5-10倍
+            candidate_k = normalized_top_k * base_multiplier
+        elif total_items <= 5000:
+            # 中等数据集：3-5倍，最小100
+            candidate_k = max(
+                normalized_top_k * (base_multiplier - 2),
+                100
+            )
+        else:
+            # 大数据集：使用对数缩放，1%或上限500
+            candidate_k = max(
+                normalized_top_k * 3,
+                min(int(total_items * 0.01), 500)
+            )
+
+        # 不超过实际数据量
+        return min(candidate_k, total_items)
 
     def _has_time_terms(self, query: str) -> bool:
         patterns = [
@@ -209,9 +357,23 @@ class Searcher:
             )
 
         enriched.sort(key=lambda x: x["score"], reverse=True)
-        for rank, item in enumerate(enriched, start=1):
+
+        scores = [item["score"] for item in enriched]
+
+        if scores:
+            dynamic_threshold = self._calculate_dynamic_threshold(scores, normalized_top_k)
+            threshold_filtered = [
+                item for item in enriched
+                if item["score"] >= dynamic_threshold
+            ]
+        else:
+            threshold_filtered = enriched
+
+        final_results = threshold_filtered[:normalized_top_k]
+
+        for rank, item in enumerate(final_results, start=1):
             item["rank"] = rank
-        return enriched
+        return final_results
 
     def get_index_stats(self) -> Dict[str, Any]:
         """
@@ -224,10 +386,42 @@ class Searcher:
             "index_path": self.index_path,
         }
 
-    def _parse_date(self, value: str) -> Optional[datetime]:
+    def _parse_date(self, value: str, is_end_date: bool = False) -> Optional[datetime]:
+        """
+        解析多种日期格式，支持EXIF标准格式。
+
+        改进：支持更多日期格式，包括标准EXIF冒号分隔格式。
+        """
+        if not value or not isinstance(value, str):
+            return None
+
+        # 支持的日期格式列表
+        formats = [
+            "%Y-%m-%d",                    # 2024-01-01
+            "%Y-%m-%dT%H:%M:%S",           # 2024-01-01T08:30:00
+            "%Y-%m-%d %H:%M:%S",           # 2024-01-01 08:30:00
+            "%Y:%m:%d %H:%M:%S",          # EXIF标准格式: 2024:01:01 08:30:00
+            "%Y/%m/%d %H:%M:%S",          # 2024/01/01 08:30:00
+            "%Y/%m/%d",                    # 2024/01/01
+            "%Y%m%d",                      # 20240101
+        ]
+
+        # 移除常见的干扰字符（EXIF可能有空填充）
+        cleaned = value.strip().rstrip("\x00")
+
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(cleaned, fmt)
+                # 如果是日期格式（无时间），设为当天结束23:59:59
+                if fmt in ["%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"]:
+                    if is_end_date:
+                        return datetime(parsed.year, parsed.month, parsed.day, 23, 59, 59)
+                return parsed
+            except ValueError:
+                continue
+
+        # 尝试ISO格式作为最后的回退
         try:
-            if len(value) == 10:
-                return datetime.strptime(value, "%Y-%m-%d")
-            return datetime.fromisoformat(value)
+            return datetime.fromisoformat(cleaned)
         except Exception:
             return None

@@ -27,7 +27,7 @@ class VectorStore:
         dimension: Optional[int],
         index_path: str,
         metadata_path: str,
-        metric: str = "l2",
+        metric: str = "cosine",
     ) -> None:
         """
         初始化FAISS索引与存储路径。
