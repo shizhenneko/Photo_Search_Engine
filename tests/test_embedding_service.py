@@ -9,8 +9,9 @@ if project_root not in sys.path:
 
 from config import get_config
 import torch
+from unittest.mock import Mock
 
-from utils.embedding_service import OpenAIEmbeddingService, T5EmbeddingService
+from utils.embedding_service import OpenAIEmbeddingService, T5EmbeddingService, VolcanoEmbeddingService
 
 
 class EmbeddingServiceTests(unittest.TestCase):
@@ -119,6 +120,115 @@ class EmbeddingServiceTests(unittest.TestCase):
         self.assertEqual(len(result1), len(result2))
         # OpenAI embeddings may have slight variations, only check dimension consistency
         # not exact vector match (which would require deterministic model behavior)
+
+
+class TestVolcanoEmbeddingService(unittest.TestCase):
+    """火山引擎 Embedding 服务测试。"""
+    
+    def test_init_requires_api_key(self) -> None:
+        """测试初始化必须提供 API 密钥。"""
+        with self.assertRaises(ValueError) as context:
+            VolcanoEmbeddingService(api_key="")
+        self.assertIn("VOLCANO_API_KEY", str(context.exception))
+    
+    def test_dimension_is_4096(self) -> None:
+        """测试向量维度固定为 4096。"""
+        # Mock 客户端
+        mock_client = Mock()
+        service = VolcanoEmbeddingService(
+            api_key="test-key",
+            client=mock_client,
+        )
+        self.assertEqual(service.dimension, 4096)
+    
+    def test_generate_embedding_returns_list(self) -> None:
+        """测试生成嵌入返回列表。"""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [Mock(embedding=[0.1] * 4096)]
+        mock_client.embeddings.create.return_value = mock_response
+        
+        service = VolcanoEmbeddingService(
+            api_key="test-key",
+            client=mock_client,
+        )
+        
+        result = service.generate_embedding("测试文本")
+        
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 4096)
+    
+    def test_generate_embedding_retries_on_failure(self) -> None:
+        """测试失败后自动重试。"""
+        mock_client = Mock()
+        mock_client.embeddings.create.side_effect = [
+            Exception("网络错误"),
+            Exception("网络错误"),
+            Mock(data=[Mock(embedding=[0.1] * 4096)]),  # 第三次成功
+        ]
+        
+        service = VolcanoEmbeddingService(
+            api_key="test-key",
+            max_retries=3,
+            client=mock_client,
+        )
+        
+        result = service.generate_embedding("测试文本")
+        self.assertEqual(len(result), 4096)
+        self.assertEqual(mock_client.embeddings.create.call_count, 3)
+    
+    def test_generate_embedding_raises_after_max_retries(self) -> None:
+        """测试超过最大重试次数后抛出异常。"""
+        mock_client = Mock()
+        mock_client.embeddings.create.side_effect = Exception("持续失败")
+        
+        service = VolcanoEmbeddingService(
+            api_key="test-key",
+            max_retries=3,
+            client=mock_client,
+        )
+        
+        with self.assertRaises(ValueError) as context:
+            service.generate_embedding("测试文本")
+        self.assertIn("向量生成失败", str(context.exception))
+    
+    def test_generate_embedding_batch(self) -> None:
+        """测试批量生成嵌入。"""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [
+            Mock(embedding=[0.1] * 4096),
+            Mock(embedding=[0.2] * 4096),
+        ]
+        mock_client.embeddings.create.return_value = mock_response
+        
+        service = VolcanoEmbeddingService(
+            api_key="test-key",
+            client=mock_client,
+        )
+        
+        texts = ["文本1", "文本2"]
+        results = service.generate_embedding_batch(texts)
+        
+        self.assertEqual(len(results), 2)
+        self.assertEqual(len(results[0]), 4096)
+    
+    @unittest.skipIf(
+        not bool(os.getenv("VOLCANO_API_KEY")),
+        "VOLCANO_API_KEY 未设置，跳过集成测试"
+    )
+    def test_real_api_integration(self) -> None:
+        """集成测试：真实 API 调用（需要配置环境变量）。"""
+        service = VolcanoEmbeddingService(
+            api_key=os.getenv("VOLCANO_API_KEY"),
+            base_url=os.getenv("VOLCANO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+        )
+        
+        result = service.generate_embedding("测试火山引擎嵌入服务")
+        
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 4096)
+        self.assertTrue(all(isinstance(x, float) for x in result))
 
 
 if __name__ == "__main__":

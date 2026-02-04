@@ -13,6 +13,9 @@ faiss-cpu
 openai>=1.0.0
 sentence-transformers>=2.2.0
 
+# 搜索服务
+elasticsearch>=8.0.0
+
 # 工具库
 python-dotenv
 piexif>=1.1.3
