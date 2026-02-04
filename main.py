@@ -38,28 +38,30 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher]:
     data_dir = str(config.get("DATA_DIR", "./data"))
     os.makedirs(data_dir, exist_ok=True)
 
-    # 修改：使用火山引擎 Embedding 服务，如果未配置 API Key 则回退到本地模型（或者根据需求报错）
-    # 注意：根据BUG_FIX.md，这里我们优先使用VolcanoService
-    volcano_api_key = str(config.get("VOLCANO_API_KEY", ""))
-    
-    if volcano_api_key and volcano_api_key != "None":
-        from utils.embedding_service import VolcanoEmbeddingService
-        embedding_service = VolcanoEmbeddingService(
-            api_key=volcano_api_key,
-            model_name=str(config.get("VOLCANO_EMBEDDING_MODEL", "doubao-embedding-large-text-240915")),
-            base_url=str(config.get("VOLCANO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")),
+    # 使用阿里百炼 Embedding 服务，如果未配置 API Key 则回退到本地模型
+    embedding_api_key = str(config.get("EMBEDDING_API_KEY", ""))
+
+    if embedding_api_key and embedding_api_key != "None":
+        from utils.embedding_service import DashscopeEmbeddingService
+
+        dashscope_service = DashscopeEmbeddingService(
+            api_key=embedding_api_key,
+            model_name=str(config.get("EMBEDDING_MODEL", "text-embedding-v4")),
+            base_url=str(config.get("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")),
             timeout=int(config.get("TIMEOUT", 30)),
             max_retries=int(config.get("MAX_RETRIES", 3)),
         )
+        embedding_service = dashscope_service
+        embedding_dimension = dashscope_service.dimension
     else:
-        # Fallback or original
-        print("Warning: VOLCANO_API_KEY not set. Falling back to local T5EmbeddingService.")
+        print("Warning: EMBEDDING_API_KEY not set. Falling back to local T5EmbeddingService.")
         embedding_service = T5EmbeddingService(
             model_name=str(config.get("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5"))
         )
+        embedding_dimension = int(config.get("EMBEDDING_DIMENSION", 4096))
 
     vector_store = VectorStore(
-        dimension=int(config.get("EMBEDDING_DIMENSION", 4096)),
+        dimension=embedding_dimension,
         index_path=str(config.get("INDEX_PATH", os.path.join(data_dir, "photo_search.index"))),
         metadata_path=str(config.get("METADATA_PATH", os.path.join(data_dir, "metadata.json"))),
         metric=str(config.get("VECTOR_METRIC", "cosine")),
@@ -79,8 +81,9 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher]:
         image_format=str(config.get("IMAGE_FORMAT", "WEBP")),
     )
 
+    openrouter_api_key = str(config.get("OPENROUTER_API_KEY", ""))
     time_parser = TimeParser(
-        api_key=str(config.get("OPENROUTER_API_KEY", "")),
+        api_key=openrouter_api_key,
         model_name=str(config.get("TIME_PARSE_MODEL_NAME", "openai/gpt-3.5-turbo")),
         base_url=str(config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")),
         timeout=int(config.get("TIMEOUT", 30)),
@@ -108,8 +111,8 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher]:
             from utils.query_formatter import QueryFormatter
             query_formatter = QueryFormatter(
                 api_key=qf_api_key,
-                model_name=str(config.get("QUERY_FORMAT_MODEL", "doubao-pro-32k")),
-                base_url=str(config.get("QUERY_FORMAT_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")),
+                model_name=str(config.get("QUERY_FORMAT_MODEL", "kimi-k2-0905-preview")),
+                base_url=str(config.get("QUERY_FORMAT_BASE_URL", "https://api.moonshot.cn/v1")),
                 timeout=int(config.get("TIMEOUT", 30)),
                 max_retries=int(config.get("MAX_RETRIES", 3)),
             )
@@ -183,8 +186,8 @@ def _validate_required_config(config: Dict[str, object]) -> None:
     """
     if not config.get("PHOTO_DIR"):
         raise ValueError("PHOTO_DIR环境变量未设置")
-    if not config.get("OPENROUTER_API_KEY"):
-        raise ValueError("OPENROUTER_API_KEY环境变量未设置")
+    if not config.get("OPENROUTER_API_KEY") and not config.get("EMBEDDING_API_KEY"):
+        raise ValueError("OPENROUTER_API_KEY 或 EMBEDDING_API_KEY 至少需要设置一个")
 
 
 def main() -> None:

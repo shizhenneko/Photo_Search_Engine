@@ -102,16 +102,20 @@ class Indexer:
         调用Vision LLM生成描述，失败时使用文件名降级策略。
         """
         last_error: Optional[Exception] = None
-        for _ in range(self.max_retries):
+        for attempt in range(self.max_retries):
             try:
+                print(f"[INFO] 尝试生成图片描述 (第{attempt+1}/{self.max_retries}次): {photo_path}")
                 description = self.vision_llm_service.generate_description(photo_path)
                 if not description:
                     raise ValueError("描述结果为空")
+                print(f"[INFO] Vision LLM返回描述成功")
                 return description
             except Exception as exc:
                 last_error = exc
+                print(f"[WARN] Vision LLM调用失败 (第{attempt+1}次): {exc}")
                 time.sleep(0.5)
 
+        print(f"[FALLBACK] Vision LLM失败，使用降级描述策略")
         fallback = generate_fallback_description(photo_path)
         self._fallback_count += 1
         if last_error is not None:
@@ -124,12 +128,19 @@ class Indexer:
         """
         results: List[Dict[str, Any]] = []
         for photo_path in photo_paths:
+            print(f"[INFO] 开始处理图片: {photo_path}")
             try:
                 description = self.generate_description(photo_path)
+                print(f"[INFO] 图片描述生成成功: {description[:50]}...")
+                
                 exif_data = extract_exif_metadata(photo_path)
                 file_time = get_file_time(photo_path)
                 search_text = self._build_search_text(description, photo_path, exif_data, file_time)
+                
+                print(f"[INFO] 开始生成embedding向量...")
                 embedding = self.embedding_service.generate_embedding(search_text)
+                print(f"[INFO] Embedding生成成功，维度: {len(embedding)}")
+                
                 results.append(
                     {
                         "photo_path": photo_path,
@@ -142,7 +153,13 @@ class Indexer:
                         "error": None,
                     }
                 )
+                print(f"[SUCCESS] 图片处理成功: {photo_path}")
             except Exception as exc:
+                import traceback
+                error_trace = traceback.format_exc()
+                print(f"[ERROR] 处理图片失败: {photo_path}")
+                print(f"[ERROR] 错误信息: {exc}")
+                print(f"[ERROR] 详细堆栈:\n{error_trace}")
                 results.append(
                     {
                         "photo_path": photo_path,

@@ -113,6 +113,149 @@ class OpenAIEmbeddingService(EmbeddingService):
         return embeddings
 
 
+class DashscopeEmbeddingService(EmbeddingService):
+    """
+    阿里百炼 Embedding 服务实现。
+
+    使用 OpenAI SDK 兼容模式调用阿里百炼 API。
+
+    Attributes:
+        api_key (str): 阿里百炼 API 密钥
+        model_name (str): 模型名称（默认 text-embedding-v4）
+        base_url (str): API 基础地址（兼容模式）
+        dimension (int): 输出向量维度（根据模型确定）
+        timeout (int): API 超时时间（秒）
+        max_retries (int): 最大重试次数
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str = "text-embedding-v4",
+        base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        timeout: int = 30,
+        max_retries: int = 3,
+        client: Optional[OpenAI] = None,
+    ) -> None:
+        """
+        初始化阿里百炼 Embedding 服务。
+
+        Args:
+            api_key (str): 阿里百炼 API 密钥（必填）
+            model_name (str): 模型名称
+            base_url (str): API 基础地址（兼容模式）
+            timeout (int): 超时时间（秒）
+            max_retries (int): 最大重试次数
+            client (Optional[OpenAI]): 可选的预配置客户端（用于测试注入）
+
+        Raises:
+            ValueError: API 密钥未设置时抛出
+        """
+        if not api_key:
+            raise ValueError("EMBEDDING_API_KEY 未设置")
+
+        self.api_key = api_key
+        self.model_name = model_name
+        self.base_url = base_url
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.client = client or OpenAI(api_key=api_key, base_url=base_url)
+
+        # 根据模型名称确定向量维度
+        self.dimension = self._infer_dimension(model_name)
+
+    def _infer_dimension(self, model_name: str) -> int:
+        """
+        根据模型名称推断向量维度。
+
+        Args:
+            model_name (str): 模型名称
+
+        Returns:
+            int: 向量维度
+        """
+        dimension_map = {
+            "text-embedding-v1": 1536,
+            "text-embedding-v2": 1536,
+            "text-embedding-v3": 1024,
+            "text-embedding-v4": 1024,
+        }
+        return dimension_map.get(model_name, 1024)
+
+    def generate_embedding(self, text: str) -> List[float]:
+        """
+        生成单条文本的嵌入向量。
+
+        Args:
+            text (str): 输入文本
+
+        Returns:
+            List[float]: 向量
+
+        Raises:
+            ValueError: API 调用失败时抛出
+        """
+        for attempt in range(self.max_retries):
+            try:
+                print(f"[DEBUG] Dashscope Embedding API调用 (第{attempt+1}/{self.max_retries}次), 模型: {self.model_name}, timeout: {self.timeout}s")
+                print(f"[DEBUG] 输入文本长度: {len(text)} 字符")
+                response = self.client.embeddings.create(
+                    model=self.model_name,
+                    input=text,
+                    timeout=self.timeout,
+                )
+                embedding = response.data[0].embedding
+                print(f"[DEBUG] Embedding生成成功，维度: {len(embedding)}")
+                return embedding
+            except Exception as exc:
+                import traceback
+                print(f"[ERROR] Dashscope Embedding API调用失败 (第{attempt+1}/{self.max_retries}次): {type(exc).__name__}: {exc}")
+                if attempt < self.max_retries - 1:
+                    print(f"[DEBUG] 将在1秒后重试...")
+                else:
+                    print(f"[ERROR[ Embedding达到最大重试次数，放弃")
+                    traceback.print_exc()
+                    raise ValueError(f"向量生成失败: {exc}") from exc
+                time.sleep(1)
+        raise ValueError("向量生成失败")
+
+    def generate_embedding_batch(self, texts: List[str]) -> List[List[float]]:
+        """
+        批量生成嵌入向量。
+
+        Args:
+            texts (List[str]): 文本列表
+
+        Returns:
+            List[List[float]]: 向量列表
+
+        Note:
+            阿里百炼支持批量请求，单次最多支持25条文本。
+            超过时自动分批处理。
+        """
+        BATCH_SIZE = 25
+        embeddings: List[List[float]] = []
+
+        for i in range(0, len(texts), BATCH_SIZE):
+            batch = texts[i : i + BATCH_SIZE]
+            for attempt in range(self.max_retries):
+                try:
+                    response = self.client.embeddings.create(
+                        model=self.model_name,
+                        input=batch,
+                        timeout=self.timeout,
+                    )
+                    # 按原始顺序提取向量
+                    batch_embeddings = [item.embedding for item in response.data]
+                    embeddings.extend(batch_embeddings)
+                    break
+                except Exception as exc:
+                    if attempt == self.max_retries - 1:
+                        raise ValueError(f"批量向量生成失败: {exc}") from exc
+                    time.sleep(1)
+
+        return embeddings
+
 class T5EmbeddingService(EmbeddingService):
     """
     基于sentenceTransformers的T5嵌入服务。

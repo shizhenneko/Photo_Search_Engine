@@ -44,6 +44,12 @@ def load_config() -> Dict[str, Any]:
         "VISION_MODEL_NAME": os.getenv("VISION_MODEL_NAME", "openai/gpt-4o"),
         "EMBEDDING_MODEL_NAME": os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5"),
         "EMBEDDING_DIMENSION": _get_int("EMBEDDING_DIMENSION", 4096),
+
+        # 阿里百炼 Embedding 配置
+        "EMBEDDING_API_KEY": os.getenv("EMBEDDING_API_KEY"),
+        "EMBEDDING_BASE_URL": os.getenv("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        "EMBEDDING_MODEL": os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
+
         "TIME_PARSE_MODEL_NAME": os.getenv("TIME_PARSE_MODEL_NAME", "openai/gpt-3.5-turbo"),
         "SERVER_HOST": os.getenv("SERVER_HOST", "localhost"),
 

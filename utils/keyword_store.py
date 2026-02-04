@@ -45,12 +45,12 @@ class KeywordStore:
             self.es_client = client
         else:
             auth = (username, password) if username and password else None
-            # Prepare config
-            es_config = {"hosts": [{"host": host, "port": port}]}
+            scheme = "https" if username and password else "http"
+            url = f"{scheme}://{host}:{port}"
             if auth:
-                es_config["basic_auth"] = auth
-                
-            self.es_client = Elasticsearch(**es_config)
+                self.es_client = Elasticsearch(url, basic_auth=auth)
+            else:
+                self.es_client = Elasticsearch(url)
         
         self._ensure_index()
     

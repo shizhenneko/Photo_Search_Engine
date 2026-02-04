@@ -199,6 +199,7 @@ class OpenRouterVisionLLMService(VisionLLMService):
 
         for attempt in range(self.max_retries):
             try:
+                print(f"[DEBUG] Vision LLM API调用 (第{attempt+1}/{self.max_retries}次), 模型: {self.model_name}, timeout: {self.timeout}s")
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=messages,
@@ -210,7 +211,13 @@ class OpenRouterVisionLLMService(VisionLLMService):
                     raise ValueError("Vision LLM返回空描述")
                 return content
             except Exception as exc:
-                if attempt == self.max_retries - 1:
+                import traceback
+                print(f"[ERROR] Vision LLM API调用失败 (第{attempt+1}/{self.max_retries}次): {type(exc).__name__}: {exc}")
+                if attempt < self.max_retries - 1:
+                    print(f"[DEBUG] 将在1秒后重试...")
+                else:
+                    print(f"[ERROR] Vision LLM达到最大重试次数，放弃")
+                    traceback.print_exc()
                     raise ValueError(f"生成描述失败: {exc}") from exc
                 time.sleep(1)
 
