@@ -18,6 +18,7 @@ from utils.vector_store import VectorStore
 if TYPE_CHECKING:
     from utils.embedding_service import EmbeddingService
     from utils.vision_llm_service import VisionLLMService
+    from utils.keyword_store import KeywordStore
 
 
 class Indexer:
@@ -31,6 +32,7 @@ class Indexer:
         vision: "VisionLLMService",
         embedding: "EmbeddingService",
         vector_store: VectorStore,
+        keyword_store: Optional["KeywordStore"] = None,
         data_dir: str = "./data",
         batch_size: int = 10,
         max_retries: int = 3,
@@ -45,6 +47,7 @@ class Indexer:
         self.vision_llm_service = vision
         self.embedding_service = embedding
         self.vector_store = vector_store
+        self.keyword_store = keyword_store
         self.batch_size = max(1, batch_size)
         self.max_retries = max(1, max_retries)
         self.timeout = max(1, timeout)
@@ -274,6 +277,30 @@ class Indexer:
                                 "file_time": item["file_time"],
                             }
                             self.vector_store.add_item(item["embedding"], metadata)
+                            
+                            # Sync to KeywordStore
+                            if self.keyword_store is not None:
+                                import hashlib
+                                doc_id = hashlib.md5(item["photo_path"].encode()).hexdigest()
+                                
+                                # Format time text from available metadata
+                                time_parts = []
+                                if item.get("file_time"):
+                                    time_parts.append(str(item["file_time"]))
+                                if item.get("exif_data"):
+                                    # Simple extraction of date strings from EXIF
+                                    for k, v in item["exif_data"].items():
+                                        if "date" in str(k).lower() or "time" in str(k).lower():
+                                            time_parts.append(str(v))
+                                
+                                document = {
+                                    "photo_path": item["photo_path"],
+                                    "description": item["description"],
+                                    "file_name": os.path.basename(item["photo_path"]),
+                                    "time_text": " ".join(time_parts),
+                                }
+                                self.keyword_store.add_document(doc_id, document)
+
                             success_count += 1
                         except Exception as exc:
                             failed_count += 1

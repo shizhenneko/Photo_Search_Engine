@@ -10,6 +10,8 @@ from utils.vector_store import VectorStore
 if TYPE_CHECKING:
     from utils.embedding_service import EmbeddingService
     from utils.time_parser import TimeParser
+    from utils.keyword_store import KeywordStore
+    from utils.query_formatter import QueryFormatter
 
 
 class Searcher:
@@ -22,17 +24,42 @@ class Searcher:
         embedding: "EmbeddingService",
         time_parser: "TimeParser",
         vector_store: VectorStore,
+        keyword_store: Optional["KeywordStore"] = None,
+        query_formatter: Optional["QueryFormatter"] = None,
         data_dir: str = "./data",
         top_k: int = 10,
+        vector_weight: float = 0.8,
+        keyword_weight: float = 0.2,
     ) -> None:
         """
         初始化检索器并记录索引路径与加载状态。
+
+        Args:
+            embedding: 嵌入服务
+            time_parser: 时间解析器
+            vector_store: 向量存储
+            keyword_store: 关键字存储（可选，不传则禁用混合检索）
+            query_formatter: 查询格式化服务（可选）
+            data_dir: 数据目录
+            top_k: 默认返回数量
+            vector_weight: 向量检索权重（0-1）
+            keyword_weight: 关键字检索权重（0-1）
+
+        Raises:
+            ValueError: 权重之和不为 1 时抛出
         """
+        if abs(vector_weight + keyword_weight - 1.0) > 0.001:
+            raise ValueError("vector_weight + keyword_weight 必须等于 1.0")
+
         self.embedding_service = embedding
         self.time_parser = time_parser
         self.vector_store = vector_store
+        self.keyword_store = keyword_store
+        self.query_formatter = query_formatter
         self.data_dir = data_dir
         self.top_k = max(1, top_k)
+        self.vector_weight = vector_weight
+        self.keyword_weight = keyword_weight
         self.index_loaded = False
         self.index_path = vector_store.index_path
         self.metadata_path = vector_store.metadata_path
@@ -320,9 +347,83 @@ class Searcher:
             cleaned = re.sub(pattern, " ", cleaned)
         return re.sub(r"\s+", " ", cleaned).strip()
 
+    def _hybrid_search(
+        self,
+        query: str,
+        query_embedding: List[float],
+        candidate_k: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        执行混合检索（向量 + 关键字）。
+
+        Args:
+            query: 原始查询文本
+            query_embedding: 查询向量
+            candidate_k: 候选数量
+
+        Returns:
+            List[Dict[str, Any]]: 混合排序后的结果
+        """
+        # 1. 向量检索
+        vector_results = self.vector_store.search(query_embedding, candidate_k)
+
+        # 2. 构建向量分数映射
+        vector_scores: Dict[str, float] = {}
+        # 同时保存 vector result 的 metadata，后续使用
+        vector_metadata: Dict[str, Dict[str, Any]] = {}
+
+        for item in vector_results:
+            metadata = item.get("metadata") or {}
+            photo_path = metadata.get("photo_path", "")
+            score = self._distance_to_score(float(item.get("distance", 0.0)))
+            vector_scores[photo_path] = score
+            vector_metadata[photo_path] = metadata
+
+        # 3. 关键字检索（如果启用）
+        keyword_scores: Dict[str, float] = {}
+        if self.keyword_store is not None:
+            keyword_results = self.keyword_store.search(query, candidate_k)
+            for item in keyword_results:
+                keyword_scores[item["photo_path"]] = item["score"]
+
+        # 4. 混合评分
+        all_paths = set(vector_scores.keys()) | set(keyword_scores.keys())
+        combined_results: List[Dict[str, Any]] = []
+
+        for photo_path in all_paths:
+            v_score = vector_scores.get(photo_path, 0.0)
+            k_score = keyword_scores.get(photo_path, 0.0)
+
+            # 加权融合
+            combined_score = (
+                self.vector_weight * v_score + self.keyword_weight * k_score
+            )
+
+            # 获取元数据 (优先从 vector_metadata 获取，如果没有则构造基础 metadata)
+            metadata = vector_metadata.get(photo_path)
+            if not metadata:
+                # 只有关键字命中的情况 (metadata不全，可能有风险，但至少返回路径)
+                # 注意：如果 metadata 不全，时间过滤可能会有问题（如果没有 timestamp）
+                metadata = {"photo_path": photo_path, "description": "Keyword Match Only"}
+
+            combined_results.append({
+                "photo_path": photo_path,
+                "description": metadata.get("description", ""),
+                "score": round(combined_score, 6),
+                "vector_score": round(v_score, 6),
+                "keyword_score": round(k_score, 6),
+                "rank": 0, # Placeholder
+                "metadata": metadata # Pass full metadata for downstream filtering
+            })
+
+        # 5. 按混合分数降序排序
+        combined_results.sort(key=lambda x: x["score"], reverse=True)
+
+        return combined_results
+
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """
-        解析查询、执行向量检索、时间过滤并返回排序结果。
+        解析查询、执行混合检索、时间过滤并返回排序结果。
         """
         if not self.validate_query(query):
             raise ValueError("查询内容不合法，请输入5-500字符的描述")
@@ -331,49 +432,110 @@ class Searcher:
             raise ValueError("索引未加载，请先初始化索引")
 
         normalized_top_k = max(1, min(int(top_k), 50))
+        
+        # 1. 查询格式化
+        formatted_query = query
+        time_hints = {}
+        
+        if self.query_formatter is not None and self.query_formatter.is_enabled():
+            format_result = self.query_formatter.format_query(query)
+            formatted_query = format_result.get("search_text", query)
+            time_hints = {
+                "time_hint": format_result.get("time_hint"),
+                "season": format_result.get("season"),
+            }
+            # 如果格式化结果有时间，可以辅助时间解析（这部分逻辑可根据需求扩展）
+
+        # 2. 时间解析
         constraints = {"start_date": None, "end_date": None, "precision": "none"}
-        cleaned_query = query
-        has_time_filter = self._has_time_terms(query)
+        cleaned_query = formatted_query  # 默认使用格式化后的查询
+        has_time_filter = self._has_time_terms(query) # 仍使用原始查询检查时间词
 
         if has_time_filter:
             constraints = self._extract_time_constraints(query)
-            cleaned_query = self._strip_time_terms(query) or query
-
+            # 如果没有格式化服务，或者即使有格式化也需要手动清除时间词（格式化服务通常已经处理好了，但双重保险）
+            if not (self.query_formatter and self.query_formatter.is_enabled()):
+                cleaned_query = self._strip_time_terms(query) or query
+        
+        # 3. 向量检索
         query_embedding = self.embedding_service.generate_embedding(cleaned_query)
         candidate_k = self._calculate_candidate_k(normalized_top_k, has_time_filter)
-        raw_results = self.vector_store.search(query_embedding, candidate_k)
-        filtered_results = self._filter_by_time(raw_results, constraints)
 
-        enriched: List[Dict[str, Any]] = []
-        for item in filtered_results:
-            metadata = item.get("metadata") or {}
-            score = self._distance_to_score(float(item.get("distance", 0.0)))
-            enriched.append(
-                {
+        # 执行检索 (混合 or 纯向量)
+        if self.keyword_store is not None:
+             # 混合检索使用原始查询(keyword matching)和向量
+            combined_results = self._hybrid_search(
+                query, query_embedding, candidate_k
+            )
+        else:
+            # 降级为纯向量检索
+            raw_results = self.vector_store.search(query_embedding, candidate_k)
+            combined_results = []
+            for item in raw_results:
+                metadata = item.get("metadata") or {}
+                score = self._distance_to_score(float(item.get("distance", 0.0)))
+                combined_results.append({
                     "photo_path": metadata.get("photo_path"),
                     "description": metadata.get("description"),
                     "score": score,
-                }
-            )
+                    "metadata": metadata # Keep consistency
+                })
 
-        enriched.sort(key=lambda x: x["score"], reverse=True)
+        # 结果过滤链：时间过滤 -> 动态阈值 -> 数量限制
+        
+        filtered_results = []
+        for item in combined_results:
+            # Time Filter
+            if has_time_filter:
+                meta = item.get("metadata", {})
+                if not self._check_time_match(meta, constraints):
+                    continue
+            
+            filtered_results.append(item)
 
-        scores = [item["score"] for item in enriched]
+        scores = [item["score"] for item in filtered_results]
 
         if scores:
             dynamic_threshold = self._calculate_dynamic_threshold(scores, normalized_top_k)
             threshold_filtered = [
-                item for item in enriched
+                item for item in filtered_results
                 if item["score"] >= dynamic_threshold
             ]
         else:
-            threshold_filtered = enriched
+            threshold_filtered = filtered_results
 
         final_results = threshold_filtered[:normalized_top_k]
 
         for rank, item in enumerate(final_results, start=1):
             item["rank"] = rank
+            # Remove internal metadata field before returning to keep API clean
+            if "metadata" in item:
+                del item["metadata"]
+                
         return final_results
+
+    def _check_time_match(self, metadata: Dict[str, Any], constraints: Dict[str, Any]) -> bool:
+        """Helper to check time constraints directly on metadata dict."""
+        # 提取时间
+        exif_date = self._parse_date(metadata.get("exif_date"))
+        file_date = self._parse_date(metadata.get("file_date"))
+        
+        # 优先使用EXIF时间
+        check_date = exif_date or file_date
+        
+        if not check_date:
+            return False
+            
+        start_date = constraints.get("start_date")
+        end_date = constraints.get("end_date")
+        
+        if start_date and check_date < start_date:
+            return False
+        if end_date and check_date > end_date:
+            return False
+            
+        return True
+
 
     def get_index_stats(self) -> Dict[str, Any]:
         """

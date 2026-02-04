@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
@@ -212,6 +213,134 @@ class SearcherTests(unittest.TestCase):
 
         threshold = searcher._calculate_dynamic_threshold([], top_k=10)
         self.assertEqual(threshold, 0.1)
+
+
+class TestSearcherHybridSearch(unittest.TestCase):
+    """混合检索测试。"""
+    
+    def test_hybrid_search_combines_scores(self) -> None:
+        """测试混合检索正确融合向量和关键字分数。"""
+        # Mock 依赖
+        mock_embedding = Mock()
+        mock_embedding.generate_embedding.return_value = [0.1] * 4096
+        
+        mock_vector_store = Mock()
+        mock_vector_store.search.return_value = [
+            {"metadata": {"photo_path": "/a.jpg", "description": "测试A"}, "distance": 0.9},
+            {"metadata": {"photo_path": "/b.jpg", "description": "测试B"}, "distance": 0.7},
+        ]
+        mock_vector_store.get_total_items.return_value = 100
+        mock_vector_store.load.return_value = True
+        mock_vector_store.dimension = 4096
+        mock_vector_store.metric = "cosine"
+        
+        mock_keyword_store = Mock()
+        mock_keyword_store.search.return_value = [
+            {"photo_path": "/a.jpg", "score": 0.8},
+            {"photo_path": "/c.jpg", "score": 0.6},
+        ]
+        
+        mock_time_parser = Mock()
+        mock_time_parser.extract_time_constraints.return_value = {
+            "start_date": None, "end_date": None, "precision": "none"
+        }
+        
+        searcher = Searcher(
+            embedding=mock_embedding,
+            time_parser=mock_time_parser,
+            vector_store=mock_vector_store,
+            keyword_store=mock_keyword_store,
+            vector_weight=0.8,
+            keyword_weight=0.2,
+        )
+        searcher.index_loaded = True
+        
+        results = searcher.search("测试查询", top_k=10)
+        
+        # 验证结果包含向量和关键字两边的照片
+        paths = [r["photo_path"] for r in results]
+        self.assertIn("/a.jpg", paths)  # 两边都有
+    
+    def test_hybrid_search_degrades_without_keyword_store(self) -> None:
+        """测试无 KeywordStore 时降级为纯向量检索。"""
+        mock_embedding = Mock()
+        mock_embedding.generate_embedding.return_value = [0.1] * 512
+        
+        mock_vector_store = Mock()
+        mock_vector_store.search.return_value = [
+            {"metadata": {"photo_path": "/a.jpg", "description": "测试"}, "distance": 0.9},
+        ]
+        mock_vector_store.get_total_items.return_value = 10
+        mock_vector_store.load.return_value = True
+        mock_vector_store.dimension = 512
+        mock_vector_store.metric = "cosine"
+        
+        mock_time_parser = Mock()
+        
+        searcher = Searcher(
+            embedding=mock_embedding,
+            time_parser=mock_time_parser,
+            vector_store=mock_vector_store,
+            keyword_store=None,  # 不传入 KeywordStore
+        )
+        searcher.index_loaded = True
+        
+        results = searcher.search("测试查询", top_k=10)
+        
+        # 应该正常返回结果
+        self.assertEqual(len(results), 1)
+    
+    def test_weight_validation(self) -> None:
+        """测试权重必须和为 1。"""
+        mock_embedding = Mock()
+        mock_vector_store = Mock()
+        mock_time_parser = Mock()
+        
+        with self.assertRaises(ValueError) as context:
+            Searcher(
+                embedding=mock_embedding,
+                time_parser=mock_time_parser,
+                vector_store=mock_vector_store,
+                vector_weight=0.5,
+                keyword_weight=0.3,  # 0.5 + 0.3 != 1
+            )
+        
+        self.assertIn("必须等于 1.0", str(context.exception))
+
+
+class TestSearcherQueryFormatting(unittest.TestCase):
+    """查询格式化集成测试。"""
+    
+    def test_search_uses_formatter(self) -> None:
+        """测试检索时调用查询格式化。"""
+        mock_embedding = Mock()
+        mock_embedding.generate_embedding.return_value = [0.1] * 4096
+        
+        mock_vector_store = Mock()
+        mock_vector_store.search.return_value = []
+        mock_vector_store.load.return_value = True
+        mock_vector_store.dimension = 4096
+        
+        mock_formatter = Mock()
+        mock_formatter.is_enabled.return_value = True
+        mock_formatter.format_query.return_value = {
+            "search_text": "格式化后的查询",
+            "time_hint": None,
+            "season": None,
+        }
+        
+        searcher = Searcher(
+            embedding=mock_embedding,
+            time_parser=Mock(),
+            vector_store=mock_vector_store,
+            query_formatter=mock_formatter,
+        )
+        searcher.index_loaded = True
+        
+        searcher.search("原始查询")
+        
+        mock_formatter.format_query.assert_called_with("原始查询")
+        mock_embedding.generate_embedding.assert_called_with("格式化后的查询")
 
 
 if __name__ == "__main__":
