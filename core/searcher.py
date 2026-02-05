@@ -541,6 +541,110 @@ class Searcher:
         strict_fields = ["year", "month", "day", "season", "time_period", "start_date", "end_date"]
         return any(filters.get(f) is not None for f in strict_fields)
 
+    def _get_metadata_by_path(self, photo_path: str) -> Optional[Dict[str, Any]]:
+        """
+        根据照片路径从 vector_store 获取元数据。
+        
+        Args:
+            photo_path: 照片路径
+        
+        Returns:
+            Optional[Dict[str, Any]]: 元数据，未找到返回 None
+        """
+        if not self.vector_store.metadata:
+            return None
+        
+        for item in self.vector_store.metadata:
+            if item.get("photo_path") == photo_path:
+                return item
+        return None
+
+    def _filter_only_search(
+        self, 
+        constraints: Dict[str, Any], 
+        top_k: int
+    ) -> List[Dict[str, Any]]:
+        """
+        纯过滤查询搜索：跳过向量检索，直接使用 ES 过滤。
+        
+        当查询只包含时间/季节/时段等过滤条件时调用此方法。
+        结果按时间倒序排列（最新的照片优先）。
+        
+        Args:
+            constraints: 过滤条件（year, month, season, time_period, start_date, end_date）
+            top_k: 返回数量
+        
+        Returns:
+            List[Dict[str, Any]]: 搜索结果
+        """
+        if self.keyword_store is None:
+            # 无 ES 时降级为内存过滤
+            return self._memory_filter_search(constraints, top_k)
+        
+        # 构建 ES 过滤条件
+        es_filters = self._build_es_filters(constraints)
+        
+        # 使用 ES 执行纯过滤搜索（无文本查询）
+        results = self.keyword_store.search_with_filters(
+            query=None,  # 无文本查询
+            filters=es_filters,
+            top_k=top_k * 2  # 多取一些用于后续处理
+        )
+        
+        # 构建返回结果
+        final_results = []
+        for rank, item in enumerate(results[:top_k], start=1):
+            photo_path = item["photo_path"]
+            # 从 vector_store 获取完整元数据
+            metadata = self._get_metadata_by_path(photo_path)
+            final_results.append({
+                "photo_path": photo_path,
+                "description": metadata.get("description", "") if metadata else "",
+                "score": 1.0,  # 纯过滤查询不计算相似度
+                "rank": rank,
+            })
+        
+        return final_results
+
+    def _memory_filter_search(
+        self,
+        constraints: Dict[str, Any],
+        top_k: int
+    ) -> List[Dict[str, Any]]:
+        """
+        内存过滤搜索：当无 ES 时的降级方案。
+        
+        遍历所有元数据，根据约束条件过滤。
+        
+        Args:
+            constraints: 过滤条件
+            top_k: 返回数量
+        
+        Returns:
+            List[Dict[str, Any]]: 搜索结果
+        """
+        if not self.vector_store.metadata:
+            return []
+        
+        filtered_results = []
+        for item in self.vector_store.metadata:
+            if self._check_time_match_v2(item, constraints):
+                filtered_results.append({
+                    "photo_path": item.get("photo_path", ""),
+                    "description": item.get("description", ""),
+                    "score": 1.0,
+                    "rank": 0,
+                })
+        
+        # 按照片路径排序（简单的默认排序）
+        filtered_results.sort(key=lambda x: x["photo_path"], reverse=True)
+        
+        # 设置排名
+        for rank, item in enumerate(filtered_results[:top_k], start=1):
+            item["rank"] = rank
+        
+        return filtered_results[:top_k]
+
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """
         解析查询、执行混合检索、时间过滤并返回排序结果。
@@ -583,14 +687,20 @@ class Searcher:
             "precision": "none",
         }
         cleaned_query = formatted_query
-        has_time_filter = self._has_time_terms(query) or self._has_time_period_terms(query)
+        # 扩展过滤检测：时间词、时段词、季节词
+        has_filter = (
+            self._has_time_terms(query) or 
+            self._has_time_period_terms(query) or
+            self._has_season_terms(query)
+        )
 
-        if has_time_filter:
+        if has_filter:
             constraints = self._extract_time_constraints(query)
-            # 清除时间词，保留纯语义部分用于 embedding
+            # 清除时间词、时段词、季节词，保留纯语义部分用于 embedding
             if not (self.query_formatter and self.query_formatter.is_enabled()):
                 cleaned_query = self._strip_time_terms(query)
-                cleaned_query = self._strip_time_period_terms(cleaned_query) or query
+                cleaned_query = self._strip_time_period_terms(cleaned_query)
+                cleaned_query = self._strip_season_terms(cleaned_query) or query
         
         # 合并 QueryFormatter 的时间提示到 ES 过滤条件
         if time_hints.get("season") and not constraints.get("season"):
@@ -598,12 +708,23 @@ class Searcher:
         if time_hints.get("time_period") and not constraints.get("time_period"):
             constraints["time_period"] = time_hints["time_period"]
 
-        # 3. 向量检索（仅基于纯语义描述生成 embedding）
-        # cleaned_query 不包含时间信息，保证向量空间的纯净性
-        query_embedding = self.embedding_service.generate_embedding(cleaned_query)
-        candidate_k = self._calculate_candidate_k(normalized_top_k, has_time_filter)
+        # 3. 检测是否为纯过滤查询（只有过滤条件，没有视觉内容）
+        is_pure_filter = self._is_pure_filter_query(query, cleaned_query)
+        
+        if is_pure_filter:
+            # 纯过滤查询：跳过向量检索，直接使用 ES 过滤
+            return self._filter_only_search(constraints, normalized_top_k)
 
-        # 4. 执行检索（混合检索 + ES 过滤）
+        # 4. 向量检索（仅基于纯语义描述生成 embedding）
+        # cleaned_query 不包含时间信息，保证向量空间的纯净性
+        # 空值防护：确保 cleaned_query 不为空
+        if not cleaned_query or not cleaned_query.strip():
+            cleaned_query = "照片 图片 场景"
+        
+        query_embedding = self.embedding_service.generate_embedding(cleaned_query)
+        candidate_k = self._calculate_candidate_k(normalized_top_k, has_filter)
+
+        # 5. 执行检索（混合检索 + ES 过滤）
         if self.keyword_store is not None:
             # 混合检索：向量语义 + ES 关键字 + EXIF 过滤
             combined_results = self._hybrid_search(
@@ -623,17 +744,17 @@ class Searcher:
                     "metadata": metadata,
                 })
 
-        # 5. 结果过滤链
+        # 6. 结果过滤链
         filtered_results = []
         for item in combined_results:
             # 如果没有 ES（纯向量模式），需要内存过滤时间
-            if self.keyword_store is None and has_time_filter:
+            if self.keyword_store is None and has_filter:
                 meta = item.get("metadata", {})
                 if not self._check_time_match_v2(meta, constraints):
                     continue
             filtered_results.append(item)
 
-        # 6. 动态阈值过滤
+        # 7. 动态阈值过滤
         scores = [item["score"] for item in filtered_results]
         if scores:
             dynamic_threshold = self._calculate_dynamic_threshold(scores, normalized_top_k)
@@ -644,7 +765,7 @@ class Searcher:
         else:
             threshold_filtered = filtered_results
 
-        # 7. 返回 Top-K 结果
+        # 8. 返回 Top-K 结果
         final_results = threshold_filtered[:normalized_top_k]
 
         for rank, item in enumerate(final_results, start=1):
@@ -660,6 +781,58 @@ class Searcher:
             r"凌晨|早晨|早上|上午|中午|下午|傍晚|晚上|夜晚|深夜",
         ]
         return any(re.search(pattern, query) for pattern in patterns)
+
+    def _has_season_terms(self, query: str) -> bool:
+        """检查查询中是否包含季节词汇。"""
+        pattern = r"春天|夏天|秋天|冬天|春季|夏季|秋季|冬季"
+        return bool(re.search(pattern, query))
+
+    def _strip_season_terms(self, query: str) -> str:
+        """从查询中移除季节词汇。"""
+        pattern = r"春天|夏天|秋天|冬天|春季|夏季|秋季|冬季"
+        cleaned = re.sub(pattern, " ", query)
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    def _is_pure_filter_query(self, query: str, cleaned_query: str) -> bool:
+        """
+        检测是否为纯过滤查询（只有过滤条件，没有视觉内容）。
+        
+        纯过滤查询特征：
+        - 包含时间词汇（年、月、日、去年、今年等）
+        - 包含季节词汇（春天、夏天、秋天、冬天）
+        - 包含时段词汇（早上、中午、晚上等）
+        - 清理后的查询为空或只剩"的照片"、"拍的"等无意义词
+        
+        Args:
+            query: 原始查询
+            cleaned_query: 清理时间/季节/时段词汇后的查询
+        
+        Returns:
+            bool: 是否为纯过滤查询
+        """
+        # 检查是否包含过滤条件
+        has_filter = (
+            self._has_time_terms(query) or 
+            self._has_time_period_terms(query) or
+            self._has_season_terms(query)
+        )
+        
+        if not has_filter:
+            return False
+        
+        # 检查清理后是否还有有意义的内容
+        # 移除常见的无意义词汇
+        noise_patterns = [
+            r"的?照片", r"的?图片", r"的?相片", 
+            r"拍的", r"拍摄的", r"的$", r"^的"
+        ]
+        meaningful_text = cleaned_query
+        for pattern in noise_patterns:
+            meaningful_text = re.sub(pattern, "", meaningful_text)
+        meaningful_text = meaningful_text.strip()
+        
+        # 如果清理后为空或长度过短，认为是纯过滤查询
+        return len(meaningful_text) < 2
 
     def _strip_time_period_terms(self, query: str) -> str:
         """从查询中移除时段词汇。"""

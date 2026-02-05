@@ -202,5 +202,49 @@ class VisionServiceTests(unittest.TestCase):
         self.assertIn("/photo?path=", url)
 
 
+class TestVisionPromptStructure(unittest.TestCase):
+    """测试 VisionLLMService prompt 结构的改进。"""
+    
+    def test_prompt_contains_never_constraints(self) -> None:
+        """测试 prompt 包含 NEVER 约束。"""
+        service = OpenRouterVisionLLMService(api_key="test-key")
+        
+        # 通过反射获取 prompt（在 generate_description 方法中定义）
+        # 由于 prompt 是方法内的局部变量，我们检查方法的源代码
+        import inspect
+        source = inspect.getsource(service.generate_description)
+        
+        # 验证 NEVER 约束存在
+        self.assertIn("NEVER", source)
+        self.assertIn("不要推测或提及拍摄时间", source)
+        self.assertIn("不要描述图片外的信息", source)
+    
+    def test_prompt_contains_flow_structure(self) -> None:
+        """测试 prompt 包含流程驱动结构。"""
+        service = OpenRouterVisionLLMService(api_key="test-key")
+        
+        import inspect
+        source = inspect.getsource(service.generate_description)
+        
+        # 验证5步流程存在
+        self.assertIn("第一步", source)
+        self.assertIn("第二步", source)
+        self.assertIn("第三步", source)
+        self.assertIn("第四步", source)
+        self.assertIn("第五步", source)
+    
+    def test_prompt_contains_example(self) -> None:
+        """测试 prompt 包含示例（few-shot）。"""
+        service = OpenRouterVisionLLMService(api_key="test-key")
+        
+        import inspect
+        source = inspect.getsource(service.generate_description)
+        
+        # 验证示例存在
+        self.assertIn("## 示例", source)
+        self.assertIn("输入：", source)
+        self.assertIn("输出：", source)
+
+
 if __name__ == "__main__":
     unittest.main()

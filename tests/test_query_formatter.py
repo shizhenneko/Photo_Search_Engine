@@ -144,3 +144,74 @@ class TestQueryFormatter(unittest.TestCase):
             self.assertEqual(result["time_period"], period)
             # 验证 search_text 不包含时段信息
             self.assertNotIn(period, result["search_text"])
+    
+    def test_no_time_info_returns_null(self) -> None:
+        """测试无时间信息时返回 null，不编造时间字段。"""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content=json.dumps({
+            "scene": "山顶",
+            "objects": ["山峰", "云彩", "天空"],
+            "atmosphere": "壮观",
+            "time_hint": None,
+            "season": None,
+            "time_period": None,
+            "search_text": "山顶上的壮观景色 云雾缭绕的山峰",
+        })))]
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        formatter = QueryFormatter(
+            api_key="test-key",
+            model_name="test-model",
+            base_url="https://test.com",
+            client=mock_client,
+        )
+        
+        result = formatter.format_query("山顶的风景照")
+        
+        # 验证时间字段为 null
+        self.assertIsNone(result["time_hint"])
+        self.assertIsNone(result["season"])
+        self.assertIsNone(result["time_period"])
+        
+        # 验证 search_text 是纯视觉描述
+        self.assertIn("山顶", result["search_text"])
+        self.assertNotIn("时间", result["search_text"])
+    
+    def test_search_text_is_natural_language(self) -> None:
+        """测试 search_text 是自然语言描述，而非关键词拼接。"""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content=json.dumps({
+            "scene": "海滩",
+            "objects": ["人物", "沙滩", "海浪", "家庭"],
+            "atmosphere": "温馨",
+            "time_hint": "去年",
+            "season": "夏天",
+            "time_period": None,
+            "search_text": "海滩沙滩边的家庭合影 温馨的户外场景 多人站在一起",
+        })))]
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        formatter = QueryFormatter(
+            api_key="test-key",
+            model_name="test-model",
+            base_url="https://test.com",
+            client=mock_client,
+        )
+        
+        result = formatter.format_query("请帮我找一下去年夏天在海边拍的全家福")
+        
+        # 验证 search_text 包含语义内容
+        search_text = result["search_text"]
+        self.assertIn("海滩", search_text)
+        self.assertIn("家庭", search_text)
+        
+        # 验证时间信息被正确提取到独立字段
+        self.assertEqual(result["time_hint"], "去年")
+        self.assertEqual(result["season"], "夏天")
+        
+        # 验证 search_text 不包含时间词汇
+        time_words = ["去年", "夏天", "年", "月", "日", "季节", "时段"]
+        for word in time_words:
+            self.assertNotIn(word, search_text)
