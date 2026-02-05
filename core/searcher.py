@@ -561,16 +561,17 @@ class Searcher:
 
     def _filter_only_search(
         self, 
+        query: str,
         constraints: Dict[str, Any], 
         top_k: int
     ) -> List[Dict[str, Any]]:
         """
-        纯过滤查询搜索：跳过向量检索，直接使用 ES 过滤。
+        纯过滤查询搜索：利用 ES 关键字检索与过滤条件。
         
         当查询只包含时间/季节/时段等过滤条件时调用此方法。
-        结果按时间倒序排列（最新的照片优先）。
         
         Args:
+            query: 原始查询文本（用于 ES 关键字匹配）
             constraints: 过滤条件（year, month, season, time_period, start_date, end_date）
             top_k: 返回数量
         
@@ -584,12 +585,17 @@ class Searcher:
         # 构建 ES 过滤条件
         es_filters = self._build_es_filters(constraints)
         
-        # 使用 ES 执行纯过滤搜索（无文本查询）
+        # 使用 ES 执行带关键字的过滤搜索
         results = self.keyword_store.search_with_filters(
-            query=None,  # 无文本查询
+            query=query,  # 传入原始查询以利用 ES 关键字检索
             filters=es_filters,
             top_k=top_k * 2  # 多取一些用于后续处理
         )
+        
+        # 降级机制：如果ES检索结果为空，且有过滤条件，尝试使用内存元数据进行兜底
+        if not results and self.vector_store.metadata:
+            print(f"[WARN] ES检索结果为空，尝试降级到内存元数据检索。query: {query}, filters: {constraints}")
+            return self._memory_filter_search(constraints, top_k)
         
         # 构建返回结果
         final_results = []
@@ -711,9 +717,29 @@ class Searcher:
         # 3. 检测是否为纯过滤查询（只有过滤条件，没有视觉内容）
         is_pure_filter = self._is_pure_filter_query(query, cleaned_query)
         
+        # 额外兜底检查：如果 QueryFormatter 启用但返回了通用描述，也视为纯过滤
+        # 这是为了防止 LLM 在纯过滤场景下仍然生成一些通用词汇
+        if not is_pure_filter and self.query_formatter and self.query_formatter.is_enabled():
+            # 检查 cleaned_query 是否只包含通用词汇
+            test_query = cleaned_query
+            generic_patterns = [r"照片", r"图片", r"相片", r"场景", r"画面", r"摄影", r"作品", r"影像", r"各种"]
+            for pattern in generic_patterns:
+                test_query = re.sub(pattern, "", test_query)
+            test_query = re.sub(r"\s+", "", test_query).strip()
+            
+            # 如果清理后为空且原查询有过滤条件，判定为纯过滤
+            if len(test_query) < 2 and (
+                self._has_time_terms(query) or 
+                self._has_season_terms(query) or 
+                self._has_time_period_terms(query)
+            ):
+                is_pure_filter = True
+                print(f"[DEBUG] QueryFormatter兜底：检测到纯过滤查询，跳过向量检索")
+        
         if is_pure_filter:
-            # 纯过滤查询：跳过向量检索，直接使用 ES 过滤
-            return self._filter_only_search(constraints, normalized_top_k)
+            # 纯过滤查询：跳过向量检索，直接使用 ES 关键字与过滤检索
+            print(f"[DEBUG] 纯过滤查询模式，constraints: {constraints}")
+            return self._filter_only_search(query, constraints, normalized_top_k)
 
         # 4. 向量检索（仅基于纯语义描述生成 embedding）
         # cleaned_query 不包含时间信息，保证向量空间的纯净性

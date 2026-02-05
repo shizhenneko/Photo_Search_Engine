@@ -176,3 +176,10 @@ class VectorStore:
         if self.index is None:
             return 0
         return int(self.index.ntotal)
+
+    def clear(self) -> None:
+        """
+        清空索引与元数据。
+        """
+        self.index = self._create_index(self.dimension) if self.dimension else None
+        self.metadata = []

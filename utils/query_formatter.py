@@ -105,8 +105,16 @@ class QueryFormatter:
 
 规则：
 - search_text只含视觉内容，禁止年月日季节时段
+- **如果查询只包含过滤条件（时间/季节/时段）+"的照片"等通用词，search_text必须留空**
+- **只有当查询包含具体场景/物体/人物/活动等视觉要素时，才填写search_text**
 - time_hint保留原始表达如"去年夏天"、"2023年"
 - 无时间信息时对应字段为null
+
+示例：
+- "夏天的照片" → {{"search_text": "", "season": "夏天"}}
+- "夏天海边的照片" → {{"search_text": "海边沙滩海浪", "season": "夏天"}}
+- "2023年的照片" → {{"search_text": "", "time_hint": "2023年"}}
+- "傍晚拍的照片" → {{"search_text": "", "time_period": "傍晚"}}
 
 用户查询：{user_query}"""
 
@@ -130,12 +138,28 @@ class QueryFormatter:
                 # 时间信息（season, time_period, time_hint）作为独立字段返回
                 # Searcher 会根据这些独立字段构建 ES 过滤条件
                 
-                # 空值防护：确保 search_text 不为空
-                # 如果 LLM 返回空的 search_text（纯过滤查询场景），回退到原始查询
-                # Searcher 会进一步判断是否为纯过滤查询并走相应分支
+                # 空值防护与通用词过滤：
+                # 1. 如果 LLM 返回空的 search_text（纯过滤查询场景），保持为空
+                # 2. 如果 search_text 只包含通用词汇（照片、图片等），也视为空
+                # 3. Searcher 会判断为纯过滤查询并走 ES 过滤分支
                 search_text = result.get("search_text", "")
-                if not search_text or not search_text.strip():
-                    search_text = user_query
+                if search_text and search_text.strip():
+                    # 检查是否只包含通用无意义词汇
+                    test_text = search_text
+                    generic_patterns = [
+                        r"照片", r"图片", r"相片", r"画面", r"场景",
+                        r"摄影", r"作品", r"影像", r"各种", r"的", r"\s+"
+                    ]
+                    for pattern in generic_patterns:
+                        test_text = re.sub(pattern, "", test_text)
+                    test_text = test_text.strip()
+                    
+                    # 如果清理后为空或过短，设为空字符串（纯过滤查询）
+                    if len(test_text) < 2:
+                        search_text = ""
+                
+                # 如果 search_text 为空，保持为空字符串（不回退到原始查询）
+                # 让 Searcher 的纯过滤逻辑处理
                 result["search_text"] = search_text
                 
                 return result

@@ -241,10 +241,14 @@ class KeywordStore:
 
         # 精确匹配过滤条件
         exact_fields = ["year", "month", "day", "hour", "season", "time_period", "weekday", "camera"]
+        keyword_fields = {"season", "time_period", "weekday", "camera"}
+        
         for field in exact_fields:
             value = filters.get(field)
             if value is not None:
-                filter_clauses.append({"term": {field: value}})
+                # 兼容性处理：对于字符串类型的字段，优先使用 .keyword 子字段进行精确匹配
+                search_field = f"{field}.keyword" if field in keyword_fields else field
+                filter_clauses.append({"term": {search_field: value}})
 
         # 日期范围过滤
         start_date = filters.get("start_date")
@@ -333,3 +337,8 @@ class KeywordStore:
             self.es_client.indices.refresh(index=self.index_name)
             return int(self.es_client.count(index=self.index_name)["count"])
         return 0
+
+    def clear(self) -> None:
+        """清空索引并重新初始化。"""
+        self.delete_index()
+        self._ensure_index()

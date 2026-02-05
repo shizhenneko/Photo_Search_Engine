@@ -63,6 +63,8 @@ class Indexer:
         self._lock_path = os.path.join(self.data_dir, "indexing.lock")
         self._ready_path = os.path.join(self.data_dir, "index_ready.marker")
         self._fallback_count = 0
+        # 缓存用于复用的现有描述
+        self._cached_descriptions: Dict[str, str] = {}
         self._status: Dict[str, Any] = {
             "status": "idle",
             "message": "尚未开始索引构建",
@@ -100,7 +102,16 @@ class Indexer:
     def generate_description(self, photo_path: str) -> str:
         """
         调用Vision LLM生成描述，失败时使用文件名降级策略。
+        优先使用缓存的有效描述。
         """
+        # 优先使用缓存的有效描述
+        if photo_path in self._cached_descriptions:
+            cached = self._cached_descriptions[photo_path]
+            # 过滤掉无效描述
+            if cached and len(cached) > 5 and "无描述" not in cached:
+                print(f"[INFO] 使用缓存描述: {photo_path}")
+                return cached
+
         last_error: Optional[Exception] = None
         for attempt in range(self.max_retries):
             try:
@@ -307,6 +318,34 @@ class Indexer:
             return self._response_with_message("processing", "索引构建正在进行中")
 
         start_time = time.time()
+
+        # 1. 加载现有高质量数据用于缓存
+        print("[INFO] 正在加载现有元数据以进行智能复用...")
+        self._cached_descriptions.clear()
+        if self.vector_store.metadata:
+            for item in self.vector_store.metadata:
+                path = item.get("photo_path")
+                desc = item.get("description")
+                # 严格的数据清洗规则
+                if (
+                    path 
+                    and desc 
+                    and isinstance(desc, str) 
+                    and len(desc) > 5 
+                    and "无描述" not in desc
+                ):
+                    self._cached_descriptions[path] = desc
+        print(f"[INFO] 已缓存 {len(self._cached_descriptions)} 条有效描述")
+
+        # 2. 清空现有索引（解决重复问题）
+        print("[INFO] 正在清空旧索引以消除重复数据...")
+        self.vector_store.clear()
+        if self.keyword_store:
+            try:
+                self.keyword_store.clear()
+            except Exception as e:
+                print(f"[WARN] KeywordStore清理失败: {e}")
+
         self._fallback_count = 0
         success_count = 0
         failed_count = 0

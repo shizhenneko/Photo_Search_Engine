@@ -83,13 +83,31 @@ class TimeParserTests(unittest.TestCase):
         "OPENROUTER_API_KEY未设置，跳过集成测试"
     )
     def test_extract_time_constraints_with_season(self) -> None:
-        """测试季节时间约束（集成测试）"""
+        """测试泛指季节时间约束（集成测试）"""
         api_key = self.config["OPENROUTER_API_KEY"]
         base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
         parser = TimeParser(api_key=api_key, base_url=base_url)
 
+        # 修改预期：泛指季节不应返回日期范围
         result = parser.extract_time_constraints("冬天的风景")
+
+        self.assertIsNone(result.get("start_date"))
+        self.assertIsNone(result.get("end_date"))
+        self.assertEqual(result.get("precision"), "none")
+
+    @unittest.skipIf(
+        not bool(os.getenv("OPENROUTER_API_KEY")),
+        "OPENROUTER_API_KEY未设置，跳过集成测试"
+    )
+    def test_extract_time_constraints_with_specific_season(self) -> None:
+        """测试特定年份季节时间约束（集成测试）"""
+        api_key = self.config["OPENROUTER_API_KEY"]
+        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+        parser = TimeParser(api_key=api_key, base_url=base_url)
+
+        result = parser.extract_time_constraints("2023年冬天的风景")
 
         self.assertIsNotNone(result.get("start_date"))
         self.assertIsNotNone(result.get("end_date"))
