@@ -241,14 +241,11 @@ class KeywordStore:
 
         # 精确匹配过滤条件
         exact_fields = ["year", "month", "day", "hour", "season", "time_period", "weekday", "camera"]
-        keyword_fields = {"season", "time_period", "weekday", "camera"}
         
         for field in exact_fields:
             value = filters.get(field)
             if value is not None:
-                # 兼容性处理：对于字符串类型的字段，优先使用 .keyword 子字段进行精确匹配
-                search_field = f"{field}.keyword" if field in keyword_fields else field
-                filter_clauses.append({"term": {search_field: value}})
+                filter_clauses.append({"term": {field: value}})
 
         # 日期范围过滤
         start_date = filters.get("start_date")
