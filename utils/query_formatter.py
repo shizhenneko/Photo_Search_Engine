@@ -91,15 +91,17 @@ class QueryFormatter:
     "atmosphere": "氛围描述（如：宁静、热闹、浪漫等）",
     "time_hint": "时间提示（如：2020年11月、去年夏天）或 null",
     "season": "季节（春天/夏天/秋天/冬天）或 null",
-    "time_period": "时段（早晨/白天/傍晚/夜晚）或 null",
-    "search_text": "生成一段适合向量检索的描述，包含场景、物体、氛围的自然语言描述"
+    "time_period": "时段（凌晨/早晨/上午/中午/下午/傍晚/夜晚）或 null",
+    "search_text": "生成一段适合向量检索的纯视觉描述，包含场景、物体、氛围的自然语言，不包含时间信息"
 }}
 
 规则：
 1. 从用户查询中提取核心检索需求，忽略无关的礼貌用语（如"请"、"展示"）
-2. search_text 应该是一段自然的描述，适合与照片描述进行语义匹配
-3. 如果用户未提及时间，time_hint、season、time_period 返回 null
-4. objects 列出可能出现在照片中的主要物体"""
+2. search_text 是纯视觉语义描述，不包含时间、日期、季节、时段等信息
+3. 时间相关信息单独提取到 time_hint、season、time_period 字段
+4. 如果用户未提及时间，time_hint、season、time_period 返回 null
+5. objects 列出可能出现在照片中的主要物体
+6. time_period 必须是以下7档之一：凌晨/早晨/上午/中午/下午/傍晚/夜晚"""
 
         for attempt in range(self.max_retries):
             try:
@@ -114,16 +116,10 @@ class QueryFormatter:
                 result = json.loads(response.choices[0].message.content)
                 result["original_query"] = user_query
                 
-                # 构建完整的检索文本
-                search_parts = [result.get("search_text", user_query)]
-                if result.get("time_hint"):
-                    search_parts.append(f"时间: {result['time_hint']}")
-                if result.get("season"):
-                    search_parts.append(f"季节: {result['season']}")
-                if result.get("time_period"):
-                    search_parts.append(f"时段: {result['time_period']}")
-                
-                result["search_text"] = " | ".join(search_parts)
+                # 架构改进：search_text 保持纯语义描述，不拼接时间信息
+                # 时间信息（season, time_period, time_hint）作为独立字段返回
+                # Searcher 会根据这些独立字段构建 ES 过滤条件
+                result["search_text"] = result.get("search_text", user_query)
                 
                 return result
                 

@@ -221,5 +221,188 @@ class IndexerTests(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(data_dir, "index_ready.marker")))
 
 
+class TestBuildSearchText(unittest.TestCase):
+    """测试 _build_search_text() 方法 - 只返回纯 description。"""
+
+    def test_build_search_text_returns_only_description(self) -> None:
+        """测试 _build_search_text 只返回纯 description，不包含时间/文件名。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_dir = os.path.join(tmp, "photos")
+            os.makedirs(photo_dir)
+
+            index_path = os.path.join(tmp, "index.bin")
+            metadata_path = os.path.join(tmp, "metadata.json")
+            vector_store = VectorStore(dimension=768, index_path=index_path, metadata_path=metadata_path)
+
+            indexer = Indexer(
+                photo_dir=photo_dir,
+                vision=LocalVisionLLMService(),
+                embedding=T5EmbeddingService(model_name="sentence-t5-base"),
+                vector_store=vector_store,
+                data_dir=tmp,
+            )
+
+            description = "这是一张美丽的海边日落照片，天空呈现橙红色，波浪轻轻拍打沙滩。"
+            exif_data = {"datetime": "2024-06-15T18:30:00", "camera": "iPhone 15"}
+            file_time = "2024-06-15T18:30:00"
+
+            search_text = indexer._build_search_text(description, "/photos/sunset.jpg", exif_data, file_time)
+
+            # 应该只返回纯 description，不包含时间/文件名信息
+            self.assertEqual(search_text, description)
+            self.assertNotIn("年", search_text)
+            self.assertNotIn("月", search_text)
+            self.assertNotIn("季节", search_text)
+            self.assertNotIn("时段", search_text)
+            self.assertNotIn("文件名", search_text)
+
+    def test_build_search_text_short_description(self) -> None:
+        """测试短 description 返回空字符串。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_dir = os.path.join(tmp, "photos")
+            os.makedirs(photo_dir)
+
+            index_path = os.path.join(tmp, "index.bin")
+            metadata_path = os.path.join(tmp, "metadata.json")
+            vector_store = VectorStore(dimension=768, index_path=index_path, metadata_path=metadata_path)
+
+            indexer = Indexer(
+                photo_dir=photo_dir,
+                vision=LocalVisionLLMService(),
+                embedding=T5EmbeddingService(model_name="sentence-t5-base"),
+                vector_store=vector_store,
+                data_dir=tmp,
+            )
+
+            short_desc = "短描述"
+            search_text = indexer._build_search_text(short_desc, "/photos/test.jpg", None, None)
+
+            self.assertEqual(search_text, "")
+
+
+class TestExtractTimeInfo(unittest.TestCase):
+    """测试 _extract_time_info() 方法 - 7档时段细分。"""
+
+    def _create_indexer(self, tmp_dir: str) -> Indexer:
+        """创建 Indexer 实例用于测试。"""
+        photo_dir = os.path.join(tmp_dir, "photos")
+        os.makedirs(photo_dir, exist_ok=True)
+
+        index_path = os.path.join(tmp_dir, "index.bin")
+        metadata_path = os.path.join(tmp_dir, "metadata.json")
+        vector_store = VectorStore(dimension=768, index_path=index_path, metadata_path=metadata_path)
+
+        return Indexer(
+            photo_dir=photo_dir,
+            vision=LocalVisionLLMService(),
+            embedding=T5EmbeddingService(model_name="sentence-t5-base"),
+            vector_store=vector_store,
+            data_dir=tmp_dir,
+        )
+
+    def test_extract_time_info_morning(self) -> None:
+        """测试早晨时段提取 (5:00-8:00)。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            exif_data = {"datetime": "2024-06-15T06:30:00"}
+            time_info = indexer._extract_time_info(exif_data, None)
+
+            self.assertEqual(time_info["year"], 2024)
+            self.assertEqual(time_info["month"], 6)
+            self.assertEqual(time_info["day"], 15)
+            self.assertEqual(time_info["hour"], 6)
+            self.assertEqual(time_info["season"], "夏天")
+            self.assertEqual(time_info["time_period"], "早晨")
+            self.assertEqual(time_info["weekday"], "星期六")
+
+    def test_extract_time_info_noon(self) -> None:
+        """测试中午时段提取 (12:00-14:00)。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            exif_data = {"datetime": "2024-01-15T12:30:00"}
+            time_info = indexer._extract_time_info(exif_data, None)
+
+            self.assertEqual(time_info["time_period"], "中午")
+            self.assertEqual(time_info["season"], "冬天")
+
+    def test_extract_time_info_evening(self) -> None:
+        """测试傍晚时段提取 (17:00-19:00)。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            exif_data = {"datetime": "2024-09-20T18:00:00"}
+            time_info = indexer._extract_time_info(exif_data, None)
+
+            self.assertEqual(time_info["time_period"], "傍晚")
+            self.assertEqual(time_info["season"], "秋天")
+
+    def test_extract_time_info_night(self) -> None:
+        """测试夜晚时段提取 (19:00-24:00)。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            exif_data = {"datetime": "2024-03-10T21:00:00"}
+            time_info = indexer._extract_time_info(exif_data, None)
+
+            self.assertEqual(time_info["time_period"], "夜晚")
+            self.assertEqual(time_info["season"], "春天")
+
+    def test_extract_time_info_dawn(self) -> None:
+        """测试凌晨时段提取 (0:00-5:00)。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            exif_data = {"datetime": "2024-07-04T03:00:00"}
+            time_info = indexer._extract_time_info(exif_data, None)
+
+            self.assertEqual(time_info["time_period"], "凌晨")
+
+    def test_extract_time_info_afternoon(self) -> None:
+        """测试下午时段提取 (14:00-17:00)。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            exif_data = {"datetime": "2024-05-01T15:30:00"}
+            time_info = indexer._extract_time_info(exif_data, None)
+
+            self.assertEqual(time_info["time_period"], "下午")
+
+    def test_extract_time_info_forenoon(self) -> None:
+        """测试上午时段提取 (8:00-12:00)。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            exif_data = {"datetime": "2024-11-11T10:00:00"}
+            time_info = indexer._extract_time_info(exif_data, None)
+
+            self.assertEqual(time_info["time_period"], "上午")
+
+    def test_extract_time_info_no_datetime(self) -> None:
+        """测试无时间数据时返回空值。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            time_info = indexer._extract_time_info(None, None)
+
+            self.assertIsNone(time_info["year"])
+            self.assertIsNone(time_info["time_period"])
+            self.assertIsNone(time_info["season"])
+
+    def test_extract_time_info_fallback_to_file_time(self) -> None:
+        """测试 EXIF 无时间时回退到文件时间。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            indexer = self._create_indexer(tmp)
+
+            file_time = "2024-08-20T09:00:00"
+            time_info = indexer._extract_time_info({}, file_time)
+
+            self.assertEqual(time_info["year"], 2024)
+            self.assertEqual(time_info["month"], 8)
+            self.assertEqual(time_info["time_period"], "上午")
+            self.assertEqual(time_info["season"], "夏天")
+
+
 if __name__ == "__main__":
     unittest.main()

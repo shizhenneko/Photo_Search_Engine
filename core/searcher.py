@@ -96,19 +96,79 @@ class Searcher:
 
     def _extract_time_constraints(self, query: str) -> Dict[str, Any]:
         """
-        调用TimeParser解析时间约束，失败时返回无约束。
+        调用TimeParser解析时间约束，返回结构化过滤条件。
+
+        返回格式适配 Elasticsearch 过滤：
+        - start_date/end_date: 日期范围
+        - year/month/day: 精确匹配
+        - season: 季节（春天/夏天/秋天/冬天）
+        - time_period: 时段（凌晨/早晨/上午/中午/下午/傍晚/夜晚）
         """
+        result: Dict[str, Any] = {
+            "start_date": None,
+            "end_date": None,
+            "year": None,
+            "month": None,
+            "day": None,
+            "season": None,
+            "time_period": None,
+            "precision": "none",
+        }
+
         try:
             constraints = self.time_parser.extract_time_constraints(query)
             if not isinstance(constraints, dict):
-                return {"start_date": None, "end_date": None, "precision": "none"}
-            return {
-                "start_date": constraints.get("start_date"),
-                "end_date": constraints.get("end_date"),
-                "precision": constraints.get("precision", "none"),
-            }
+                return result
+
+            result["start_date"] = constraints.get("start_date")
+            result["end_date"] = constraints.get("end_date")
+            result["precision"] = constraints.get("precision", "none")
+
+            # 从查询中提取季节和时段
+            season_match = re.search(r"(春天|夏天|秋天|冬天|春季|夏季|秋季|冬季)", query)
+            if season_match:
+                season_text = season_match.group(1)
+                # 统一为"春天"格式
+                season_map = {
+                    "春天": "春天", "春季": "春天",
+                    "夏天": "夏天", "夏季": "夏天",
+                    "秋天": "秋天", "秋季": "秋天",
+                    "冬天": "冬天", "冬季": "冬天",
+                }
+                result["season"] = season_map.get(season_text)
+
+            # 从查询中提取时段
+            time_period_match = re.search(
+                r"(凌晨|早晨|早上|上午|中午|下午|傍晚|晚上|夜晚|深夜)", query
+            )
+            if time_period_match:
+                period_text = time_period_match.group(1)
+                # 统一时段名称
+                period_map = {
+                    "凌晨": "凌晨", "深夜": "凌晨",
+                    "早晨": "早晨", "早上": "早晨",
+                    "上午": "上午",
+                    "中午": "中午",
+                    "下午": "下午",
+                    "傍晚": "傍晚",
+                    "晚上": "夜晚", "夜晚": "夜晚",
+                }
+                result["time_period"] = period_map.get(period_text)
+
+            # 如果有精确日期，提取年月日
+            if result["start_date"] and result["start_date"] == result["end_date"]:
+                # 单一日期，提取年月日
+                try:
+                    dt = datetime.fromisoformat(result["start_date"])
+                    result["year"] = dt.year
+                    result["month"] = dt.month
+                    result["day"] = dt.day
+                except Exception:
+                    pass
+
+            return result
         except Exception:
-            return {"start_date": None, "end_date": None, "precision": "none"}
+            return result
 
     def _filter_by_time(self, results: List[Dict[str, Any]], constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
@@ -352,24 +412,30 @@ class Searcher:
         query: str,
         query_embedding: List[float],
         candidate_k: int,
+        filters: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        执行混合检索（向量 + 关键字）。
+        执行混合检索（向量 + 关键字 + EXIF过滤）。
+
+        改进：
+        - 向量检索只基于 description 语义匹配
+        - EXIF 条件（时间、季节、时段）通过 Elasticsearch 精确过滤
+        - 分数融合时考虑 ES 过滤结果
 
         Args:
             query: 原始查询文本
             query_embedding: 查询向量
             candidate_k: 候选数量
+            filters: EXIF 过滤条件（year, month, season, time_period, start_date, end_date）
 
         Returns:
             List[Dict[str, Any]]: 混合排序后的结果
         """
-        # 1. 向量检索
+        # 1. 向量检索（纯语义匹配）
         vector_results = self.vector_store.search(query_embedding, candidate_k)
 
         # 2. 构建向量分数映射
         vector_scores: Dict[str, float] = {}
-        # 同时保存 vector result 的 metadata，后续使用
         vector_metadata: Dict[str, Dict[str, Any]] = {}
 
         for item in vector_results:
@@ -379,18 +445,41 @@ class Searcher:
             vector_scores[photo_path] = score
             vector_metadata[photo_path] = metadata
 
-        # 3. 关键字检索（如果启用）
+        # 3. 关键字检索 + EXIF 过滤（如果启用）
         keyword_scores: Dict[str, float] = {}
+        es_filtered_paths: Optional[set] = None
+
         if self.keyword_store is not None:
-            keyword_results = self.keyword_store.search(query, candidate_k)
-            for item in keyword_results:
-                keyword_scores[item["photo_path"]] = item["score"]
+            # 构建 ES 过滤条件
+            es_filters = self._build_es_filters(filters) if filters else {}
+
+            if es_filters:
+                # 使用带过滤的搜索
+                keyword_results = self.keyword_store.search_with_filters(
+                    query, es_filters, candidate_k
+                )
+                # 记录 ES 返回的路径集合，用于后续过滤
+                es_filtered_paths = set()
+                for item in keyword_results:
+                    keyword_scores[item["photo_path"]] = item["score"]
+                    es_filtered_paths.add(item["photo_path"])
+            else:
+                # 无过滤条件，普通搜索
+                keyword_results = self.keyword_store.search(query, candidate_k)
+                for item in keyword_results:
+                    keyword_scores[item["photo_path"]] = item["score"]
 
         # 4. 混合评分
         all_paths = set(vector_scores.keys()) | set(keyword_scores.keys())
         combined_results: List[Dict[str, Any]] = []
 
         for photo_path in all_paths:
+            # 如果有 ES 过滤，只保留过滤后的结果
+            if es_filtered_paths is not None and photo_path not in es_filtered_paths:
+                # 但如果向量检索命中且 ES 没有过滤条件，则保留
+                if filters and self._has_strict_filters(filters):
+                    continue
+
             v_score = vector_scores.get(photo_path, 0.0)
             k_score = keyword_scores.get(photo_path, 0.0)
 
@@ -399,11 +488,9 @@ class Searcher:
                 self.vector_weight * v_score + self.keyword_weight * k_score
             )
 
-            # 获取元数据 (优先从 vector_metadata 获取，如果没有则构造基础 metadata)
+            # 获取元数据
             metadata = vector_metadata.get(photo_path)
             if not metadata:
-                # 只有关键字命中的情况 (metadata不全，可能有风险，但至少返回路径)
-                # 注意：如果 metadata 不全，时间过滤可能会有问题（如果没有 timestamp）
                 metadata = {"photo_path": photo_path, "description": "Keyword Match Only"}
 
             combined_results.append({
@@ -412,8 +499,8 @@ class Searcher:
                 "score": round(combined_score, 6),
                 "vector_score": round(v_score, 6),
                 "keyword_score": round(k_score, 6),
-                "rank": 0, # Placeholder
-                "metadata": metadata # Pass full metadata for downstream filtering
+                "rank": 0,
+                "metadata": metadata,
             })
 
         # 5. 按混合分数降序排序
@@ -421,9 +508,47 @@ class Searcher:
 
         return combined_results
 
+    def _build_es_filters(self, constraints: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从时间约束构建 ES 过滤条件。
+
+        Args:
+            constraints: 时间约束字典
+
+        Returns:
+            Dict[str, Any]: ES 过滤条件
+        """
+        es_filters: Dict[str, Any] = {}
+
+        # 精确字段
+        for field in ["year", "month", "day", "season", "time_period"]:
+            value = constraints.get(field)
+            if value is not None:
+                es_filters[field] = value
+
+        # 日期范围
+        if constraints.get("start_date"):
+            es_filters["start_date"] = constraints["start_date"]
+        if constraints.get("end_date"):
+            es_filters["end_date"] = constraints["end_date"]
+
+        return es_filters
+
+    def _has_strict_filters(self, filters: Dict[str, Any]) -> bool:
+        """
+        判断是否有严格的过滤条件（需要排除不满足条件的结果）。
+        """
+        strict_fields = ["year", "month", "day", "season", "time_period", "start_date", "end_date"]
+        return any(filters.get(f) is not None for f in strict_fields)
+
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """
         解析查询、执行混合检索、时间过滤并返回排序结果。
+
+        改进：
+        - embedding 只基于纯 description 语义匹配
+        - EXIF 条件（时间、季节、时段）通过 Elasticsearch 精确过滤
+        - 支持更细粒度的时段查询（7档细分）
         """
         if not self.validate_query(query):
             raise ValueError("查询内容不合法，请输入5-500字符的描述")
@@ -434,41 +559,58 @@ class Searcher:
         normalized_top_k = max(1, min(int(top_k), 50))
         
         # 1. 查询格式化
+        # 架构改进：QueryFormatter 返回纯语义的 search_text（用于 embedding）
+        # 时间信息作为独立字段（用于 ES 过滤）
         formatted_query = query
         time_hints = {}
         
         if self.query_formatter is not None and self.query_formatter.is_enabled():
             format_result = self.query_formatter.format_query(query)
+            # search_text 是纯视觉语义描述，不含时间信息
             formatted_query = format_result.get("search_text", query)
+            # 时间信息作为独立字段保存
             time_hints = {
                 "time_hint": format_result.get("time_hint"),
                 "season": format_result.get("season"),
+                "time_period": format_result.get("time_period"),
             }
-            # 如果格式化结果有时间，可以辅助时间解析（这部分逻辑可根据需求扩展）
 
-        # 2. 时间解析
-        constraints = {"start_date": None, "end_date": None, "precision": "none"}
-        cleaned_query = formatted_query  # 默认使用格式化后的查询
-        has_time_filter = self._has_time_terms(query) # 仍使用原始查询检查时间词
+        # 2. 时间解析（返回结构化过滤条件）
+        constraints: Dict[str, Any] = {
+            "start_date": None, "end_date": None,
+            "year": None, "month": None, "day": None,
+            "season": None, "time_period": None,
+            "precision": "none",
+        }
+        cleaned_query = formatted_query
+        has_time_filter = self._has_time_terms(query) or self._has_time_period_terms(query)
 
         if has_time_filter:
             constraints = self._extract_time_constraints(query)
-            # 如果没有格式化服务，或者即使有格式化也需要手动清除时间词（格式化服务通常已经处理好了，但双重保险）
+            # 清除时间词，保留纯语义部分用于 embedding
             if not (self.query_formatter and self.query_formatter.is_enabled()):
-                cleaned_query = self._strip_time_terms(query) or query
+                cleaned_query = self._strip_time_terms(query)
+                cleaned_query = self._strip_time_period_terms(cleaned_query) or query
         
-        # 3. 向量检索
+        # 合并 QueryFormatter 的时间提示到 ES 过滤条件
+        if time_hints.get("season") and not constraints.get("season"):
+            constraints["season"] = time_hints["season"]
+        if time_hints.get("time_period") and not constraints.get("time_period"):
+            constraints["time_period"] = time_hints["time_period"]
+
+        # 3. 向量检索（仅基于纯语义描述生成 embedding）
+        # cleaned_query 不包含时间信息，保证向量空间的纯净性
         query_embedding = self.embedding_service.generate_embedding(cleaned_query)
         candidate_k = self._calculate_candidate_k(normalized_top_k, has_time_filter)
 
-        # 执行检索 (混合 or 纯向量)
+        # 4. 执行检索（混合检索 + ES 过滤）
         if self.keyword_store is not None:
-             # 混合检索使用原始查询(keyword matching)和向量
+            # 混合检索：向量语义 + ES 关键字 + EXIF 过滤
             combined_results = self._hybrid_search(
-                query, query_embedding, candidate_k
+                query, query_embedding, candidate_k, filters=constraints
             )
         else:
-            # 降级为纯向量检索
+            # 降级为纯向量检索 + 内存时间过滤
             raw_results = self.vector_store.search(query_embedding, candidate_k)
             combined_results = []
             for item in raw_results:
@@ -478,23 +620,21 @@ class Searcher:
                     "photo_path": metadata.get("photo_path"),
                     "description": metadata.get("description"),
                     "score": score,
-                    "metadata": metadata # Keep consistency
+                    "metadata": metadata,
                 })
 
-        # 结果过滤链：时间过滤 -> 动态阈值 -> 数量限制
-        
+        # 5. 结果过滤链
         filtered_results = []
         for item in combined_results:
-            # Time Filter
-            if has_time_filter:
+            # 如果没有 ES（纯向量模式），需要内存过滤时间
+            if self.keyword_store is None and has_time_filter:
                 meta = item.get("metadata", {})
-                if not self._check_time_match(meta, constraints):
+                if not self._check_time_match_v2(meta, constraints):
                     continue
-            
             filtered_results.append(item)
 
+        # 6. 动态阈值过滤
         scores = [item["score"] for item in filtered_results]
-
         if scores:
             dynamic_threshold = self._calculate_dynamic_threshold(scores, normalized_top_k)
             threshold_filtered = [
@@ -504,38 +644,91 @@ class Searcher:
         else:
             threshold_filtered = filtered_results
 
+        # 7. 返回 Top-K 结果
         final_results = threshold_filtered[:normalized_top_k]
 
         for rank, item in enumerate(final_results, start=1):
             item["rank"] = rank
-            # Remove internal metadata field before returning to keep API clean
             if "metadata" in item:
                 del item["metadata"]
                 
         return final_results
 
-    def _check_time_match(self, metadata: Dict[str, Any], constraints: Dict[str, Any]) -> bool:
-        """Helper to check time constraints directly on metadata dict."""
-        # 提取时间
-        exif_date = self._parse_date(metadata.get("exif_date"))
-        file_date = self._parse_date(metadata.get("file_date"))
-        
-        # 优先使用EXIF时间
-        check_date = exif_date or file_date
-        
-        if not check_date:
-            return False
-            
+    def _has_time_period_terms(self, query: str) -> bool:
+        """检查查询中是否包含时段词汇。"""
+        patterns = [
+            r"凌晨|早晨|早上|上午|中午|下午|傍晚|晚上|夜晚|深夜",
+        ]
+        return any(re.search(pattern, query) for pattern in patterns)
+
+    def _strip_time_period_terms(self, query: str) -> str:
+        """从查询中移除时段词汇。"""
+        patterns = [
+            r"凌晨|早晨|早上|上午|中午|下午|傍晚|晚上|夜晚|深夜",
+        ]
+        cleaned = query
+        for pattern in patterns:
+            cleaned = re.sub(pattern, " ", cleaned)
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    def _check_time_match_v2(self, metadata: Dict[str, Any], constraints: Dict[str, Any]) -> bool:
+        """
+        检查元数据是否满足时间约束（改进版，支持 time_info 字段）。
+
+        Args:
+            metadata: 照片元数据
+            constraints: 时间约束
+
+        Returns:
+            bool: 是否满足约束
+        """
+        time_info = metadata.get("time_info") or {}
+        exif_data = metadata.get("exif_data") or {}
+
+        # 检查季节
+        if constraints.get("season"):
+            if time_info.get("season") != constraints["season"]:
+                return False
+
+        # 检查时段
+        if constraints.get("time_period"):
+            if time_info.get("time_period") != constraints["time_period"]:
+                return False
+
+        # 检查年份
+        if constraints.get("year"):
+            if time_info.get("year") != constraints["year"]:
+                return False
+
+        # 检查月份
+        if constraints.get("month"):
+            if time_info.get("month") != constraints["month"]:
+                return False
+
+        # 检查日期范围
         start_date = constraints.get("start_date")
         end_date = constraints.get("end_date")
-        
-        if start_date and check_date < start_date:
-            return False
-        if end_date and check_date > end_date:
-            return False
-            
-        return True
+        if start_date or end_date:
+            # 获取照片日期
+            photo_datetime_str = time_info.get("datetime_str") or exif_data.get("datetime") or metadata.get("file_time")
+            if not photo_datetime_str:
+                return False
 
+            photo_date = self._parse_date(photo_datetime_str)
+            if not photo_date:
+                return False
+
+            if start_date:
+                start = self._parse_date(start_date)
+                if start and photo_date < start:
+                    return False
+
+            if end_date:
+                end = self._parse_date(end_date, is_end_date=True)
+                if end and photo_date > end:
+                    return False
+
+        return True
 
     def get_index_stats(self) -> Dict[str, Any]:
         """

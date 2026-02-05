@@ -125,6 +125,10 @@ class Indexer:
     def process_batch(self, photo_paths: List[str]) -> List[Dict[str, Any]]:
         """
         批量处理照片（描述+嵌入+元数据），单个失败不影响整批。
+
+        改进：
+        - embedding 只基于纯 description 生成
+        - 新增 time_info 字段包含详细时间信息
         """
         results: List[Dict[str, Any]] = []
         for photo_path in photo_paths:
@@ -135,9 +139,14 @@ class Indexer:
                 
                 exif_data = extract_exif_metadata(photo_path)
                 file_time = get_file_time(photo_path)
+                
+                # 只使用纯 description 进行 embedding
                 search_text = self._build_search_text(description, photo_path, exif_data, file_time)
                 
-                print(f"[INFO] 开始生成embedding向量...")
+                # 提取详细时间信息用于 ES 过滤
+                time_info = self._extract_time_info(exif_data, file_time)
+                
+                print(f"[INFO] 开始生成embedding向量（仅基于description）...")
                 embedding = self.embedding_service.generate_embedding(search_text)
                 print(f"[INFO] Embedding生成成功，维度: {len(embedding)}")
                 
@@ -149,6 +158,7 @@ class Indexer:
                         "embedding": embedding,
                         "exif_data": exif_data,
                         "file_time": file_time,
+                        "time_info": time_info,  # 新增：详细时间信息
                         "status": "success",
                         "error": None,
                     }
@@ -167,6 +177,7 @@ class Indexer:
                         "embedding": None,
                         "exif_data": None,
                         "file_time": None,
+                        "time_info": None,
                         "status": "failed",
                         "error": f"处理照片失败: {exc}",
                     }
@@ -181,45 +192,83 @@ class Indexer:
         file_time: Optional[str],
     ) -> str:
         """
-        构建用于向量化的搜索文本，包含高价值语义信息。
+        构建用于向量化的搜索文本。
 
-        优化后结构：描述 | 文件名 | 年月 | 季节 | 时段(简化)
-        
-        移除的低价值信息：
-        - 相机信息（用户几乎从不搜索相机型号）
-        - 星期信息（搜索场景极罕见）
+        改进：只使用纯 description 进行 embedding，不再混入时间/文件名等信息。
+        EXIF 元数据通过 Elasticsearch 进行精确过滤，不污染向量空间。
         """
-        parts = []
-
-        # 1. 核心描述（最高价值，必须保留）
+        # 只返回纯描述用于 embedding
         if description and len(description) >= 20:
-            parts.append(description.strip())
+            return description.strip()
+        return ""
 
-        # 2. 文件名tokens（中高价值，保留有意义的部分）
-        name = os.path.splitext(os.path.basename(photo_path))[0]
-        tokens = [t for t in re.split(r"[\W_]+", name) if t and not t.isdigit() and len(t) > 2]
-        if tokens and len(tokens) <= 3:
-            parts.append(f"文件名: {' '.join(tokens)}")
+    def _extract_time_info(
+        self,
+        exif_data: Optional[Dict[str, Any]],
+        file_time: Optional[str],
+    ) -> Dict[str, Any]:
+        """
+        提取详细的时间信息，用于 Elasticsearch 精确过滤。
 
-        # 3. 时间信息（高价值，保留并简化）
+        时段细分为7档：
+        - 凌晨 (0:00-5:00)
+        - 早晨 (5:00-8:00)
+        - 上午 (8:00-12:00)
+        - 中午 (12:00-14:00)
+        - 下午 (14:00-17:00)
+        - 傍晚 (17:00-19:00)
+        - 夜晚 (19:00-24:00)
+
+        Returns:
+            Dict[str, Any]: 包含 year, month, day, hour, season, time_period, weekday
+        """
+        time_info: Dict[str, Any] = {
+            "year": None,
+            "month": None,
+            "day": None,
+            "hour": None,
+            "season": None,
+            "time_period": None,
+            "weekday": None,
+            "datetime_str": None,
+        }
+
         photo_date = self._get_photo_datetime(exif_data, file_time)
-        if photo_date:
-            parts.append(f"{photo_date.year}年{photo_date.month}月")
-            season = self._month_to_season(photo_date.month)
-            if season:
-                parts.append(f"季节: {season}")
+        if not photo_date:
+            return time_info
 
-            # 简化为3个时段（白天、傍晚、夜晚）- 去掉过于细分的"早晨"、"上午"、"中午"
-            hour = photo_date.hour
-            if 6 <= hour < 17:
-                period = "白天"
-            elif 17 <= hour < 21:
-                period = "傍晚"
-            else:
-                period = "夜晚"
-            parts.append(f"时段: {period}")
+        # 基础时间字段
+        time_info["year"] = photo_date.year
+        time_info["month"] = photo_date.month
+        time_info["day"] = photo_date.day
+        time_info["hour"] = photo_date.hour
+        time_info["datetime_str"] = photo_date.isoformat()
 
-        return " | ".join(parts).strip()
+        # 季节
+        time_info["season"] = self._month_to_season(photo_date.month)
+
+        # 时段（7档细分）
+        hour = photo_date.hour
+        if 0 <= hour < 5:
+            time_info["time_period"] = "凌晨"
+        elif 5 <= hour < 8:
+            time_info["time_period"] = "早晨"
+        elif 8 <= hour < 12:
+            time_info["time_period"] = "上午"
+        elif 12 <= hour < 14:
+            time_info["time_period"] = "中午"
+        elif 14 <= hour < 17:
+            time_info["time_period"] = "下午"
+        elif 17 <= hour < 19:
+            time_info["time_period"] = "傍晚"
+        else:  # 19 <= hour < 24
+            time_info["time_period"] = "夜晚"
+
+        # 星期
+        weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        time_info["weekday"] = weekday_names[photo_date.weekday()]
+
+        return time_info
 
     def _get_photo_datetime(
         self, exif_data: Optional[Dict[str, Any]], file_time: Optional[str]
@@ -286,35 +335,40 @@ class Indexer:
                 for item in batch_results:
                     if item["status"] == "success":
                         try:
+                            # 更新 metadata 结构，包含 time_info
                             metadata = {
                                 "photo_path": item["photo_path"],
                                 "description": item["description"],
                                 "search_text": item.get("search_text"),
                                 "exif_data": item["exif_data"],
                                 "file_time": item["file_time"],
+                                "time_info": item.get("time_info"),  # 新增：详细时间信息
                             }
                             self.vector_store.add_item(item["embedding"], metadata)
                             
-                            # Sync to KeywordStore
+                            # Sync to KeywordStore with complete EXIF fields
                             if self.keyword_store is not None:
                                 import hashlib
                                 doc_id = hashlib.md5(item["photo_path"].encode()).hexdigest()
                                 
-                                # Format time text from available metadata
-                                time_parts = []
-                                if item.get("file_time"):
-                                    time_parts.append(str(item["file_time"]))
-                                if item.get("exif_data"):
-                                    # Simple extraction of date strings from EXIF
-                                    for k, v in item["exif_data"].items():
-                                        if "date" in str(k).lower() or "time" in str(k).lower():
-                                            time_parts.append(str(v))
+                                time_info = item.get("time_info") or {}
+                                exif_data = item.get("exif_data") or {}
                                 
+                                # 构建包含独立 EXIF 字段的文档
                                 document = {
                                     "photo_path": item["photo_path"],
                                     "description": item["description"],
                                     "file_name": os.path.basename(item["photo_path"]),
-                                    "time_text": " ".join(time_parts),
+                                    # EXIF 独立字段（用于精确过滤）
+                                    "year": time_info.get("year"),
+                                    "month": time_info.get("month"),
+                                    "day": time_info.get("day"),
+                                    "hour": time_info.get("hour"),
+                                    "season": time_info.get("season"),
+                                    "time_period": time_info.get("time_period"),
+                                    "weekday": time_info.get("weekday"),
+                                    "camera": exif_data.get("camera"),
+                                    "datetime": time_info.get("datetime_str"),
                                 }
                                 self.keyword_store.add_document(doc_id, document)
 
