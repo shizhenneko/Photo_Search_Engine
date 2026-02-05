@@ -44,11 +44,10 @@ class KeywordStore:
         if client is not None:
             self.es_client = client
         else:
-            auth = (username, password) if username and password else None
-            scheme = "https" if username and password else "http"
+            scheme = "http"
             url = f"{scheme}://{host}:{port}"
-            if auth:
-                self.es_client = Elasticsearch(url, basic_auth=auth)
+            if username and password:
+                self.es_client = Elasticsearch(url, basic_auth=(username, password))
             else:
                 self.es_client = Elasticsearch(url)
         
