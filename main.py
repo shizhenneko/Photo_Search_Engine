@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
+
+if TYPE_CHECKING:
+    from utils.rerank_service import RerankService
 
 from flask import Flask
 
@@ -25,7 +28,7 @@ def load_config() -> Dict[str, object]:
     return get_config()
 
 
-def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher]:
+def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher, Optional["RerankService"]]:
     """
     初始化所有服务实例。
 
@@ -33,7 +36,7 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher]:
         config: 配置字典
 
     Returns:
-        Tuple[Indexer, Searcher]: 索引构建器与检索器实例
+        Tuple[Indexer, Searcher, Optional[RerankService]]: 索引构建器、检索器与Rerank服务实例
     """
     data_dir = str(config.get("DATA_DIR", "./data"))
     os.makedirs(data_dir, exist_ok=True)
@@ -143,10 +146,35 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher]:
         keyword_weight=float(config.get("KEYWORD_WEIGHT", 0.2)),
     )
 
-    return indexer, searcher
+    # 初始化 RerankService（复用 Vision LLM 配置）
+    rerank_service = None
+    openrouter_api_key = str(config.get("OPENROUTER_API_KEY", ""))
+    if config.get("RERANK_ENABLED", True) and openrouter_api_key:
+        try:
+            from utils.rerank_service import RerankService
+            rerank_service = RerankService(
+                api_key=openrouter_api_key,
+                model_name=str(config.get("RERANK_MODEL_NAME", "")),
+                base_url=str(config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")),
+                timeout=int(config.get("RERANK_TIMEOUT", 60)),
+                max_retries=int(config.get("MAX_RETRIES", 3)),
+                image_max_size=int(config.get("RERANK_IMAGE_MAX_SIZE", 512)),
+                image_quality=int(config.get("RERANK_IMAGE_QUALITY", 75)),
+                max_images=int(config.get("RERANK_MAX_IMAGES", 10)),
+            )
+            print(f"RerankService initialized with model: {config.get('RERANK_MODEL_NAME')}")
+        except Exception as e:
+            print(f"Warning: Failed to initialize RerankService: {e}. Rerank will be disabled.")
+
+    return indexer, searcher, rerank_service
 
 
-def create_app(indexer: Indexer, searcher: Searcher, config: Dict[str, object]) -> Flask:
+def create_app(
+    indexer: Indexer,
+    searcher: Searcher,
+    config: Dict[str, object],
+    rerank_service: Optional["RerankService"] = None,
+) -> Flask:
     """
     创建并配置Flask应用。
 
@@ -154,6 +182,7 @@ def create_app(indexer: Indexer, searcher: Searcher, config: Dict[str, object]) 
         indexer: 索引构建器实例
         searcher: 检索器实例
         config: 配置字典
+        rerank_service: Rerank服务实例（可选）
 
     Returns:
         Flask: 配置好的Flask应用实例
@@ -161,7 +190,7 @@ def create_app(indexer: Indexer, searcher: Searcher, config: Dict[str, object]) 
     app = Flask(__name__)
     app.secret_key = str(config.get("SECRET_KEY", "dev-secret-key"))
 
-    register_routes(app, indexer, searcher, config)
+    register_routes(app, indexer, searcher, config, rerank_service=rerank_service)
 
     @app.errorhandler(404)
     def not_found(error: object) -> tuple[dict, int]:
@@ -197,8 +226,8 @@ def main() -> None:
     config = load_config()
     _validate_required_config(config)
 
-    indexer, searcher = initialize_services(config)
-    app = create_app(indexer, searcher, config)
+    indexer, searcher, rerank_service = initialize_services(config)
+    app = create_app(indexer, searcher, config, rerank_service=rerank_service)
 
     host = str(config.get("SERVER_HOST", "localhost"))
     port = int(config.get("SERVER_PORT", 5000))

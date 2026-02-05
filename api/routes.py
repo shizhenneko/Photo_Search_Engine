@@ -22,10 +22,15 @@ from jinja2 import FileSystemLoader
 if TYPE_CHECKING:
     from core.indexer import Indexer
     from core.searcher import Searcher
+    from utils.rerank_service import RerankService
 
 
 def register_routes(
-    app: Flask, indexer: "Indexer", searcher: "Searcher", config: Dict[str, Any]
+    app: Flask,
+    indexer: "Indexer",
+    searcher: "Searcher",
+    config: Dict[str, Any],
+    rerank_service: "RerankService" = None,
 ) -> None:
     """
     注册所有API路由。
@@ -35,6 +40,7 @@ def register_routes(
         indexer: 索引构建器实例
         searcher: 检索器实例
         config: 配置字典
+        rerank_service: Rerank服务实例（可选）
     """
 
     templates_dir = os.path.abspath(
@@ -106,29 +112,23 @@ def register_routes(
     @app.route("/search_photos", methods=["POST"])
     def search_photos() -> Any:
         """
-        执行照片搜索。
+        执行照片搜索（支持可选的Rerank精排）。
 
         请求体：
         {
-            "query": str,  # 查询文本
-            "top_k": int  # 返回结果数量（可选，默认10，最大50）
+            "query": str,           # 查询文本
+            "top_k": int,           # 返回结果数量（可选，默认10，最大50）
+            "enable_rerank": bool,  # 是否启用Rerank精排（可选，默认false）
+            "rerank_top_k": int     # Rerank后保留数量（可选，默认5）
         }
 
         响应格式：
         {
             "status": "success" | "error",
-            "results": [
-                {
-                    "photo_path": str,  # 照片文件路径
-                    "photo_url": str,  # 照片访问URL
-                    "description": str,  # 照片描述
-                    "score": float,  # 相似度分数（0-1）
-                    "rank": int  # 排名
-                },
-                ...
-            ],
-            "total_results": int,  # 结果总数
-            "elapsed_time": float  # 检索耗时（秒）
+            "results": [...],
+            "total_results": int,
+            "elapsed_time": float,
+            "reranked": bool        # 是否经过Rerank
         }
         """
         import time
@@ -146,6 +146,10 @@ def register_routes(
 
             query = data.get("query", "").strip()
             top_k = min(data.get("top_k", config.get("TOP_K", 10)), 50)
+            enable_rerank = data.get("enable_rerank", False)
+            rerank_top_k = data.get("rerank_top_k", 5)
+            # rerank_top_k 不能超过 top_k
+            rerank_top_k = min(max(1, rerank_top_k), top_k)
 
             # 参数校验
             if not query:
@@ -154,15 +158,35 @@ def register_routes(
                     400,
                 )
 
-            # 执行搜索
+            # 1. 获取格式化后的 search_text（用于 rerank）
+            search_text = query  # 默认使用原始 query
+            if enable_rerank and searcher.query_formatter and searcher.query_formatter.is_enabled():
+                try:
+                    formatted = searcher.query_formatter.format_query(query)
+                    search_text = formatted.get("search_text", query)
+                    print(f"[RERANK] Formatted search_text: {search_text}")
+                except Exception as e:
+                    print(f"[RERANK] QueryFormatter failed, using original query: {e}")
+
+            # 2. 执行搜索
             results = searcher.search(query, top_k)
 
-            # 构建响应（添加photo_url）
+            # 3. 如果启用 rerank 且有结果且 rerank_service 可用
+            reranked = False
+            if enable_rerank and rerank_service and rerank_service.is_enabled() and results:
+                try:
+                    print(f"[RERANK] Starting rerank with search_text: {search_text}, candidates: {len(results)}")
+                    results = rerank_service.rerank(search_text, results, rerank_top_k)
+                    reranked = True
+                    print(f"[RERANK] Rerank completed, results: {len(results)}")
+                except Exception as e:
+                    print(f"[RERANK] Rerank failed, using original results: {e}")
+
+            # 4. 构建响应（添加 photo_url）
             photo_url_base = "/photo?path="
             enriched_results = []
             for item in results:
                 photo_path = item.get("photo_path", "")
-                # 路径编码处理
                 encoded_path = quote(photo_path)
                 item["photo_url"] = f"{photo_url_base}{encoded_path}"
                 enriched_results.append(item)
@@ -176,12 +200,12 @@ def register_routes(
                         "results": enriched_results,
                         "total_results": len(enriched_results),
                         "elapsed_time": round(elapsed_time, 4),
+                        "reranked": reranked,
                     }
                 ),
                 200,
             )
         except ValueError as e:
-            # 业务逻辑错误（查询验证失败、索引未加载等）
             elapsed_time = time.time() - start_time
             return (
                 jsonify(
@@ -191,12 +215,12 @@ def register_routes(
                         "results": [],
                         "total_results": 0,
                         "elapsed_time": round(elapsed_time, 4),
+                        "reranked": False,
                     }
                 ),
                 400,
             )
         except Exception as e:
-            # 未预期的错误
             elapsed_time = time.time() - start_time
             return (
                 jsonify(
@@ -206,6 +230,7 @@ def register_routes(
                         "results": [],
                         "total_results": 0,
                         "elapsed_time": round(elapsed_time, 4),
+                        "reranked": False,
                     }
                 ),
                 500,

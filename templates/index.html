@@ -363,6 +363,77 @@
                 align-items: stretch;
             }
         }
+
+        /* Rerank控件样式 */
+        .rerank-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .rerank-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .rerank-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .rerank-toggle span {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .rerank-topk-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .rerank-topk-wrapper label {
+            font-size: 0.9rem;
+            color: #666;
+            white-space: nowrap;
+        }
+
+        .rerank-topk-input {
+            width: 60px;
+            padding: 8px 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            text-align: center;
+            transition: border-color 0.3s;
+        }
+
+        .rerank-topk-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .rerank-topk-input:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+
+        .rerank-badge {
+            display: inline-block;
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -412,6 +483,24 @@
                     搜索
                 </button>
             </div>
+            <!-- Rerank控制区 -->
+            <div class="rerank-wrapper">
+                <label class="rerank-toggle">
+                    <input type="checkbox" id="rerank-checkbox" onchange="toggleRerankTopK()">
+                    <span>启用精排 (Rerank)</span>
+                </label>
+                <div class="rerank-topk-wrapper" id="rerank-topk-wrapper" style="display: none;">
+                    <label for="rerank-topk-input">保留数量</label>
+                    <input
+                        type="number"
+                        id="rerank-topk-input"
+                        class="rerank-topk-input"
+                        value="5"
+                        min="1"
+                        max="10"
+                    >
+                </div>
+            </div>
             <div class="search-hint">
                 查询示例：<span>山上的照片</span><span>城市夜景</span><span>有人物的照片</span><span>聚餐</span><span>去年</span><span>冬天的风景</span>
             </div>
@@ -432,6 +521,12 @@
 
     <script>
         let statusPollingId = null;
+
+        function toggleRerankTopK() {
+            const checkbox = document.getElementById('rerank-checkbox');
+            const wrapper = document.getElementById('rerank-topk-wrapper');
+            wrapper.style.display = checkbox.checked ? 'flex' : 'none';
+        }
 
         function showMessage(text, type = 'error') {
             const messageDiv = document.getElementById('message');
@@ -561,6 +656,9 @@
             searchBtn.innerHTML = '搜索中<span class="loading"></span>';
 
             try {
+                const enableRerank = document.getElementById('rerank-checkbox').checked;
+                const rerankTopK = parseInt(document.getElementById('rerank-topk-input').value) || 5;
+
                 const response = await fetch('/search_photos', {
                     method: 'POST',
                     headers: {
@@ -568,14 +666,16 @@
                     },
                     body: JSON.stringify({
                         query: query,
-                        top_k: topK
+                        top_k: topK,
+                        enable_rerank: enableRerank,
+                        rerank_top_k: rerankTopK
                     })
                 });
 
                 const result = await response.json();
 
                 if (result.status === 'success') {
-                    renderResults(result.results, result.elapsed_time);
+                    renderResults(result.results, result.elapsed_time, result.reranked || false);
                 } else {
                     showMessage('搜索失败：' + result.message);
                     document.getElementById('results-grid').innerHTML = `
@@ -599,7 +699,7 @@
             }
         }
 
-        function renderResults(results, elapsedTime) {
+        function renderResults(results, elapsedTime, reranked = false) {
             const resultsGrid = document.getElementById('results-grid');
             const resultsStats = document.getElementById('results-stats');
 
@@ -614,7 +714,11 @@
                 return;
             }
 
-            resultsStats.textContent = `共 ${results.length} 个结果，耗时 ${elapsedTime.toFixed(2)} 秒`;
+            let statsText = `共 ${results.length} 个结果，耗时 ${elapsedTime.toFixed(2)} 秒`;
+            if (reranked) {
+                statsText += ' (已精排)';
+            }
+            resultsStats.textContent = statsText;
 
             const html = results.map(item => {
                 const scorePercent = Math.round(item.score * 100);

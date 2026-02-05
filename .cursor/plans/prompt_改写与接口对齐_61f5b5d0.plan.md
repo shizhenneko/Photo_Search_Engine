@@ -1,24 +1,3 @@
----
-name: Prompt 改写与接口对齐
-overview: 基于新架构（embedding 与 EXIF 分离）对 QueryFormatter 和 VisionLLM 的 prompt 进行改写，并修改相关流程确保接口对齐。核心原则：embedding 只使用纯语义描述，时间信息通过 ES 过滤。
-todos:
-  - id: modify-query-formatter
-    content: 修改 utils/query_formatter.py：移除 search_text 的时间拼接（118-126行），更新 prompt 明确纯语义要求和7档时段细分
-    status: completed
-  - id: modify-vision-llm
-    content: 修改 utils/vision_llm_service.py：修正拼写错误（惣绪→情绪），添加指导语不推测时间，优化环境描述避免时间暗示
-    status: completed
-  - id: verify-searcher
-    content: 验证 core/searcher.py 的 QueryFormatter 集成逻辑：确认 search_text 用于 embedding，时间字段用于 ES 过滤
-    status: completed
-  - id: update-tests
-    content: 更新测试文件：test_query_formatter.py 验证 search_text 不含时间，test_searcher.py 验证混合检索流程
-    status: completed
-  - id: integration-test
-    content: 集成测试：运行完整搜索流程，验证纯语义 embedding + ES 时间过滤正常工作
-    status: completed
----
-
 # Prompt 改写与接口对齐方案
 
 ## 一、架构理解总结

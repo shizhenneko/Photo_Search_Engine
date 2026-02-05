@@ -87,7 +87,19 @@ def load_config() -> Dict[str, Any]:
         "IMAGE_MAX_SIZE": _get_int("IMAGE_MAX_SIZE", 1024),
         "IMAGE_QUALITY": _get_int("IMAGE_QUALITY", 85),
         "IMAGE_FORMAT": os.getenv("IMAGE_FORMAT", "WEBP").upper(),
+
+        # Rerank 配置
+        "RERANK_ENABLED": os.getenv("RERANK_ENABLED", "true").lower() in ("true", "1", "yes"),
+        "RERANK_MODEL_NAME": os.getenv("RERANK_MODEL_NAME"),  # 默认使用VISION_MODEL_NAME
+        "RERANK_IMAGE_MAX_SIZE": _get_int("RERANK_IMAGE_MAX_SIZE", 512),
+        "RERANK_IMAGE_QUALITY": _get_int("RERANK_IMAGE_QUALITY", 75),
+        "RERANK_MAX_IMAGES": _get_int("RERANK_MAX_IMAGES", 10),
+        "RERANK_TIMEOUT": _get_int("RERANK_TIMEOUT", 60),
     }
+
+    # RERANK_MODEL_NAME 默认使用 VISION_MODEL_NAME
+    if not config["RERANK_MODEL_NAME"]:
+        config["RERANK_MODEL_NAME"] = config["VISION_MODEL_NAME"]
 
     return config
 
