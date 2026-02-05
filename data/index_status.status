@@ -1,10 +1,10 @@
 {
-  "status": "success",
-  "message": "索引构建成功",
+  "status": "processing",
+  "message": "索引构建中",
   "total_count": 28,
-  "indexed_count": 28,
+  "indexed_count": 4,
   "failed_count": 0,
   "fallback_ratio": 0.0,
   "index_path": "./data/photo_search.index",
-  "elapsed_time": 287.5755
+  "elapsed_time": 38.6023
 }

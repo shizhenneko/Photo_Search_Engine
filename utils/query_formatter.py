@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 from openai import OpenAI
@@ -89,78 +90,34 @@ class QueryFormatter:
                 "original_query": "请展示一张公园的照片"
             }
         """
-        prompt = f"""你是照片检索助手，负责解析用户的搜索意图。
-
-## 用户查询
-{user_query}
-
-## 输出格式（JSON）
+        # 注入当前时间，让模型能正确解析"去年"、"上个月"等相对时间
+        current_time = datetime.now().strftime("%Y年%m月%d日")
+        system_message = f"当前时间：{current_time}。你是照片检索助手。"
+        
+        prompt = f"""解析照片搜索意图，输出JSON：
 {{
+    "search_text": "纯视觉描述（禁止时间词）",
     "scene": "场景关键词",
-    "objects": ["物体1", "物体2"],
-    "atmosphere": "氛围描述",
     "time_hint": "时间提示或null",
-    "season": "季节或null",
-    "time_period": "时段或null",
-    "search_text": "纯视觉语义描述"
+    "season": "春天/夏天/秋天/冬天或null",
+    "time_period": "凌晨/早晨/上午/中午/下午/傍晚/夜晚或null"
 }}
 
-## 字段说明
+规则：
+- search_text只含视觉内容，禁止年月日季节时段
+- time_hint保留原始表达如"去年夏天"、"2023年"
+- 无时间信息时对应字段为null
 
-| 字段 | 用途 | 规则 |
-|------|------|------|
-| search_text | 生成embedding向量 | NEVER包含时间词汇，只描述视觉内容 |
-| scene | 场景分类 | 简洁关键词：公园、海滩、山顶、街道、客厅等 |
-| objects | 物体识别 | 列出1-5个可能出现的主要物体 |
-| atmosphere | 氛围判断 | 宁静、热闹、浪漫、庄重等 |
-| time_hint | ES时间过滤 | 格式如"2020年11月"、"去年"，无则null |
-| season | ES季节过滤 | 春天/夏天/秋天/冬天，无则null |
-| time_period | ES时段过滤 | 凌晨/早晨/上午/中午/下午/傍晚/夜晚，无则null |
-
-## 处理流程
-
-1. **过滤噪音**：忽略礼貌用语（请、帮我、展示）
-2. **提取时间**：将时间信息提取到独立字段，从查询中移除
-3. **识别场景**：判断用户想找什么类型的照片
-4. **生成search_text**：组合场景+物体+氛围，形成自然语言描述
-
-## 示例
-
-**输入**："请帮我找一下去年夏天在海边拍的全家福"
-**输出**：
-{{
-    "scene": "海滩",
-    "objects": ["人物", "沙滩", "海浪", "家庭"],
-    "atmosphere": "温馨",
-    "time_hint": "去年",
-    "season": "夏天",
-    "time_period": null,
-    "search_text": "海滩沙滩边的家庭合影 温馨的户外场景 多人站在一起"
-}}
-
-**输入**："早上拍的日出"
-**输出**：
-{{
-    "scene": "户外",
-    "objects": ["太阳", "天空", "云彩", "地平线"],
-    "atmosphere": "宁静",
-    "time_hint": null,
-    "season": null,
-    "time_period": "早晨",
-    "search_text": "日出时分的天空 太阳从地平线升起 橙红色的云彩"
-}}
-
-## NEVER（绝对禁止）
-- search_text中NEVER出现时间词汇（年、月、日、季节、时段）
-- NEVER在无时间信息时编造时间字段
-
-请分析用户查询并输出JSON："""
+用户查询：{user_query}"""
 
         for attempt in range(self.max_retries):
             try:
                 response = self.client.chat.completions.create(
                     model=self.model_name,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": prompt}
+                    ],
                     temperature=0,
                     response_format={"type": "json_object"},
                     timeout=self.timeout,
