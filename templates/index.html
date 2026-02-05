@@ -142,6 +142,38 @@
             cursor: not-allowed;
         }
 
+        .topk-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .topk-wrapper label {
+            font-size: 0.9rem;
+            color: #666;
+            white-space: nowrap;
+        }
+
+        .topk-input {
+            width: 70px;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            text-align: center;
+            transition: border-color 0.3s;
+        }
+
+        .topk-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .topk-input:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+
         .search-hint {
             font-size: 0.8rem;
             color: #7f8c8d;
@@ -316,6 +348,16 @@
                 width: 100%;
             }
 
+            .topk-wrapper {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .topk-input {
+                flex: 1;
+                max-width: 100px;
+            }
+
             .index-header {
                 flex-direction: column;
                 align-items: stretch;
@@ -354,6 +396,18 @@
                     placeholder="输入查询（如：去年夏天在海边的照片）"
                     disabled
                 >
+                <div class="topk-wrapper">
+                    <label for="topk-input">显示数量</label>
+                    <input
+                        type="number"
+                        id="topk-input"
+                        class="topk-input"
+                        value="10"
+                        min="1"
+                        max="50"
+                        disabled
+                    >
+                </div>
                 <button class="btn-primary" id="search-btn" onclick="searchPhotos()" disabled>
                     搜索
                 </button>
@@ -414,6 +468,7 @@
         function enableSearch(enabled) {
             document.getElementById('query-input').disabled = !enabled;
             document.getElementById('search-btn').disabled = !enabled;
+            document.getElementById('topk-input').disabled = !enabled;
         }
 
         async function initIndex() {
@@ -488,6 +543,8 @@
         async function searchPhotos() {
             const queryInput = document.getElementById('query-input');
             const query = queryInput.value.trim();
+            const topKInput = document.getElementById('topk-input');
+            const topK = Math.min(Math.max(parseInt(topKInput.value) || 10, 1), 50);
 
             if (!query) {
                 showMessage('请输入查询内容');
@@ -511,7 +568,7 @@
                     },
                     body: JSON.stringify({
                         query: query,
-                        top_k: 10
+                        top_k: topK
                     })
                 });
 
