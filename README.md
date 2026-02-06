@@ -32,6 +32,8 @@
 - **智能描述生成**：使用GPT-4o Vision自动生成图片的中文自然语言描述
 - **向量化检索**：基于FAISS的高效向量相似度搜索
 - **混合检索**：支持向量检索+关键字检索（Elasticsearch）的混合模式，检索更精准
+- **Vision LLM 二次精排 (Rerank)**：对检索候选集进行视觉语义重排序，大幅提升 Top-1 准确率
+- **三层防护纯过滤查询**：针对季节/时间等纯过滤场景，跳过向量检索，实现毫秒级响应并降低成本
 - **多维度查询**：支持场景、人物、活动、时间、情感等多种查询类型
 - **查询优化**：可选的LLM查询格式化，自动提取检索意图
 - **时间检索**：基于EXIF元数据或文件时间，支持"去年"、"冬天"等自然语言时间词
@@ -52,6 +54,7 @@ api/routes.py（HTTP API）
 core/indexer.py（索引构建）  core/searcher.py（检索引擎）
     ↓                        ↓
 utils/vision_llm_service.py（Vision LLM - OpenRouter + GPT-4o）
+utils/rerank_service.py（Vision LLM Rerank - 二次精排）
 utils/embedding_service.py（文本Embedding - 阿里百炼/火山引擎/本地T5）
 utils/vector_store.py（FAISS向量存储）
 utils/keyword_store.py（Elasticsearch关键字索引 - 可选）
@@ -65,12 +68,12 @@ utils/image_parser.py（图片解析与优化）
 | 层次 | 技术 | 用途 |
 |------|------|------|
 | Web框架 | Flask 3.0.3 | HTTP服务 |
-| Vision LLM | GPT-4o (via OpenRouter) | 图片描述生成 |
+| Vision LLM | GPT-4o (via OpenRouter) | 图片描述生成 & 二次精排 |
 | 时间解析 | GPT-3.5-turbo (via OpenRouter) | 时间语义理解 |
 | 查询优化 | Moonshot Kimi (可选) | 查询格式化 |
 | 文本嵌入 | 阿里百炼/火山引擎/本地BGE | 中文语义向量 |
 | 向量存储 | FAISS-cpu | 高效相似度检索 |
-| 关键字检索 | Elasticsearch (可选) | BM25关键字匹配 |
+| 关键字检索 | Elasticsearch (可选) | BM25关键字匹配 & 季节过滤 |
 | 图像处理 | Pillow 10.3.0 | 图片解析与优化 |
 | 深度学习 | PyTorch 2.0+ | sentence-transformers后端 |
 
@@ -347,6 +350,26 @@ python main.py
 
 **效果**：单张图片Token消耗降低60-70%
 
+### 6. Vision LLM 二次精排 (Rerank)
+
+系统引入了基于 Vision LLM 的 Rerank 环节，对向量检索返回的 Top 候选集进行二次精排：
+
+- **多图对比**：将多张候选图片（Base64）与用户查询同时发送给 Vision LLM。
+- **语义重排序**：利用模型强大的跨模态理解能力，按相关性重新排序。
+- **自适应触发**：仅对高质量查询或特定场景触发，平衡效果与成本。
+
+**优势**：显著提升 Top-1 准确率，纠正向量检索可能存在的语义偏差。
+
+### 7. 纯过滤查询三层防护
+
+针对 "夏天的照片"、"2023年的照片" 等纯过滤查询，系统采用**三层防护**策略：
+
+1.  **Prompt 优化**：QueryFormatter 明确区分视觉描述与过滤条件，对纯过滤查询返回空搜索文本。
+2.  **空值防护逻辑**：自动识别并清除 LLM 返回的通用词汇（如 "照片"、"摄影作品"）。
+3.  **Searcher 兜底**：在检索引擎层进行最终判定，若为纯过滤查询则直接调用 Elasticsearch 过滤，跳过向量化步骤。
+
+**效果**：零 Embedding 成本，毫秒级响应，100% 准确匹配。
+
 ## 🔌 API接口说明
 
 ### GET /
@@ -391,7 +414,9 @@ python main.py
       "photo_url": "/photo?path=/photos/vacation_beach_001.jpg",
       "description": "一群人在阳光明媚的海滩上玩耍",
       "score": 0.95,
-      "rank": 1
+      "rank": 1,
+      "original_rank": 3,
+      "reranked": true
     }
   ],
   "total_results": 10,
@@ -498,6 +523,7 @@ Photo_Search_Engine/
 | 功能 | 相关变量 | 说明 |
 |------|---------|------|
 | 混合检索 | `ELASTICSEARCH_HOST`<br>`ELASTICSEARCH_PORT`<br>`VECTOR_WEIGHT`<br>`KEYWORD_WEIGHT` | 需要Elasticsearch服务 |
+| 二次精排 (Rerank) | `RERANK_ENABLED`<br>`RERANK_MODEL_NAME`<br>`RERANK_MAX_IMAGES` | 使用 Vision LLM 优化排序 |
 | 查询优化 | `QUERY_FORMAT_API_KEY`<br>`QUERY_FORMAT_MODEL` | 使用LLM优化查询 |
 | 火山引擎 | `VOLCANO_API_KEY`<br>`VOLCANO_EMBEDDING_MODEL` | 使用火山Embedding |
 
@@ -890,9 +916,10 @@ mypy .
 ## 📝 开发文档
 
 详细的开发文档请参考：
-- [demo_development_doc.md](demo_development_doc.md) - 详细设计文档（2000+行）
+- [demo_development_doc.md](demo_development_doc.md) - 详细设计文档
 - [develop.md](develop.md) - 实验目的与验收标准
-- [BUG_FIX.md](BUG_FIX.md) - 问题修复记录（1500+行）
+- [SEASON_SEARCH_FIX.md](SEASON_SEARCH_FIX.md) - 季节搜索功能修复与三层防护策略说明
+- [fix.md](fix.md) - 问题修复记录
 
 ## 🚀 未来规划
 
@@ -929,7 +956,7 @@ mypy .
 - 动态阈值、自适应检索、成本优化、响应<1秒
 
 ✅ **详尽的文档**
-- README（400+行）、开发文档（2000+行）、BUG修复记录（1500+行）
+- README（1000+行）、开发文档（2000+行）、功能修复与优化记录
 
 ## 📚 相关资源
 
