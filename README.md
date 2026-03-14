@@ -362,27 +362,76 @@ curl -X POST http://127.0.0.1:10001/init_index \
 - 没有 EXIF `datetime` 的图片仍然可以参与普通检索和以图搜图
 - 但它们不会被“去年”“夏天”“傍晚”这类时间过滤查询误命中
 
-## Windows + WSL Workflow
+## Native Launchers
 
-如果你在 Windows + WSL 环境下运行，仓库已经提供了更顺手的本地启动脚本：
+仓库现在提供两套互不跨系统的启动脚本：
+
+- Windows 原生版：只使用 PowerShell 和 Windows Python，不调用 `wsl.exe`
+- WSL 原生版：只使用 Bash 和 WSL Python，不调用 PowerShell
+
+### Native Windows
+
+如果你希望完全避开 WSL，并且把索引、`metadata.json`、状态文件都固定写到项目根目录下的 `data/`，可以直接使用：
+
+```bat
+start_windows.bat
+```
+
+或：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\start_stack.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\start_windows.ps1"
 ```
 
 这个脚本会自动：
 
-- 从 `10001` 开始寻找空闲前端端口
-- 以更稳妥的 JVM 参数启动 Elasticsearch
-- 启动 WSL 中的 Flask 服务
-- 输出最终可访问的前端地址和 Elasticsearch 地址
-- 把运行日志和状态文件写入 `artifacts/runtime/`
+- 在 PowerShell 下安装 `uv`（如果系统里还没有）
+- 创建独立的 Windows 虚拟环境 `.venv-windows/`
+- 安装或更新 `requirements.txt`
+- 读取 `.env` 中的 `PHOTO_DIR`，并在遇到 `/mnt/c/...` 时自动转成 Windows 路径
+- 强制把 `DATA_DIR`、`RUNTIME_DATA_DIR`、`INDEX_PATH`、`METADATA_PATH` 都固定到当前项目根目录下的 `data/`
 
-检查本地服务状态：
+如果要换端口：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\check_services.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\artifacts\start_windows.ps1" -Port 10002
 ```
+
+### Native WSL
+
+如果你希望整个流程都在 WSL 内完成，可以直接使用：
+
+```bash
+bash ./artifacts/start_wsl.sh
+```
+
+或者继续沿用兼容入口：
+
+```bash
+bash ./artifacts/start_stack.sh
+```
+
+这个脚本会自动：
+
+- 在 WSL 下安装 `uv`（如果系统里还没有）
+- 创建 WSL 虚拟环境 `.venv/`
+- 安装或更新 `requirements.txt`
+- 读取 `.env` 中的 `PHOTO_DIR`，并在遇到 `C:\...` 时自动转成 `/mnt/c/...`
+- 强制把 `DATA_DIR`、`RUNTIME_DATA_DIR`、`INDEX_PATH`、`METADATA_PATH` 都固定到当前项目根目录下的 `data/`
+
+如果要换端口：
+
+```bash
+bash ./artifacts/start_wsl.sh 10002
+```
+
+不管是 Windows 版还是 WSL 版，最终都会把以下文件写到当前项目目录中：
+
+- `data/photo_search.index`
+- `data/metadata.json`
+- `data/index_status.status`
+- `data/index_ready.marker`
+- `data/index_timing.jsonl`
 
 ## Project Structure
 

@@ -19,6 +19,9 @@ class FakeTimeParser:
     def has_time_terms(self, query: str) -> bool:
         return "去年" in query or "2024" in query
 
+    def detect_time_terms(self, query: str, strategy: str = "local_first") -> bool:
+        return self.has_time_terms(query)
+
     def extract_time_constraints(self, query: str) -> Dict[str, Any]:
         if "去年" in query:
             return {"start_date": "2025-01-01", "end_date": "2025-12-31", "precision": "year"}

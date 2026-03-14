@@ -169,6 +169,7 @@ def register_routes(
             if not query:
                 return jsonify({"status": "error", "message": "查询内容不能为空"}), 400
 
+            search_mode = str(data.get("search_mode") or config.get("DEFAULT_SEARCH_MODE", "balanced")).strip().lower()
             top_k = min(int(data.get("top_k", config.get("TOP_K", 12))), 50)
             rerank_top_k = min(max(1, int(data.get("rerank_top_k", top_k))), top_k)
             enable_text_rerank = bool(data.get("enable_text_rerank", False))
@@ -179,7 +180,7 @@ def register_routes(
                 enable_text_rerank=enable_text_rerank,
                 enable_visual_rerank=enable_visual_rerank,
             )
-            results = searcher.search(query, search_pool_k)
+            results = searcher.search(query, search_pool_k, search_mode=search_mode)
             results, rerank_state = _apply_rerank_pipeline(
                 results=results,
                 top_k=top_k,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from math import ceil
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
@@ -38,6 +39,15 @@ class Searcher:
         keyword_weight: float = 0.2,
         query_expansion_enabled: bool = True,
         query_expansion_max_alternatives: int = 2,
+        query_multi_round_enabled: bool = False,
+        query_reflection_enabled: bool = False,
+        time_parse_strategy: str = "local_first",
+        validate_file_exists: bool = False,
+        query_cache_enabled: bool = True,
+        query_cache_size: int = 2000,
+        embedding_cache_enabled: bool = True,
+        embedding_cache_size: int = 5000,
+        default_search_mode: str = "balanced",
     ) -> None:
         """
         初始化检索器并记录索引路径与加载状态。
@@ -70,6 +80,15 @@ class Searcher:
         self.keyword_weight = keyword_weight
         self.query_expansion_enabled = bool(query_expansion_enabled)
         self.query_expansion_max_alternatives = max(0, int(query_expansion_max_alternatives))
+        self.query_multi_round_enabled = bool(query_multi_round_enabled)
+        self.query_reflection_enabled = bool(query_reflection_enabled)
+        self.time_parse_strategy = str(time_parse_strategy or "local_first").strip().lower()
+        self.validate_file_exists = bool(validate_file_exists)
+        self.query_cache_enabled = bool(query_cache_enabled)
+        self.query_cache_size = max(1, int(query_cache_size))
+        self.embedding_cache_enabled = bool(embedding_cache_enabled)
+        self.embedding_cache_size = max(1, int(embedding_cache_size))
+        self.default_search_mode = self._normalize_search_mode(default_search_mode)
         self.index_loaded = False
         self.index_path = vector_store.index_path
         self.metadata_path = vector_store.metadata_path
@@ -77,12 +96,15 @@ class Searcher:
         self._metadata_by_path: Dict[str, Dict[str, Any]] = {}
         self._last_search_debug: Dict[str, Any] = self._empty_search_debug()
         self._last_round_quality: Dict[str, Any] = {}
+        self._query_cache: Dict[tuple[str, str], Dict[str, Any]] = {}
+        self._embedding_cache: Dict[str, List[float]] = {}
         self._refresh_metadata_cache()
 
     @staticmethod
     def _empty_search_debug() -> Dict[str, Any]:
         return {
             "mode": "text",
+            "search_mode": "balanced",
             "base_intent": {},
             "expansion_triggered": False,
             "expansion_reason": "",
@@ -91,7 +113,15 @@ class Searcher:
             "reflection_reason": "",
             "reflection": {},
             "rounds": [],
+            "timing": {},
         }
+
+    @staticmethod
+    def _normalize_search_mode(search_mode: Any) -> str:
+        normalized = str(search_mode or "balanced").strip().lower()
+        if normalized in {"fast", "balanced", "high_recall"}:
+            return normalized
+        return "balanced"
 
     @staticmethod
     def _path_key(photo_path: str) -> str:
@@ -133,6 +163,68 @@ class Searcher:
 
     def _set_last_search_debug(self, debug: Dict[str, Any]) -> None:
         self._last_search_debug = debug
+
+    @staticmethod
+    def _record_timing(debug: Dict[str, Any], key: str, started_at: float) -> None:
+        timing = debug.setdefault("timing", {})
+        timing[key] = round((time.perf_counter() - started_at) * 1000, 3)
+
+    def _cache_get(self, cache: Dict[Any, Any], key: Any) -> Any:
+        value = cache.get(key)
+        if value is None:
+            return None
+        cache.pop(key, None)
+        cache[key] = value
+        return value
+
+    @staticmethod
+    def _cache_put(cache: Dict[Any, Any], key: Any, value: Any, capacity: int) -> None:
+        cache.pop(key, None)
+        cache[key] = value
+        while len(cache) > capacity:
+            cache.pop(next(iter(cache)))
+
+    def _format_query(self, query: str) -> Dict[str, Any]:
+        default = {
+            "search_text": query,
+            "retrieval_mode": "hybrid",
+            "media_terms": [],
+            "identity_terms": [],
+            "strict_identity_filter": False,
+            "intent_mode": "open",
+            "intent_contract": {},
+            "time_hint": None,
+            "season": None,
+            "time_period": None,
+            "original_query": query,
+        }
+        if not self.query_formatter or not self.query_formatter.is_enabled():
+            return default
+        cache_key = ("format_query", query)
+        if self.query_cache_enabled:
+            cached = self._cache_get(self._query_cache, cache_key)
+            if cached is not None:
+                return dict(cached)
+        result = self.query_formatter.format_query(query)
+        if self.query_cache_enabled:
+            self._cache_put(self._query_cache, cache_key, dict(result), self.query_cache_size)
+        return result
+
+    def _generate_embedding(self, embedding_query: str) -> List[float]:
+        normalized = str(embedding_query or "").strip()
+        if not normalized:
+            return self.embedding_service.generate_embedding(embedding_query)
+        if self.embedding_cache_enabled:
+            cached = self._cache_get(self._embedding_cache, normalized)
+            if cached is not None:
+                return list(cached)
+        embedding = self.embedding_service.generate_embedding(embedding_query)
+        if self.embedding_cache_enabled:
+            self._cache_put(self._embedding_cache, normalized, list(embedding), self.embedding_cache_size)
+        return embedding
+
+    def _should_validate_path(self, normalized_path: str) -> bool:
+        return bool(self.validate_file_exists and normalized_path)
 
     def _get_last_round_quality(self) -> Dict[str, Any]:
         return dict(self._last_round_quality)
@@ -836,7 +928,7 @@ class Searcher:
             if metadata is None:
                 continue
             normalized_path = normalize_local_path(photo_path)
-            if normalized_path and not os.path.exists(normalized_path):
+            if self._should_validate_path(normalized_path) and not os.path.exists(normalized_path):
                 continue
             # 只按命中的检索通道做归一融合。
             # 这样当图片没有 BM25 命中时，不会因为 keyword_score=0 被无端压分。
@@ -1028,7 +1120,9 @@ class Searcher:
             metadata = item.get("metadata") or {}
             photo_path = metadata.get("photo_path")
             normalized_path = normalize_local_path(photo_path) if photo_path else ""
-            if not photo_path or not normalized_path or not os.path.exists(normalized_path):
+            if not photo_path or not normalized_path:
+                continue
+            if self._should_validate_path(normalized_path) and not os.path.exists(normalized_path):
                 continue
             score = self._distance_to_score(float(item.get("distance", 0.0)))
             combined_results.append(
@@ -1056,14 +1150,19 @@ class Searcher:
         normalized_top_k: int,
         has_filter: bool,
         relaxation_level: int = 0,
+        debug: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        query_embedding = self.embedding_service.generate_embedding(embedding_query)
+        embedding_started_at = time.perf_counter()
+        query_embedding = self._generate_embedding(embedding_query)
+        if debug is not None and "embedding_ms" not in debug.get("timing", {}):
+            self._record_timing(debug, "embedding_ms", embedding_started_at)
         candidate_k = self._calculate_candidate_k(
             normalized_top_k,
             has_filter,
             relaxation_level=relaxation_level,
         )
 
+        recall_started_at = time.perf_counter()
         if self.keyword_store is not None:
             combined_results = self._hybrid_search(
                 query,
@@ -1078,8 +1177,13 @@ class Searcher:
         else:
             raw_results = self.vector_store.search(query_embedding, candidate_k)
             combined_results = self._vector_results_to_combined(raw_results)
+        if debug is not None:
+            timing_key = "hybrid_search_ms" if self.keyword_store is not None else "vector_search_ms"
+            if timing_key not in debug.get("timing", {}):
+                self._record_timing(debug, timing_key, recall_started_at)
 
-        return self._finalize_results(
+        finalize_started_at = time.perf_counter()
+        results = self._finalize_results(
             combined_results=combined_results,
             normalized_top_k=normalized_top_k,
             has_filter=has_filter,
@@ -1091,6 +1195,9 @@ class Searcher:
             relaxation_level=relaxation_level,
             strip_internal=False,
         )
+        if debug is not None and "merge_ms" not in debug.get("timing", {}):
+            self._record_timing(debug, "merge_ms", finalize_started_at)
+        return results
 
     def _maybe_reflect_query_results(
         self,
@@ -1423,7 +1530,7 @@ class Searcher:
             return self._sanitize_results(final_results)
         return final_results
 
-    def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 10, search_mode: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         解析查询、执行混合检索、时间过滤并返回排序结果。
 
@@ -1438,9 +1545,11 @@ class Searcher:
         if not self.index_loaded and not self.load_index():
             raise ValueError("索引未加载，请先初始化索引")
 
+        search_mode = self._normalize_search_mode(search_mode or self.default_search_mode)
         normalized_top_k = max(1, min(int(top_k), 50))
         debug = self._empty_search_debug()
         debug["mode"] = "text"
+        debug["search_mode"] = search_mode
 
         # 1. 查询格式化
         # 优先信任 QueryFormatter 的 LLM 输出：
@@ -1456,8 +1565,14 @@ class Searcher:
         retrieval_mode = "hybrid"
         time_hints = {}
 
+        format_result: Dict[str, Any] = {
+            "intent_mode": "open",
+            "intent_contract": {},
+        }
         if query_formatter_enabled:
-            format_result = self.query_formatter.format_query(query)
+            formatter_started_at = time.perf_counter()
+            format_result = self._format_query(query)
+            self._record_timing(debug, "query_formatter_ms", formatter_started_at)
             formatted_query = (format_result.get("search_text") or "").strip()
             media_terms = list(format_result.get("media_terms") or [])
             identity_terms = list(format_result.get("identity_terms") or [])
@@ -1485,8 +1600,10 @@ class Searcher:
             or time_hints.get("time_period")
         )
 
-        if has_filter:
+        if has_filter and self.time_parser.detect_time_terms(query, strategy=self.time_parse_strategy):
+            time_parse_started_at = time.perf_counter()
             constraints = self._extract_time_constraints(query)
+            self._record_timing(debug, "time_parse_ms", time_parse_started_at)
 
         # 合并 QueryFormatter 的时间提示到 ES 过滤条件
         if time_hints.get("season") and not constraints.get("season"):
@@ -1558,6 +1675,7 @@ class Searcher:
             normalized_top_k=normalized_top_k,
             has_filter=has_filter,
             relaxation_level=0,
+            debug=debug,
         )
         base_round_quality = self._get_last_round_quality()
         debug["rounds"].append(
@@ -1567,16 +1685,18 @@ class Searcher:
                 results=first_round_results,
             )
         )
-        final_results = self._maybe_expand_query_results(
-            query=query,
-            base_intent=base_intent,
-            base_results=first_round_results,
-            base_round_quality=base_round_quality,
-            normalized_top_k=normalized_top_k,
-            constraints=constraints,
-            has_filter=has_filter,
-            debug=debug,
-        )
+        final_results = first_round_results
+        if search_mode == "high_recall" and self.query_multi_round_enabled:
+            final_results = self._maybe_expand_query_results(
+                query=query,
+                base_intent=base_intent,
+                base_results=first_round_results,
+                base_round_quality=base_round_quality,
+                normalized_top_k=normalized_top_k,
+                constraints=constraints,
+                has_filter=has_filter,
+                debug=debug,
+            )
         final_results = self._sanitize_results(final_results)
         self._set_last_search_debug(debug)
         return final_results

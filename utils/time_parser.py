@@ -19,6 +19,45 @@ from utils.llm_compat import (
 class TimeParser:
     """使用 OpenAI 兼容文本模型解析时间约束。"""
 
+    LOCAL_TIME_HINTS = (
+        "今天",
+        "昨天",
+        "前天",
+        "明天",
+        "后天",
+        "今年",
+        "去年",
+        "前年",
+        "明年",
+        "上周",
+        "这周",
+        "下周",
+        "上个月",
+        "这个月",
+        "下个月",
+        "去年",
+        "最近",
+        "春天",
+        "夏天",
+        "秋天",
+        "冬天",
+        "凌晨",
+        "早晨",
+        "上午",
+        "中午",
+        "下午",
+        "傍晚",
+        "夜晚",
+        "周一",
+        "周二",
+        "周三",
+        "周四",
+        "周五",
+        "周六",
+        "周日",
+        "星期",
+    )
+
     def __init__(
         self,
         api_key: str,
@@ -43,6 +82,30 @@ class TimeParser:
     def has_time_terms(self, query: str) -> bool:
         if not query or not query.strip():
             return False
+        return self.has_local_time_terms(query)
+
+    @classmethod
+    def has_local_time_terms(cls, query: str) -> bool:
+        text = str(query or "").strip()
+        if not text:
+            return False
+        if any(token in text for token in cls.LOCAL_TIME_HINTS):
+            return True
+        return any(char.isdigit() for char in text)
+
+    def needs_remote_parse(self, query: str, strategy: str = "local_first") -> bool:
+        normalized = str(strategy or "local_first").strip().lower()
+        if normalized == "always":
+            return True
+        return self.has_local_time_terms(query)
+
+    def detect_time_terms(self, query: str, strategy: str = "local_first") -> bool:
+        if not query or not query.strip():
+            return False
+        if not self.needs_remote_parse(query, strategy=strategy):
+            return False
+        if str(strategy or "local_first").strip().lower() != "always":
+            return True
         current_date = datetime.now().strftime("%Y-%m-%d")
         prompt = f"""当前日期：{current_date}
 
@@ -78,7 +141,7 @@ class TimeParser:
         return False
 
     def extract_time_constraints(self, query: str) -> Dict[str, Any]:
-        if not self.has_time_terms(query):
+        if not self.detect_time_terms(query):
             return {"start_date": None, "end_date": None, "precision": "none"}
 
         current_date = datetime.now().strftime("%Y-%m-%d")

@@ -123,6 +123,10 @@ class MainModuleTests(unittest.TestCase):
                 index_path="C:/data/photo_search.index",
                 metadata_path="C:/data/metadata.json",
                 metric="cosine",
+                index_type="flat",
+                hnsw_m=32,
+                hnsw_ef_construction=200,
+                hnsw_ef_search=96,
             )
             embedding_cls.assert_called_once()
             vision_cls.assert_called_once()

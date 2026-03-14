@@ -68,6 +68,39 @@ class VectorStoreTests(unittest.TestCase):
             self.assertTrue(new_store.load())
             self.assertEqual(new_store.get_total_items(), 2)
 
+    def test_save_and_load_hnsw_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            index_path = os.path.join(tmp, "index.bin")
+            metadata_path = os.path.join(tmp, "metadata.json")
+            store = VectorStore(
+                dimension=self.dimension,
+                index_path=index_path,
+                metadata_path=metadata_path,
+                index_type="hnsw",
+                hnsw_m=16,
+                hnsw_ef_construction=80,
+                hnsw_ef_search=48,
+            )
+
+            store.add_item([0.1] * self.dimension, {"photo_path": "/a.jpg", "id": 1})
+            store.add_item([0.2] * self.dimension, {"photo_path": "/b.jpg", "id": 2})
+            store.save()
+
+            self.assertTrue(os.path.exists(f"{index_path}.meta.json"))
+
+            loaded_store = VectorStore(
+                dimension=self.dimension,
+                index_path=index_path,
+                metadata_path=metadata_path,
+                index_type="hnsw",
+                hnsw_m=16,
+                hnsw_ef_construction=80,
+                hnsw_ef_search=48,
+            )
+            self.assertTrue(loaded_store.load())
+            self.assertEqual(loaded_store.get_total_items(), 2)
+            self.assertTrue(loaded_store.has_photo_path("/b.jpg"))
+
     def test_load_nonexistent_index(self) -> None:
         """测试加载不存在的索引"""
         with tempfile.TemporaryDirectory() as tmp:

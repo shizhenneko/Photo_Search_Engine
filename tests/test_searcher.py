@@ -818,6 +818,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         strong_results = [
@@ -830,8 +832,77 @@ class SearcherTests(unittest.TestCase):
             results = searcher.search("海边日落", top_k=5)
 
         hybrid_search.assert_called_once()
-        maybe_expand.assert_called_once()
+        maybe_expand.assert_not_called()
         self.assertEqual(results, strong_results)
+
+    def test_search_balanced_mode_skips_multi_round_even_when_results_are_weak(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "请帮我找陶喆的照片": {
+                    "search_text": "",
+                    "media_terms": [],
+                    "identity_terms": ["陶喆"],
+                    "strict_identity_filter": True,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "陶喆的照片",
+                        "must_keep": ["陶喆"],
+                        "avoid_drift": "不要扩成其他男歌手",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "请帮我找陶喆的照片",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[
+            {
+                "search_text": "舞台男歌手 现场演出",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["陶喆"],
+                "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "陶喆的照片",
+                    "must_keep": ["陶喆"],
+                    "avoid_drift": "不要扩成其他男歌手",
+                },
+                "contract_satisfied": True,
+            }
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
+        )
+
+        weak_results = [
+            {"photo_path": "/tmp/weak.jpg", "description": "模糊男歌手", "score": 0.41, "vector_score": 0.41, "keyword_score": 0.0, "rank": 1},
+        ]
+
+        with patch.object(searcher, "_hybrid_search", return_value=weak_results) as hybrid_search, \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("请帮我找陶喆的照片", top_k=5)
+
+        self.assertEqual(results, weak_results)
+        self.assertEqual(hybrid_search.call_count, 1)
+        query_formatter.expand_query_intents.assert_not_called()
+        debug = searcher.get_last_search_debug()
+        self.assertEqual(debug["search_mode"], "balanced")
+        self.assertFalse(debug["expansion_triggered"])
 
     def test_search_continues_expansion_when_results_do_not_fill_top_k(self) -> None:
         vector_store = Mock()
@@ -884,6 +955,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         first_round_results = [
@@ -911,7 +984,7 @@ class SearcherTests(unittest.TestCase):
 
         with patch.object(searcher, "_hybrid_search", side_effect=[first_round_results, expanded_results]) as hybrid_search, \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
-            results = searcher.search("帮我找河南说唱之神的照片", top_k=5)
+            results = searcher.search("帮我找河南说唱之神的照片", top_k=5, search_mode="high_recall")
 
         self.assertEqual(hybrid_search.call_count, 2)
         self.assertEqual(len(results), 2)
@@ -969,6 +1042,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         first_round_results = [
@@ -1032,7 +1107,7 @@ class SearcherTests(unittest.TestCase):
 
         with patch.object(searcher, "_hybrid_search", side_effect=[first_round_results, expanded_results]), \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
-            results = searcher.search("河南说唱之神专辑封面", top_k=4)
+            results = searcher.search("河南说唱之神专辑封面", top_k=4, search_mode="high_recall")
 
         query_formatter.expand_query_intents.assert_called_once()
         self.assertEqual(
@@ -1097,6 +1172,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         weak_results = [
@@ -1115,7 +1192,7 @@ class SearcherTests(unittest.TestCase):
         ]
         with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_round_results]) as hybrid_search, \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
-            results = searcher.search("请帮我找陶喆的照片", top_k=5)
+            results = searcher.search("请帮我找陶喆的照片", top_k=5, search_mode="high_recall")
 
         self.assertEqual(hybrid_search.call_count, 2)
         query_formatter.expand_query_intents.assert_called_once()
@@ -1173,6 +1250,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         weak_results = [
@@ -1237,6 +1316,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         weak_results = [
@@ -1248,7 +1329,7 @@ class SearcherTests(unittest.TestCase):
 
         with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_results]) as hybrid_search, \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
-            results = searcher.search("海边日落", top_k=5)
+            results = searcher.search("海边日落", top_k=5, search_mode="high_recall")
 
         self.assertEqual(hybrid_search.call_count, 2)
         self.assertEqual(results[0], expanded_results[0])
@@ -1309,6 +1390,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         weak_results = [
@@ -1336,7 +1419,7 @@ class SearcherTests(unittest.TestCase):
 
         with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_results]), \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
-            results = searcher.search("请帮我找陶喆的照片", top_k=5)
+            results = searcher.search("请帮我找陶喆的照片", top_k=5, search_mode="high_recall")
 
         self.assertEqual(results[0]["photo_path"], "/tmp/better.jpg")
         self.assertEqual(results[1]["photo_path"], "/tmp/weak.jpg")
@@ -1424,6 +1507,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         weak_results = [
@@ -1462,7 +1547,7 @@ class SearcherTests(unittest.TestCase):
 
         with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, still_weak_results, reflected_results]), \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
-            results = searcher.search("请帮我找陶喆的照片", top_k=5)
+            results = searcher.search("请帮我找陶喆的照片", top_k=5, search_mode="high_recall")
 
         self.assertEqual(results[0]["photo_path"], "/tmp/final.jpg")
         self.assertEqual(len(results), 3)
@@ -1547,6 +1632,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         weak_results = [
@@ -1594,7 +1681,7 @@ class SearcherTests(unittest.TestCase):
 
         with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, still_sparse_results, reflected_results]), \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
-            results = searcher.search("河南说唱之神", top_k=4)
+            results = searcher.search("河南说唱之神", top_k=4, search_mode="high_recall")
 
         self.assertEqual(len(results), 4)
         self.assertEqual(
@@ -1672,6 +1759,8 @@ class SearcherTests(unittest.TestCase):
             vector_store=vector_store,
             keyword_store=Mock(),
             query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
         )
 
         base_results = [
@@ -1728,7 +1817,7 @@ class SearcherTests(unittest.TestCase):
 
         with patch.object(searcher, "_hybrid_search", side_effect=[base_results, reflected_round_one, reflected_round_two]), \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
-            results = searcher.search("河南说唱之神演出照片", top_k=4)
+            results = searcher.search("河南说唱之神演出照片", top_k=4, search_mode="high_recall")
 
         self.assertEqual(
             [item["photo_path"] for item in results],

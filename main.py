@@ -39,7 +39,9 @@ def initialize_services(
     config: Dict[str, object],
 ) -> Tuple[Indexer, Searcher, Optional["TextRerankService"], Optional["VisualRerankService"]]:
     data_dir = str(config.get("DATA_DIR", "./data"))
+    runtime_data_dir = str(config.get("RUNTIME_DATA_DIR", data_dir))
     os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(runtime_data_dir, exist_ok=True)
 
     embedding_service = TumuerEmbeddingService(
         api_key=str(config.get("EMBEDDING_API_KEY", "")),
@@ -52,9 +54,13 @@ def initialize_services(
 
     vector_store = VectorStore(
         dimension=int(config.get("EMBEDDING_DIMENSION", 4096)),
-        index_path=str(config.get("INDEX_PATH", os.path.join(data_dir, "photo_search.index"))),
-        metadata_path=str(config.get("METADATA_PATH", os.path.join(data_dir, "metadata.json"))),
+        index_path=str(config.get("INDEX_PATH", os.path.join(runtime_data_dir, "photo_search.index"))),
+        metadata_path=str(config.get("METADATA_PATH", os.path.join(runtime_data_dir, "metadata.json"))),
         metric=str(config.get("VECTOR_METRIC", "cosine")),
+        index_type=str(config.get("VECTOR_INDEX_TYPE", "flat")),
+        hnsw_m=int(config.get("HNSW_M", 32)),
+        hnsw_ef_construction=int(config.get("HNSW_EF_CONSTRUCTION", 200)),
+        hnsw_ef_search=int(config.get("HNSW_EF_SEARCH", 96)),
     )
 
     vision_service = SU8VisionLLMService(
@@ -141,12 +147,21 @@ def initialize_services(
         vector_store=vector_store,
         keyword_store=keyword_store,
         query_formatter=query_formatter,
-        data_dir=data_dir,
+        data_dir=runtime_data_dir,
         top_k=int(config.get("TOP_K", 12)),
         vector_weight=float(config.get("VECTOR_WEIGHT", 0.8)),
         keyword_weight=float(config.get("KEYWORD_WEIGHT", 0.2)),
         query_expansion_enabled=bool(config.get("QUERY_EXPANSION_ENABLED", True)),
         query_expansion_max_alternatives=int(config.get("QUERY_EXPANSION_MAX_ALTERNATIVES", 2)),
+        query_multi_round_enabled=bool(config.get("QUERY_MULTI_ROUND_ENABLED", False)),
+        query_reflection_enabled=bool(config.get("QUERY_REFLECTION_ENABLED", False)),
+        time_parse_strategy=str(config.get("TIME_PARSE_STRATEGY", "local_first")),
+        validate_file_exists=bool(config.get("SEARCH_VALIDATE_FILE_EXISTS", False)),
+        query_cache_enabled=bool(config.get("QUERY_CACHE_ENABLED", True)),
+        query_cache_size=int(config.get("QUERY_CACHE_SIZE", 2000)),
+        embedding_cache_enabled=bool(config.get("EMBEDDING_CACHE_ENABLED", True)),
+        embedding_cache_size=int(config.get("EMBEDDING_CACHE_SIZE", 5000)),
+        default_search_mode=str(config.get("DEFAULT_SEARCH_MODE", "balanced")),
     )
 
     text_rerank_service: Optional[TextRerankService] = None

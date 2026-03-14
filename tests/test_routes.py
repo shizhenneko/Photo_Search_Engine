@@ -358,7 +358,21 @@ class RouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        search_mock.assert_called_once_with("河南说唱之神", 15)
+        search_mock.assert_called_once_with("河南说唱之神", 15, search_mode="balanced")
+
+    def test_search_photos_passes_search_mode(self) -> None:
+        with patch.object(self.searcher, "search", return_value=[]) as search_mock:
+            response = self.client.post(
+                "/search_photos",
+                json={
+                    "query": "河南说唱之神",
+                    "top_k": 5,
+                    "search_mode": "high_recall",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        search_mock.assert_called_once_with("河南说唱之神", 5, search_mode="high_recall")
 
     def test_search_by_image_expands_base_pool_when_rerank_enabled(self) -> None:
         with patch.object(self.searcher, "search_by_image_path", return_value=[]) as search_mock:

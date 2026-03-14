@@ -14,6 +14,7 @@ __pycache__/
 coverage.xml
 
 .venv/
+.venv-windows/
 venv/
 env/
 
@@ -28,3 +29,5 @@ Thumbs.db
 nul
 
 artifacts/runtime/
+artifacts/runtime-windows/
+artifacts/runtime-wsl/

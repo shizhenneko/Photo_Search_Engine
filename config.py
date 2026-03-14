@@ -44,6 +44,7 @@ def load_config() -> Dict[str, Any]:
         load_dotenv()
 
     data_dir = os.getenv("DATA_DIR", "./data")
+    runtime_data_dir = os.getenv("RUNTIME_DATA_DIR", data_dir)
     llm_api_key = (
         os.getenv("LLM_API_KEY")
         or os.getenv("SU8_API_KEY")
@@ -65,9 +66,14 @@ def load_config() -> Dict[str, Any]:
     config: Dict[str, Any] = {
         "PHOTO_DIR": os.getenv("PHOTO_DIR"),
         "DATA_DIR": data_dir,
-        "INDEX_PATH": os.getenv("INDEX_PATH", os.path.join(data_dir, "photo_search.index")),
-        "METADATA_PATH": os.getenv("METADATA_PATH", os.path.join(data_dir, "metadata.json")),
+        "RUNTIME_DATA_DIR": runtime_data_dir,
+        "INDEX_PATH": os.getenv("INDEX_PATH", os.path.join(runtime_data_dir, "photo_search.index")),
+        "METADATA_PATH": os.getenv("METADATA_PATH", os.path.join(runtime_data_dir, "metadata.json")),
         "VECTOR_METRIC": os.getenv("VECTOR_METRIC", "cosine"),
+        "VECTOR_INDEX_TYPE": os.getenv("VECTOR_INDEX_TYPE", "flat"),
+        "HNSW_M": _get_int("HNSW_M", 32),
+        "HNSW_EF_CONSTRUCTION": _get_int("HNSW_EF_CONSTRUCTION", 200),
+        "HNSW_EF_SEARCH": _get_int("HNSW_EF_SEARCH", 96),
         "VECTOR_WEIGHT": _get_float("VECTOR_WEIGHT", 0.8),
         "KEYWORD_WEIGHT": _get_float("KEYWORD_WEIGHT", 0.2),
         "TOP_K": _get_int("TOP_K", 12),
@@ -100,6 +106,7 @@ def load_config() -> Dict[str, Any]:
         "IDENTITY_VISUAL_MIN_CONFIDENCE": _get_float("IDENTITY_VISUAL_MIN_CONFIDENCE", 0.92),
         "TIME_PARSE_MODEL": os.getenv("TIME_PARSE_MODEL", "gpt-5.1"),
         "TIME_PARSE_REASONING_EFFORT": os.getenv("TIME_PARSE_REASONING_EFFORT", "low"),
+        "TIME_PARSE_STRATEGY": os.getenv("TIME_PARSE_STRATEGY", "local_first"),
         "QUERY_FORMAT_ENABLED": _get_bool("QUERY_FORMAT_ENABLED", True),
         "QUERY_FORMAT_API_KEY": query_format_api_key,
         "QUERY_FORMAT_BASE_URL": query_format_base_url,
@@ -107,6 +114,13 @@ def load_config() -> Dict[str, Any]:
         "QUERY_FORMAT_REASONING_EFFORT": os.getenv("QUERY_FORMAT_REASONING_EFFORT", "low"),
         "QUERY_EXPANSION_ENABLED": _get_bool("QUERY_EXPANSION_ENABLED", True),
         "QUERY_EXPANSION_MAX_ALTERNATIVES": _get_int("QUERY_EXPANSION_MAX_ALTERNATIVES", 2),
+        "QUERY_MULTI_ROUND_ENABLED": _get_bool("QUERY_MULTI_ROUND_ENABLED", False),
+        "QUERY_REFLECTION_ENABLED": _get_bool("QUERY_REFLECTION_ENABLED", False),
+        "QUERY_CACHE_ENABLED": _get_bool("QUERY_CACHE_ENABLED", True),
+        "QUERY_CACHE_SIZE": _get_int("QUERY_CACHE_SIZE", 2000),
+        "EMBEDDING_CACHE_ENABLED": _get_bool("EMBEDDING_CACHE_ENABLED", True),
+        "EMBEDDING_CACHE_SIZE": _get_int("EMBEDDING_CACHE_SIZE", 5000),
+        "DISK_CACHE_ENABLED": _get_bool("DISK_CACHE_ENABLED", False),
         "EMBEDDING_API_KEY": embedding_api_key,
         "EMBEDDING_BASE_URL": embedding_base_url,
         "EMBEDDING_MODEL": os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B"),
@@ -131,6 +145,8 @@ def load_config() -> Dict[str, Any]:
         "ELASTICSEARCH_INDEX": os.getenv("ELASTICSEARCH_INDEX", "photo_keywords"),
         "ELASTICSEARCH_USERNAME": os.getenv("ELASTICSEARCH_USERNAME"),
         "ELASTICSEARCH_PASSWORD": os.getenv("ELASTICSEARCH_PASSWORD"),
+        "SEARCH_VALIDATE_FILE_EXISTS": _get_bool("SEARCH_VALIDATE_FILE_EXISTS", False),
+        "DEFAULT_SEARCH_MODE": os.getenv("DEFAULT_SEARCH_MODE", "balanced").strip().lower(),
     }
 
     return config

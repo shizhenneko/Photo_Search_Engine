@@ -1,11 +1,11 @@
 {
-  "status": "success",
-  "message": "索引构建成功",
-  "total_count": 81,
-  "indexed_count": 81,
+  "status": "processing",
+  "message": "正在处理: IMG_20231119_202028.jpg",
+  "total_count": 77,
+  "indexed_count": 11,
   "failed_count": 0,
   "fallback_ratio": 0.0,
   "index_path": "./data/photo_search.index",
-  "elapsed_time": 475.7269,
+  "elapsed_time": 84.2667,
   "timing_log_path": "./data/index_timing.jsonl"
 }
