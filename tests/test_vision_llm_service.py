@@ -177,7 +177,7 @@ class VisionServiceTests(unittest.TestCase):
 
         self.assertIn("第一次结果摘要：", prompt)
         self.assertIn("\"ocr_text_excerpt\"", prompt)
-        self.assertNotIn("SUPER LIVE WORLD TOUR 2026 SPECIAL GUEST ARTIST\"", prompt)
+        self.assertNotIn("\"ocr_text\":\"", prompt)
         self.assertNotIn("\"identity_evidence\"", prompt)
 
 
