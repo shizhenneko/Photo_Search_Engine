@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Sequence, Tuple
 
 
+EMBEDDING_TEXT_VERSION = 2
 OCR_HEAVY_THRESHOLD = 36
 OCR_STRONG_THRESHOLD = 48
 RICH_DESCRIPTION_THRESHOLD = 24
@@ -101,12 +102,14 @@ def _normalize_identity_candidate(raw: Any) -> Dict[str, Any] | None:
         for evidence_type in (_normalize_text(value) for value in raw.get("evidence_types") or [])
         if evidence_type
     ]
+    scope = _normalize_text(raw.get("scope"))
     return {
         "name": name,
         "aliases": _dedupe_keep_order(aliases),
         "confidence": round(confidence, 4),
         "evidence_sources": _dedupe_keep_order(evidence_sources),
         "evidence_types": _dedupe_keep_order(evidence_types),
+        "scope": scope,
     }
 
 
@@ -238,6 +241,74 @@ def build_retrieval_text(
     return " ".join(part for part in parts if part).strip()
 
 
+def _is_visual_identity_candidate(
+    candidate: Dict[str, Any],
+    *,
+    text_threshold: float,
+    visual_threshold: float,
+) -> bool:
+    if candidate.get("confidence", 0.0) < _candidate_threshold(candidate, text_threshold, visual_threshold):
+        return False
+
+    evidence_types = {str(value).strip().lower() for value in candidate.get("evidence_types") or [] if str(value).strip()}
+    if "visual" not in evidence_types and "mixed" not in evidence_types:
+        return False
+
+    scope = str(candidate.get("scope") or "").strip().lower()
+    if scope and scope != "depicted":
+        return False
+    return True
+
+
+def build_embedding_text(
+    analysis: Dict[str, Any],
+    identity_candidates: Sequence[Dict[str, Any]],
+    *,
+    identity_text_threshold: float,
+    identity_visual_threshold: float,
+) -> str:
+    parts: List[str] = []
+
+    media_types = normalize_media_types(analysis.get("media_types") or [])
+    if media_types:
+        parts.append(" ".join(media_types))
+
+    person_roles = normalize_person_roles(analysis.get("person_roles") or [])
+    if person_roles:
+        parts.append(" ".join(person_roles))
+
+    tags = normalize_tags(analysis.get("tags") or [], min_confidence=0.0)
+    if tags:
+        parts.append(" ".join(tags))
+
+    outer = _normalize_text(analysis.get("outer_scene_summary"))
+    if outer:
+        parts.append(outer)
+
+    inner = _normalize_text(analysis.get("inner_content_summary"))
+    if inner:
+        parts.append(inner)
+
+    visual_identities: List[str] = []
+    for candidate in identity_candidates or []:
+        if not isinstance(candidate, dict):
+            continue
+        if not _is_visual_identity_candidate(
+            candidate,
+            text_threshold=identity_text_threshold,
+            visual_threshold=identity_visual_threshold,
+        ):
+            continue
+        visual_identities.append(_normalize_text(candidate.get("name")))
+    visual_identity_text = " ".join(_dedupe_keep_order([name for name in visual_identities if name]))
+    if visual_identity_text:
+        parts.append(visual_identity_text)
+
+    if not parts:
+        parts.append(_normalize_text(analysis.get("description")) or "一张照片")
+    return " ".join(part for part in parts if part).strip()
+
+
 def normalize_analysis_payload(
     payload: Dict[str, Any],
     tag_min_confidence: float,
@@ -270,6 +341,12 @@ def normalize_analysis_payload(
         "identity_evidence": identity_evidence,
         "analysis_flags": analysis_flags,
     }
+    normalized["embedding_text"] = build_embedding_text(
+        normalized,
+        identity_candidates,
+        identity_text_threshold=identity_text_threshold,
+        identity_visual_threshold=identity_visual_threshold,
+    )
     normalized["retrieval_text"] = build_retrieval_text(normalized, identity_names, ocr_text)
     return normalized
 

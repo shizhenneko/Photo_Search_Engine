@@ -12,7 +12,7 @@ from utils.structured_analysis import (
 class StructuredAnalysisTests(unittest.TestCase):
     def test_normalize_media_types(self) -> None:
         result = normalize_media_types(["专辑", "海报", "album_cover", "未知"])
-        self.assertEqual(result, ["album_cover", "poster"])
+        self.assertEqual(result, ["专辑", "海报", "album_cover", "未知"])
 
     def test_normalize_analysis_payload_selects_high_confidence_identity(self) -> None:
         payload = normalize_analysis_payload(
@@ -29,6 +29,7 @@ class StructuredAnalysisTests(unittest.TestCase):
                         "aliases": ["Jay Chou"],
                         "confidence": 0.8,
                         "evidence_sources": ["ocr_text"],
+                        "evidence_types": ["text"],
                     }
                 ],
             },
@@ -38,7 +39,10 @@ class StructuredAnalysisTests(unittest.TestCase):
         )
         self.assertIn("周杰伦", payload["identity_names"])
         self.assertEqual(payload["tags"], ["舞台"])
-        self.assertIn("album_cover", normalize_media_types(["专辑封面"]))
+        self.assertNotIn("Jay Chou Live", payload["embedding_text"])
+        self.assertNotIn("周杰伦", payload["embedding_text"])
+        self.assertIn("演出现场", payload["embedding_text"])
+        self.assertEqual(normalize_media_types(["专辑封面"]), ["专辑封面"])
 
     def test_normalize_analysis_payload_accepts_visual_identity_with_high_confidence(self) -> None:
         payload = normalize_analysis_payload(
@@ -55,6 +59,7 @@ class StructuredAnalysisTests(unittest.TestCase):
                         "aliases": ["David Tao"],
                         "confidence": 0.96,
                         "evidence_sources": ["face_similarity", "signature_stage_pose"],
+                        "evidence_types": ["visual"],
                     }
                 ],
             },
@@ -64,6 +69,7 @@ class StructuredAnalysisTests(unittest.TestCase):
         )
         self.assertIn("陶喆", payload["identity_names"])
         self.assertIn("face_similarity", payload["identity_evidence"])
+        self.assertIn("陶喆", payload["embedding_text"])
 
     def test_normalize_analysis_payload_treats_chinese_readable_text_as_text_evidence(self) -> None:
         payload = normalize_analysis_payload(
@@ -80,6 +86,7 @@ class StructuredAnalysisTests(unittest.TestCase):
                         "aliases": [],
                         "confidence": 0.9,
                         "evidence_sources": ["可读文字"],
+                        "evidence_types": ["text"],
                     }
                 ],
             },
@@ -88,6 +95,8 @@ class StructuredAnalysisTests(unittest.TestCase):
             identity_visual_threshold=0.92,
         )
         self.assertIn("河南说唱之神", payload["identity_names"])
+        self.assertNotIn("河南说唱之神", payload["embedding_text"])
+        self.assertIn("音乐榜单", payload["embedding_text"])
 
     def test_should_run_enhanced_analysis(self) -> None:
         self.assertTrue(

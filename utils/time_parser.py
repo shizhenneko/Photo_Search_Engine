@@ -7,9 +7,17 @@ from typing import Any, Dict, Optional
 
 from openai import OpenAI
 
+from utils.llm_compat import (
+    create_chat_completion,
+    extract_response_text,
+    normalize_openai_base_url,
+    requires_api_key,
+    resolve_api_key,
+)
+
 
 class TimeParser:
-    """使用 SU8 上的文本模型解析时间约束。"""
+    """使用 OpenAI 兼容文本模型解析时间约束。"""
 
     def __init__(
         self,
@@ -21,15 +29,16 @@ class TimeParser:
         max_retries: int = 3,
         client: Optional[OpenAI] = None,
     ) -> None:
-        if not api_key:
+        if requires_api_key(base_url) and not api_key:
             raise ValueError("SU8_API_KEY 未设置")
-        self.api_key = api_key
+        resolved_api_key = resolve_api_key(api_key, base_url)
+        self.api_key = resolved_api_key
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = normalize_openai_base_url(base_url)
         self.reasoning_effort = reasoning_effort
         self.timeout = timeout
         self.max_retries = max(1, max_retries)
-        self.client = client or OpenAI(api_key=api_key, base_url=base_url)
+        self.client = client or OpenAI(api_key=resolved_api_key, base_url=self.base_url)
 
     def has_time_terms(self, query: str) -> bool:
         if not query or not query.strip():
@@ -51,15 +60,16 @@ class TimeParser:
 
         for attempt in range(self.max_retries):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
                     response_format={"type": "json_object"},
                     timeout=self.timeout,
-                    extra_body={"reasoning_effort": self.reasoning_effort},
+                    reasoning_effort=self.reasoning_effort,
                 )
-                payload = json.loads(response.choices[0].message.content)
+                payload = json.loads(extract_response_text(response))
                 return bool(payload.get("has_time_constraint"))
             except Exception:
                 if attempt == self.max_retries - 1:
@@ -91,15 +101,16 @@ class TimeParser:
         last_error: Optional[Exception] = None
         for attempt in range(self.max_retries):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
                     response_format={"type": "json_object"},
                     timeout=self.timeout,
-                    extra_body={"reasoning_effort": self.reasoning_effort},
+                    reasoning_effort=self.reasoning_effort,
                 )
-                payload = json.loads(response.choices[0].message.content)
+                payload = json.loads(extract_response_text(response))
                 if not payload.get("has_time_constraint"):
                     return {"start_date": None, "end_date": None, "precision": "none"}
                 start_date = payload.get("start_date")

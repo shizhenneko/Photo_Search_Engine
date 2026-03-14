@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+import json
 from typing import Any, Dict, List, Optional
 
 import requests
 from openai import OpenAI
+
+from utils.llm_compat import (
+    create_chat_completion,
+    extract_response_text,
+    is_ollama_base_url,
+    normalize_openai_base_url,
+    requires_api_key,
+    resolve_api_key,
+)
 
 
 class EmbeddingService(ABC):
@@ -35,14 +45,15 @@ class OpenAICompatibleEmbeddingService(EmbeddingService):
         client: Optional[OpenAI] = None,
         dimension: Optional[int] = None,
     ) -> None:
-        if not api_key:
+        if requires_api_key(base_url) and not api_key:
             raise ValueError("EMBEDDING_API_KEY 未设置")
-        self.api_key = api_key
+        resolved_api_key = resolve_api_key(api_key, base_url)
+        self.api_key = resolved_api_key
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = normalize_openai_base_url(base_url)
         self.timeout = timeout
         self.max_retries = max(1, max_retries)
-        self.client = client or OpenAI(api_key=api_key, base_url=base_url)
+        self.client = client or OpenAI(api_key=resolved_api_key, base_url=self.base_url)
         self.dimension = dimension
 
     def generate_embedding(self, text: str) -> List[float]:
@@ -108,7 +119,7 @@ class TumuerEmbeddingService(OpenAICompatibleEmbeddingService):
 
 
 class TextRerankService:
-    """Tumuer Router 上的文本 rerank 服务。"""
+    """兼容专有 rerank API 与聊天模型排序的文本 rerank 服务。"""
 
     def __init__(
         self,
@@ -118,27 +129,31 @@ class TextRerankService:
         timeout: int = 30,
         max_retries: int = 3,
         session: Optional[requests.Session] = None,
+        client: Optional[OpenAI] = None,
+        backend: str = "auto",
     ) -> None:
-        if not api_key:
+        if requires_api_key(base_url) and not api_key:
             raise ValueError("TEXT_RERANK_API_KEY 未设置")
-        self.api_key = api_key
+        resolved_api_key = resolve_api_key(api_key, base_url)
+        self.api_key = resolved_api_key
         self.model_name = model_name
-        self.base_url = base_url.rstrip("/")
+        self.base_url = normalize_openai_base_url(base_url)
+        self.http_base_url = (base_url or "").rstrip("/")
         self.timeout = timeout
         self.max_retries = max(1, max_retries)
         self.session = session or requests.Session()
+        self.client = client or OpenAI(api_key=resolved_api_key, base_url=self.base_url)
+        self.backend = (backend or "auto").strip().lower()
 
-    def rerank(
-        self,
-        query: str,
-        candidates: List[Dict[str, Any]],
-        top_k: int,
-    ) -> List[Dict[str, Any]]:
-        if not candidates:
-            return []
-        if not query or not query.strip():
-            return candidates[:top_k]
+    def _resolve_backend(self) -> str:
+        if self.backend in {"api", "chat"}:
+            return self.backend
+        if is_ollama_base_url(self.http_base_url):
+            return "chat"
+        return "api"
 
+    @staticmethod
+    def _build_documents(candidates: List[Dict[str, Any]]) -> List[str]:
         documents = []
         for item in candidates:
             documents.append(
@@ -148,6 +163,15 @@ class TextRerankService:
                 or item.get("photo_path")
                 or ""
             )
+        return documents
+
+    def _rerank_with_api(
+        self,
+        query: str,
+        candidates: List[Dict[str, Any]],
+        top_k: int,
+    ) -> List[Dict[str, Any]]:
+        documents = self._build_documents(candidates)
 
         payload = {
             "model": self.model_name,
@@ -161,36 +185,105 @@ class TextRerankService:
             "Content-Type": "application/json",
         }
 
+        response = self.session.post(
+            f"{self.http_base_url}/rerank",
+            json=payload,
+            headers=headers,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        results = data.get("results") or data.get("data") or []
+        if not isinstance(results, list):
+            raise ValueError("rerank 返回格式不正确")
+
+        reranked: List[Dict[str, Any]] = []
+        for rank, item in enumerate(results, start=1):
+            index = item.get("index")
+            if index is None or index < 0 or index >= len(candidates):
+                continue
+            candidate = dict(candidates[index])
+            score = item.get("relevance_score")
+            if score is not None:
+                candidate["text_rerank_score"] = round(float(score), 6)
+            candidate["rank"] = rank
+            reranked.append(candidate)
+
+        if reranked:
+            return reranked[:top_k]
+        raise ValueError("rerank 未返回有效结果")
+
+    def _rerank_with_chat(
+        self,
+        query: str,
+        candidates: List[Dict[str, Any]],
+        top_k: int,
+    ) -> List[Dict[str, Any]]:
+        documents = self._build_documents(candidates)
+        prompt_documents = [
+            {"index": index + 1, "text": document}
+            for index, document in enumerate(documents)
+        ]
+        prompt = (
+            "你是照片搜索结果的文本重排器。"
+            "请根据 query 和候选文档内容，将最相关的候选按从高到低排序。"
+            "只返回 JSON，格式固定为 {\"ranking\":[{\"index\":1,\"score\":0.98}]}。"
+            "index 从 1 开始，score 为 0 到 1 之间的小数。"
+            f"只返回前 {min(max(1, top_k), len(documents))} 个结果。\n"
+            f"query: {query}\n"
+            f"documents: {documents_to_json(prompt_documents)}"
+        )
+        response = create_chat_completion(
+            self.client,
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=self.timeout,
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        payload = json.loads(extract_response_text(response))
+        ranking = payload.get("ranking") or []
+        if not isinstance(ranking, list):
+            raise ValueError("聊天 rerank 返回格式不正确")
+
+        reranked: List[Dict[str, Any]] = []
+        for rank, item in enumerate(ranking, start=1):
+            if not isinstance(item, dict):
+                continue
+            index = item.get("index")
+            if index is None:
+                continue
+            candidate_index = int(index) - 1
+            if candidate_index < 0 or candidate_index >= len(candidates):
+                continue
+            candidate = dict(candidates[candidate_index])
+            score = item.get("score")
+            if score is not None:
+                candidate["text_rerank_score"] = round(float(score), 6)
+            candidate["rank"] = rank
+            reranked.append(candidate)
+
+        if reranked:
+            return reranked[:top_k]
+        raise ValueError("聊天 rerank 未返回有效结果")
+
+    def rerank(
+        self,
+        query: str,
+        candidates: List[Dict[str, Any]],
+        top_k: int,
+    ) -> List[Dict[str, Any]]:
+        if not candidates:
+            return []
+        if not query or not query.strip():
+            return candidates[:top_k]
+
         last_error: Optional[Exception] = None
         for attempt in range(self.max_retries):
             try:
-                response = self.session.post(
-                    f"{self.base_url}/rerank",
-                    json=payload,
-                    headers=headers,
-                    timeout=self.timeout,
-                )
-                response.raise_for_status()
-                data = response.json()
-                results = data.get("results") or data.get("data") or []
-                if not isinstance(results, list):
-                    raise ValueError("rerank 返回格式不正确")
-
-                reranked: List[Dict[str, Any]] = []
-                for rank, item in enumerate(results, start=1):
-                    index = item.get("index")
-                    if index is None or index < 0 or index >= len(candidates):
-                        continue
-                    candidate = dict(candidates[index])
-                    score = item.get("relevance_score")
-                    if score is not None:
-                        candidate["text_rerank_score"] = round(float(score), 6)
-                    candidate["rank"] = rank
-                    reranked.append(candidate)
-
-                if reranked:
-                    return reranked[:top_k]
-                raise ValueError("rerank 未返回有效结果")
+                if self._resolve_backend() == "api":
+                    return self._rerank_with_api(query, candidates, top_k)
+                return self._rerank_with_chat(query, candidates, top_k)
             except Exception as exc:
                 last_error = exc
                 if attempt == self.max_retries - 1:
@@ -203,3 +296,7 @@ class TextRerankService:
 
     def is_enabled(self) -> bool:
         return bool(self.api_key and self.model_name and self.base_url)
+
+
+def documents_to_json(documents: List[Dict[str, Any]]) -> str:
+    return json.dumps(documents, ensure_ascii=False)

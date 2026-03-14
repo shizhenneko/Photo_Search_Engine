@@ -49,13 +49,13 @@
 - 支持增量索引，适合日常持续向相册新增照片
 
 > [!IMPORTANT]
-> 这是一个本地优先项目，但不是完全离线项目。图片分析、查询理解、时间解析、embedding 和 rerank 会请求你配置的远程模型接口；索引文件、元数据和图片文件本身仍保留在本地。
+> 这是一个本地优先项目。你可以按部署方式选择在线模型接口，或使用本地 Ollama 实现离线运行；无论哪种模式，索引文件、元数据和图片文件本身都保留在本地。
 
 ## Features
 
 | Capability | Description |
 | --- | --- |
-| Structured image understanding | 不只生成一段 caption，而是提取 `outer_scene_summary`、`inner_content_summary`、`media_types`、`tags`、`ocr_text`、`identity_candidates`、`retrieval_text` |
+| Structured image understanding | 不只生成一段 caption，而是提取 `outer_scene_summary`、`inner_content_summary`、`media_types`、`tags`、`ocr_text`、`identity_candidates`、`embedding_text`、`retrieval_text` |
 | Text-to-image search | 直接用自然语言描述目标照片，支持长尾描述、场景描述、人物/媒介线索 |
 | Image-to-image search | 支持使用已入库图片路径检索相似图片 |
 | Upload-to-search | 支持上传一张临时图片进行一次性检索，不写入索引 |
@@ -84,7 +84,7 @@ flowchart LR
     B --> C["EXIF Extraction"]
     B --> D["Vision Analysis"]
     D --> E["Structured Metadata"]
-    E --> F["retrieval_text"]
+    E --> F["embedding_text"]
     F --> G["Embedding Service"]
     G --> H["FAISS Vector Index"]
     E --> I["metadata.json"]
@@ -109,8 +109,8 @@ flowchart LR
 ### Retrieval Pipeline
 
 1. 索引阶段扫描本地图片目录，读取 EXIF，并生成结构化图像分析。
-2. 系统把高置信度分析字段拼接为 `retrieval_text`，再生成 embedding 写入 FAISS。
-3. 如果启用了 Elasticsearch，会同步写入结构化字段用于关键词与过滤检索。
+2. 系统会构建两套索引文本：更偏视觉语义的 `embedding_text` 用于生成向量写入 FAISS，保留 OCR 与身份词的 `retrieval_text` 用于关键词检索。
+3. 如果启用了 Elasticsearch，会同步写入结构化字段与 `retrieval_text` 用于关键词与过滤检索。
 4. 查询阶段会解析时间语义，并在必要时执行保守的查询扩展与单轮反思。
 5. 基础召回结果会做融合和重排，避免缺失某一路信号时被无端压分。
 6. 最终结果可选经过文本 rerank 与视觉 rerank，再返回给前端展示。
@@ -129,8 +129,7 @@ flowchart LR
 
 - Python `3.12+`
 - `uv`
-- 可用的 Vision API Key
-- 可用的 Embedding API Key
+- 可用的在线模型 API Key，或本地 Ollama
 - 可选的 Elasticsearch 实例
 - 支持的图片格式：`.jpg`、`.jpeg`、`.png`、`.webp`
 
@@ -143,22 +142,47 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 ### 3. Configure `.env`
 
-复制 `.env.example` 为 `.env`，至少补齐以下变量：
+仓库现在提供三套环境模板：
+
+- `.env.example`：Online 版本，默认使用在线 GPT 类模型
+- `.env.country`：Kimi 版本，把 GPT 类聊天/视觉模型替换为 Kimi
+- `.env.offline`：Offline 版本，全部切到本地 Ollama
+
+任选一份复制为 `.env`，至少补齐以下变量：
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `PHOTO_DIR` | Yes | None | 本地照片目录绝对路径，支持 Windows 路径或 WSL 路径 |
-| `SU8_API_KEY` or `OPENAI_API_KEY` | Yes | None | Vision、时间解析、QueryFormatter 默认复用 |
-| `EMBEDDING_API_KEY` | Yes | None | 文本和图片检索 embedding |
+| `LLM_API_KEY` or `SU8_API_KEY` | Online / Kimi 必填，Ollama 可空 | None | Vision、时间解析、QueryFormatter、视觉 rerank 默认复用 |
+| `LLM_BASE_URL` or `SU8_BASE_URL` | No | `https://www.su8.codes/codex/v1` | 通用聊天/视觉模型入口 |
+| `EMBEDDING_API_KEY` | Online / Kimi 通常必填，Ollama 可空 | None | 文本和图片检索 embedding |
+| `EMBEDDING_BASE_URL` | No | `https://router.tumuer.me/v1` | embedding 服务入口；Offline 模式应改为 `http://localhost:11434` |
 | `ELASTICSEARCH_HOST` | No | `localhost` | 关键词检索与过滤增强；设为空可禁用 |
 | `SERVER_PORT` | No | `10001` | 本地 Web 服务端口 |
 
-一个最小可运行配置示例：
+最小可运行配置示例：
+
+在线 GPT 版本：
 
 ```bash
 PHOTO_DIR=/absolute/path/to/your/photos
-SU8_API_KEY=su8-your-key
+LLM_API_KEY=sk-your-online-key
+LLM_BASE_URL=https://www.su8.codes/codex/v1
 EMBEDDING_API_KEY=sk-your-key
+ELASTICSEARCH_HOST=
+```
+
+本地 Ollama 版本：
+
+```bash
+PHOTO_DIR=/absolute/path/to/your/photos
+LLM_BASE_URL=http://localhost:11434
+VISION_MODEL=qwen2.5vl:7b
+EMBEDDING_BASE_URL=http://localhost:11434
+EMBEDDING_MODEL=nomic-embed-text
+TEXT_RERANK_BASE_URL=http://localhost:11434
+TEXT_RERANK_MODEL=qwen2.5:7b-instruct
+TEXT_RERANK_BACKEND=chat
 ELASTICSEARCH_HOST=
 ```
 
@@ -174,6 +198,7 @@ QUERY_FORMAT_ENABLED=true
 QUERY_EXPANSION_ENABLED=true
 EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B
 TEXT_RERANK_MODEL=Qwen/Qwen3-Reranker-8B
+TEXT_RERANK_BACKEND=api
 VISUAL_RERANK_ENABLED=true
 VECTOR_METRIC=cosine
 VECTOR_WEIGHT=0.85
@@ -397,7 +422,10 @@ README.md            项目说明
 ## Notes
 
 - 前端目前是一个服务端渲染单页，适合快速本地使用，也方便后续继续演进 UI。
-- `QUERY_FORMAT_API_KEY` 默认可复用 `SU8_API_KEY`，`TEXT_RERANK_API_KEY` 默认可复用 `EMBEDDING_API_KEY`。
+- `QUERY_FORMAT_API_KEY` 默认复用 `LLM_API_KEY`，同时兼容旧变量 `SU8_API_KEY`。
+- `TEXT_RERANK_API_KEY` 默认复用 `EMBEDDING_API_KEY`。
+- `TEXT_RERANK_BACKEND=api` 适合当前在线专有 rerank 接口；`TEXT_RERANK_BACKEND=chat` 适合 Kimi 和 Ollama。
+- 本地 Ollama 可直接填写 `http://localhost:11434`，代码会自动补到 OpenAI 兼容的 `/v1`，也允许本地无真实 API key。
 - Elasticsearch 是可选增强能力，不可用时系统仍可退化运行。
 - `/photo` 预览接口要求绝对路径，且当前仅支持 `.jpg`、`.jpeg`、`.png`、`.webp`。
 

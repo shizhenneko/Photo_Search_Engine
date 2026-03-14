@@ -44,11 +44,23 @@ def load_config() -> Dict[str, Any]:
         load_dotenv()
 
     data_dir = os.getenv("DATA_DIR", "./data")
-    su8_api_key = os.getenv("SU8_API_KEY") or os.getenv("OPENAI_API_KEY")
-    su8_base_url = os.getenv("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
+    llm_api_key = (
+        os.getenv("LLM_API_KEY")
+        or os.getenv("SU8_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+    )
+    llm_base_url = os.getenv("LLM_BASE_URL") or os.getenv("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
 
-    query_format_api_key = os.getenv("QUERY_FORMAT_API_KEY") or su8_api_key
-    query_format_base_url = os.getenv("QUERY_FORMAT_BASE_URL", su8_base_url)
+    vision_api_key = os.getenv("VISION_API_KEY") or llm_api_key
+    vision_base_url = os.getenv("VISION_BASE_URL") or llm_base_url
+    visual_rerank_api_key = os.getenv("VISUAL_RERANK_API_KEY") or vision_api_key
+    visual_rerank_base_url = os.getenv("VISUAL_RERANK_BASE_URL") or vision_base_url
+    query_format_api_key = os.getenv("QUERY_FORMAT_API_KEY") or llm_api_key
+    query_format_base_url = os.getenv("QUERY_FORMAT_BASE_URL", llm_base_url)
+    embedding_api_key = os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY")
+    embedding_base_url = os.getenv("EMBEDDING_BASE_URL", "https://router.tumuer.me/v1")
+    text_rerank_api_key = os.getenv("TEXT_RERANK_API_KEY") or embedding_api_key
+    text_rerank_base_url = os.getenv("TEXT_RERANK_BASE_URL", embedding_base_url)
 
     config: Dict[str, Any] = {
         "PHOTO_DIR": os.getenv("PHOTO_DIR"),
@@ -69,10 +81,18 @@ def load_config() -> Dict[str, Any]:
         "IMAGE_MAX_SIZE": _get_int("IMAGE_MAX_SIZE", 1024),
         "IMAGE_QUALITY": _get_int("IMAGE_QUALITY", 85),
         "IMAGE_FORMAT": os.getenv("IMAGE_FORMAT", "WEBP").upper(),
-        "SU8_API_KEY": su8_api_key,
-        "SU8_BASE_URL": su8_base_url,
+        "LLM_API_KEY": llm_api_key,
+        "LLM_BASE_URL": llm_base_url,
+        "SU8_API_KEY": llm_api_key,
+        "SU8_BASE_URL": llm_base_url,
+        "VISION_API_KEY": vision_api_key,
+        "VISION_BASE_URL": vision_base_url,
         "VISION_MODEL": os.getenv("VISION_MODEL", "gpt-5.4"),
         "VISION_REASONING_EFFORT": os.getenv("VISION_REASONING_EFFORT", "medium"),
+        "VISION_ENHANCED_REASONING_EFFORT": os.getenv("VISION_ENHANCED_REASONING_EFFORT", "low"),
+        "VISION_BASE_MAX_TOKENS": _get_int("VISION_BASE_MAX_TOKENS", 700),
+        "VISION_ENHANCED_MAX_TOKENS": _get_int("VISION_ENHANCED_MAX_TOKENS", 420),
+        "VISION_REPAIR_MAX_TOKENS": _get_int("VISION_REPAIR_MAX_TOKENS", 420),
         "STRUCTURED_ANALYSIS_ENABLED": _get_bool("STRUCTURED_ANALYSIS_ENABLED", True),
         "ENHANCED_ANALYSIS_ENABLED": _get_bool("ENHANCED_ANALYSIS_ENABLED", True),
         "TAG_MIN_CONFIDENCE": _get_float("TAG_MIN_CONFIDENCE", 0.65),
@@ -87,15 +107,18 @@ def load_config() -> Dict[str, Any]:
         "QUERY_FORMAT_REASONING_EFFORT": os.getenv("QUERY_FORMAT_REASONING_EFFORT", "low"),
         "QUERY_EXPANSION_ENABLED": _get_bool("QUERY_EXPANSION_ENABLED", True),
         "QUERY_EXPANSION_MAX_ALTERNATIVES": _get_int("QUERY_EXPANSION_MAX_ALTERNATIVES", 2),
-        "EMBEDDING_API_KEY": os.getenv("EMBEDDING_API_KEY"),
-        "EMBEDDING_BASE_URL": os.getenv("EMBEDDING_BASE_URL", "https://router.tumuer.me/v1"),
+        "EMBEDDING_API_KEY": embedding_api_key,
+        "EMBEDDING_BASE_URL": embedding_base_url,
         "EMBEDDING_MODEL": os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B"),
         "EMBEDDING_DIMENSION": _get_int("EMBEDDING_DIMENSION", 4096),
-        "TEXT_RERANK_API_KEY": os.getenv("TEXT_RERANK_API_KEY") or os.getenv("EMBEDDING_API_KEY"),
-        "TEXT_RERANK_BASE_URL": os.getenv("TEXT_RERANK_BASE_URL", "https://router.tumuer.me/v1"),
+        "TEXT_RERANK_API_KEY": text_rerank_api_key,
+        "TEXT_RERANK_BASE_URL": text_rerank_base_url,
         "TEXT_RERANK_MODEL": os.getenv("TEXT_RERANK_MODEL", "Qwen/Qwen3-Reranker-8B"),
+        "TEXT_RERANK_BACKEND": os.getenv("TEXT_RERANK_BACKEND", "auto"),
         "TEXT_RERANK_TIMEOUT": _get_int("TEXT_RERANK_TIMEOUT", 45),
         "VISUAL_RERANK_ENABLED": _get_bool("VISUAL_RERANK_ENABLED", True),
+        "VISUAL_RERANK_API_KEY": visual_rerank_api_key,
+        "VISUAL_RERANK_BASE_URL": visual_rerank_base_url,
         "VISUAL_RERANK_MODEL": os.getenv("VISUAL_RERANK_MODEL", os.getenv("VISION_MODEL", "gpt-5.4")),
         "VISUAL_RERANK_REASONING_EFFORT": os.getenv("VISUAL_RERANK_REASONING_EFFORT", "medium"),
         "VISUAL_RERANK_TIMEOUT": _get_int("VISUAL_RERANK_TIMEOUT", 60),

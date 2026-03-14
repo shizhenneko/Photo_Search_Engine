@@ -37,6 +37,7 @@ class TestQueryFormatter(unittest.TestCase):
         result = formatter.format_query("请展示一张公园的照片")
         
         self.assertEqual(result["search_text"], "公园")
+        self.assertEqual(result["retrieval_mode"], "hybrid")
         self.assertEqual(result["media_terms"], [])
         self.assertEqual(result["identity_terms"], [])
         self.assertEqual(result["original_query"], "请展示一张公园的照片")
@@ -57,6 +58,7 @@ class TestQueryFormatter(unittest.TestCase):
         result = formatter.format_query("测试查询")
         
         self.assertEqual(result["search_text"], "测试查询")
+        self.assertEqual(result["retrieval_mode"], "hybrid")
         self.assertEqual(result["media_terms"], [])
         self.assertEqual(result["identity_terms"], [])
         self.assertEqual(result["original_query"], "测试查询")
@@ -243,7 +245,13 @@ class TestQueryFormatter(unittest.TestCase):
         messages = kwargs["messages"]
         self.assertIn("照片搜索查询理解器", messages[0]["content"])
         self.assertIn("不能编造用户没有表达的实体", messages[0]["content"])
-        self.assertIn("不要把“海边”发散成“沙滩海浪蓝天”", messages[1]["content"])
+        self.assertIn("不要依赖具体示例去套用模式", messages[0]["content"])
+        self.assertIn("search_text 应优先表达“正确结果里应该能直接看到什么”", messages[0]["content"])
+        self.assertIn("不要把明确目标替换成更泛的同类概念", messages[1]["content"])
+        self.assertIn("如果 query 中有名字、称呼、标题或抽象标签", messages[1]["content"])
+        self.assertNotIn("海边", messages[1]["content"])
+        self.assertNotIn("周杰伦", messages[1]["content"])
+        self.assertNotIn("真人出镜、人像、舞台现场", messages[1]["content"])
 
     def test_extracts_media_and_identity_terms(self) -> None:
         mock_client = Mock()
@@ -310,6 +318,36 @@ class TestQueryFormatter(unittest.TestCase):
         self.assertEqual(result["intent_mode"], "strict")
         self.assertEqual(result["intent_contract"]["must_keep"], ["频谱分析仪", "屏幕"])
         self.assertFalse(result["strict_identity_filter"])
+
+    def test_format_query_does_not_backfill_must_keep_from_identity_or_media_terms(self) -> None:
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content=json.dumps({
+            "search_text": "舞台近景",
+            "media_terms": ["live_stage"],
+            "identity_terms": ["陶喆"],
+            "strict_identity_filter": True,
+            "intent_mode": "strict",
+            "intent_contract": {
+                "core_target": "陶喆的舞台近景照片",
+                "must_keep": [],
+                "avoid_drift": "不要漂移到其他歌手或其他舞台",
+            },
+            "time_hint": None,
+            "season": None,
+            "time_period": None,
+        })))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        formatter = QueryFormatter(
+            api_key="test-key",
+            model_name="test-model",
+            base_url="https://test.com",
+            client=mock_client,
+        )
+
+        result = formatter.format_query("请帮我找陶喆的舞台近景照片")
+        self.assertEqual(result["intent_contract"]["must_keep"], [])
 
     def test_expand_query_intents_returns_alternatives(self) -> None:
         mock_client = Mock()

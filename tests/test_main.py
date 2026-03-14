@@ -26,14 +26,29 @@ class MainModuleTests(unittest.TestCase):
             main._validate_required_config({"PHOTO_DIR": "C:/photos", "SU8_API_KEY": "key"})
         self.assertIn("EMBEDDING_API_KEY环境变量未设置", str(ctx.exception))
 
+    def test_validate_required_config_allows_empty_keys_for_local_ollama(self) -> None:
+        main._validate_required_config(
+            {
+                "PHOTO_DIR": "C:/photos",
+                "LLM_BASE_URL": "http://localhost:11434",
+                "EMBEDDING_BASE_URL": "http://localhost:11434",
+            }
+        )
+
     def test_initialize_services_wires_dependencies(self) -> None:
         config = {
             "PHOTO_DIR": "C:/photos",
             "DATA_DIR": "C:/data",
             "SU8_API_KEY": "su8-key",
             "SU8_BASE_URL": "https://www.su8.codes/codex/v1",
+            "VISION_API_KEY": "vision-key",
+            "VISION_BASE_URL": "https://api.moonshot.cn/v1",
             "VISION_MODEL": "gpt-5.4",
             "VISION_REASONING_EFFORT": "medium",
+            "VISION_ENHANCED_REASONING_EFFORT": "low",
+            "VISION_BASE_MAX_TOKENS": 700,
+            "VISION_ENHANCED_MAX_TOKENS": 420,
+            "VISION_REPAIR_MAX_TOKENS": 420,
             "STRUCTURED_ANALYSIS_ENABLED": True,
             "ENHANCED_ANALYSIS_ENABLED": True,
             "TAG_MIN_CONFIDENCE": 0.65,
@@ -49,6 +64,8 @@ class MainModuleTests(unittest.TestCase):
             "TEXT_RERANK_BASE_URL": "https://router.tumuer.me/v1",
             "TEXT_RERANK_MODEL": "Qwen/Qwen3-Reranker-8B",
             "VISUAL_RERANK_ENABLED": True,
+            "VISUAL_RERANK_API_KEY": "vision-rerank-key",
+            "VISUAL_RERANK_BASE_URL": "https://api.moonshot.cn/v1",
             "VISUAL_RERANK_MODEL": "gpt-5.4",
             "BATCH_SIZE": 8,
             "MAX_RETRIES": 2,
@@ -95,6 +112,12 @@ class MainModuleTests(unittest.TestCase):
 
             result = main.initialize_services(config)
 
+            _, vision_kwargs = vision_cls.call_args
+            self.assertEqual(vision_kwargs["api_key"], "vision-key")
+            self.assertEqual(vision_kwargs["base_url"], "https://api.moonshot.cn/v1")
+            _, visual_rerank_kwargs = visual_rerank_cls.call_args
+            self.assertEqual(visual_rerank_kwargs["api_key"], "vision-rerank-key")
+            self.assertEqual(visual_rerank_kwargs["base_url"], "https://api.moonshot.cn/v1")
             vector_store_cls.assert_called_once_with(
                 dimension=4096,
                 index_path="C:/data/photo_search.index",
@@ -117,6 +140,10 @@ class MainModuleTests(unittest.TestCase):
             "SU8_BASE_URL": "https://www.su8.codes/codex/v1",
             "VISION_MODEL": "gpt-5.4",
             "VISION_REASONING_EFFORT": "medium",
+            "VISION_ENHANCED_REASONING_EFFORT": "low",
+            "VISION_BASE_MAX_TOKENS": 700,
+            "VISION_ENHANCED_MAX_TOKENS": 420,
+            "VISION_REPAIR_MAX_TOKENS": 420,
             "STRUCTURED_ANALYSIS_ENABLED": True,
             "ENHANCED_ANALYSIS_ENABLED": True,
             "TAG_MIN_CONFIDENCE": 0.65,
@@ -172,6 +199,91 @@ class MainModuleTests(unittest.TestCase):
             _, kwargs = query_formatter_cls.call_args
             self.assertEqual(kwargs["base_url"], "https://www.su8.codes/codex/v1")
 
+    def test_initialize_services_enables_local_ollama_optional_services_without_keys(self) -> None:
+        config = {
+            "PHOTO_DIR": "C:/photos",
+            "DATA_DIR": "C:/data",
+            "LLM_API_KEY": "",
+            "LLM_BASE_URL": "http://localhost:11434",
+            "SU8_API_KEY": "",
+            "SU8_BASE_URL": "http://localhost:11434",
+            "VISION_API_KEY": "",
+            "VISION_BASE_URL": "",
+            "VISION_MODEL": "qwen2.5vl:7b",
+            "VISION_REASONING_EFFORT": "medium",
+            "VISION_ENHANCED_REASONING_EFFORT": "low",
+            "VISION_BASE_MAX_TOKENS": 700,
+            "VISION_ENHANCED_MAX_TOKENS": 420,
+            "VISION_REPAIR_MAX_TOKENS": 420,
+            "STRUCTURED_ANALYSIS_ENABLED": True,
+            "ENHANCED_ANALYSIS_ENABLED": True,
+            "TAG_MIN_CONFIDENCE": 0.65,
+            "IDENTITY_TEXT_MIN_CONFIDENCE": 0.7,
+            "IDENTITY_VISUAL_MIN_CONFIDENCE": 0.92,
+            "TIME_PARSE_MODEL": "qwen2.5:7b-instruct",
+            "TIME_PARSE_REASONING_EFFORT": "low",
+            "QUERY_FORMAT_ENABLED": True,
+            "QUERY_FORMAT_API_KEY": "",
+            "QUERY_FORMAT_BASE_URL": "",
+            "QUERY_FORMAT_MODEL": "qwen2.5:7b-instruct",
+            "QUERY_FORMAT_REASONING_EFFORT": "low",
+            "EMBEDDING_API_KEY": "",
+            "EMBEDDING_BASE_URL": "http://localhost:11434",
+            "EMBEDDING_MODEL": "nomic-embed-text",
+            "EMBEDDING_DIMENSION": 768,
+            "TEXT_RERANK_API_KEY": "",
+            "TEXT_RERANK_BASE_URL": "http://localhost:11434",
+            "TEXT_RERANK_MODEL": "qwen3-reranker:8b",
+            "TEXT_RERANK_BACKEND": "chat",
+            "VISUAL_RERANK_ENABLED": True,
+            "VISUAL_RERANK_API_KEY": "",
+            "VISUAL_RERANK_BASE_URL": "",
+            "VISUAL_RERANK_MODEL": "qwen2.5vl:7b",
+            "BATCH_SIZE": 4,
+            "MAX_RETRIES": 2,
+            "TIMEOUT": 15,
+            "TOP_K": 5,
+            "INDEX_PATH": "C:/data/photo_search.index",
+            "METADATA_PATH": "C:/data/metadata.json",
+            "USE_BASE64": True,
+            "IMAGE_MAX_SIZE": 1024,
+            "IMAGE_QUALITY": 85,
+            "IMAGE_FORMAT": "WEBP",
+            "VECTOR_METRIC": "cosine",
+            "VECTOR_WEIGHT": 0.8,
+            "KEYWORD_WEIGHT": 0.2,
+            "ELASTICSEARCH_HOST": "",
+        }
+
+        with patch.object(main, "VectorStore") as vector_store_cls, \
+            patch.object(main, "SU8VisionLLMService") as vision_cls, \
+            patch.object(main, "TumuerEmbeddingService") as embedding_cls, \
+            patch.object(main, "TimeParser") as time_parser_cls, \
+            patch.object(main, "Indexer") as indexer_cls, \
+            patch.object(main, "Searcher") as searcher_cls, \
+            patch("main.normalize_local_path", return_value="/mnt/c/photos"), \
+            patch("utils.query_formatter.QueryFormatter") as query_formatter_cls, \
+            patch.object(main, "TextRerankService") as text_rerank_cls, \
+            patch("utils.rerank_service.VisualRerankService") as visual_rerank_cls:
+
+            vector_store_cls.return_value = MagicMock()
+            vision_cls.return_value = MagicMock()
+            embedding_cls.return_value = MagicMock()
+            time_parser_cls.return_value = MagicMock()
+            indexer_cls.return_value = MagicMock()
+            searcher_cls.return_value = MagicMock()
+            query_formatter_cls.return_value = MagicMock()
+            text_rerank_cls.return_value = MagicMock()
+            visual_rerank_cls.return_value = MagicMock()
+
+            _, _, text_rerank_service, visual_rerank_service = main.initialize_services(config)
+
+            query_formatter_cls.assert_called_once()
+            text_rerank_cls.assert_called_once()
+            visual_rerank_cls.assert_called_once()
+            self.assertIsNotNone(text_rerank_service)
+            self.assertIsNotNone(visual_rerank_service)
+
     def test_create_app_registers_routes_and_errors(self) -> None:
         indexer = MagicMock()
         searcher = MagicMock()
@@ -202,6 +314,15 @@ class MainModuleTests(unittest.TestCase):
             main.main()
 
         mock_app.run.assert_called_once_with(host="127.0.0.1", port=5001, debug=False)
+
+    def test_validate_required_config_accepts_generic_llm_key(self) -> None:
+        main._validate_required_config(
+            {
+                "PHOTO_DIR": "C:/photos",
+                "LLM_API_KEY": "generic-key",
+                "EMBEDDING_API_KEY": "emb",
+            }
+        )
 
 
 if __name__ == "__main__":

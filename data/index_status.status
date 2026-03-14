@@ -1,11 +1,11 @@
 {
   "status": "success",
   "message": "索引构建成功",
-  "total_count": 73,
-  "indexed_count": 73,
+  "total_count": 81,
+  "indexed_count": 81,
   "failed_count": 0,
   "fallback_ratio": 0.0,
   "index_path": "./data/photo_search.index",
-  "elapsed_time": 59.9235,
+  "elapsed_time": 475.7269,
   "timing_log_path": "./data/index_timing.jsonl"
 }

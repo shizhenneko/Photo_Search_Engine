@@ -14,7 +14,7 @@ from utils.image_parser import (
     get_file_time,
     is_valid_image,
 )
-from utils.structured_analysis import normalize_analysis_payload
+from utils.structured_analysis import EMBEDDING_TEXT_VERSION, normalize_analysis_payload
 from utils.vector_store import VectorStore
 
 if TYPE_CHECKING:
@@ -295,7 +295,7 @@ class Indexer:
         批量处理照片（描述+嵌入+元数据），单个失败不影响整批。
 
         改进：
-        - embedding 改为基于 retrieval_text 生成
+        - embedding 改为基于 embedding_text 生成
         - 元数据持久化结构化分析字段
         - 新增 time_info 字段包含详细时间信息
         """
@@ -310,6 +310,7 @@ class Indexer:
                 step_timings["generate_analysis"] = time.perf_counter() - analysis_start
                 description = str(analysis.get("description") or "")
                 retrieval_text = str(analysis.get("retrieval_text") or "").strip()
+                embedding_text = str(analysis.get("embedding_text") or retrieval_text).strip()
                 print(f"[INFO] 图片结构化分析成功: {description[:50]}...")
 
                 exif_start = time.perf_counter()
@@ -322,9 +323,9 @@ class Indexer:
                 time_info = self._extract_time_info(exif_data, file_time)
                 step_timings["extract_time_info"] = time.perf_counter() - time_info_start
 
-                print("[INFO] 开始生成embedding向量（基于retrieval_text）...")
+                print("[INFO] 开始生成embedding向量（基于embedding_text）...")
                 embedding_start = time.perf_counter()
-                embedding = self.embedding_service.generate_embedding(retrieval_text)
+                embedding = self.embedding_service.generate_embedding(embedding_text)
                 step_timings["generate_embedding"] = time.perf_counter() - embedding_start
                 print(f"[INFO] Embedding生成成功，维度: {len(embedding)}")
                 total_elapsed = time.perf_counter() - photo_start
@@ -335,6 +336,7 @@ class Indexer:
                     status="success",
                     details={
                         "description_length": len(description),
+                        "embedding_text_length": len(embedding_text),
                         "retrieval_text_length": len(retrieval_text),
                         "embedding_dimension": len(embedding),
                         "used_fallback_analysis": bool(analysis.get("analysis_flags", {}).get("fallback")),
@@ -345,6 +347,7 @@ class Indexer:
                     {
                         "photo_path": photo_path,
                         "description": description,
+                        "embedding_text": embedding_text,
                         "retrieval_text": retrieval_text,
                         "analysis": analysis,
                         "embedding": embedding,
@@ -376,6 +379,7 @@ class Indexer:
                     {
                         "photo_path": photo_path,
                         "description": None,
+                        "embedding_text": None,
                         "retrieval_text": None,
                         "analysis": None,
                         "embedding": None,
@@ -530,6 +534,22 @@ class Indexer:
             return "冬天"
         return None
 
+    @staticmethod
+    def _metadata_matches_current_text_schema(metadata: Dict[str, Any]) -> bool:
+        version = metadata.get("index_text_version")
+        embedding_text = str(metadata.get("embedding_text") or "").strip()
+        return version == EMBEDDING_TEXT_VERSION and bool(embedding_text)
+
+    def _existing_index_requires_rebuild(self) -> bool:
+        if not self.vector_store.metadata:
+            return False
+        for item in self.vector_store.metadata:
+            if not isinstance(item, dict):
+                return True
+            if not self._metadata_matches_current_text_schema(item):
+                return True
+        return False
+
     def build_index(self, force_rebuild: bool = False, lock_already_held: bool = False) -> Dict[str, Any]:
         """
         主流程：扫描、批处理、写入索引并进行验收门槛检查。
@@ -544,6 +564,7 @@ class Indexer:
             {
                 "event": "build_started",
                 "force_rebuild": force_rebuild,
+                "index_text_version": EMBEDDING_TEXT_VERSION,
                 "batch_size": self.batch_size,
                 "photo_dir": self.photo_dir,
             }
@@ -572,6 +593,23 @@ class Indexer:
                 details={"loaded_existing_index": loaded_existing_index},
             )
 
+        if not force_rebuild and self._existing_index_requires_rebuild():
+            schema_rebuild_start = time.perf_counter()
+            print("[INFO] 检测到旧版索引文本结构，自动执行全量重建...")
+            self.vector_store.clear()
+            if self.keyword_store:
+                try:
+                    self.keyword_store.clear()
+                except Exception as exc:
+                    print(f"[WARN] KeywordStore清理失败: {exc}")
+            loaded_existing_index = False
+            force_rebuild = True
+            self._log_stage_timing(
+                "auto_clear_existing_index_for_text_schema_upgrade",
+                time.perf_counter() - schema_rebuild_start,
+                details={"index_text_version": EMBEDDING_TEXT_VERSION},
+            )
+
         # 1. 加载现有高质量数据用于缓存
         print("[INFO] 正在加载现有元数据以进行智能复用...")
         cache_load_start = time.perf_counter()
@@ -580,6 +618,7 @@ class Indexer:
             for item in self.vector_store.metadata:
                 path = item.get("photo_path")
                 retrieval_text = item.get("retrieval_text")
+                embedding_text = item.get("embedding_text") or retrieval_text
                 if path and retrieval_text and isinstance(retrieval_text, str):
                     self._cached_analyses[path] = {
                         "description": item.get("description"),
@@ -593,6 +632,7 @@ class Indexer:
                         "identity_names": item.get("identity_names") or [],
                         "identity_evidence": item.get("identity_evidence") or [],
                         "analysis_flags": item.get("analysis_flags") or {},
+                        "embedding_text": embedding_text,
                         "retrieval_text": retrieval_text,
                     }
         print(f"[INFO] 已缓存 {len(self._cached_analyses)} 条有效结构化分析")
@@ -713,7 +753,9 @@ class Indexer:
                                 "identity_names": item["analysis"].get("identity_names") or [],
                                 "identity_evidence": item["analysis"].get("identity_evidence") or [],
                                 "analysis_flags": item["analysis"].get("analysis_flags") or {},
+                                "embedding_text": item.get("embedding_text"),
                                 "retrieval_text": item.get("retrieval_text"),
+                                "index_text_version": EMBEDDING_TEXT_VERSION,
                                 "exif_data": item["exif_data"],
                                 "file_time": item["file_time"],
                                 "time_info": item.get("time_info"),  # 新增：详细时间信息

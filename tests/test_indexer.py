@@ -16,6 +16,7 @@ if project_root not in sys.path:
 
 from core.indexer import Indexer
 from tests.helpers import FakeEmbeddingService
+from utils.structured_analysis import EMBEDDING_TEXT_VERSION
 from utils.vector_store import VectorStore
 from utils.vision_llm_service import LocalVisionLLMService
 
@@ -105,11 +106,71 @@ class IndexerTests(unittest.TestCase):
             result = indexer.build_index()
             self.assertEqual(result["status"], "success")
             self.assertEqual(result["indexed_count"], 3)
+            self.assertIn("embedding_text", vector_store.metadata[0])
             self.assertIn("retrieval_text", vector_store.metadata[0])
+            self.assertEqual(vector_store.metadata[0]["index_text_version"], EMBEDDING_TEXT_VERSION)
             self.assertIn("media_types", vector_store.metadata[0])
             self.assertEqual(
                 result["timing_log_path"],
                 os.path.join(data_dir, "index_timing.jsonl"),
+            )
+
+    def test_build_index_auto_rebuilds_when_text_schema_is_outdated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_dir = os.path.join(tmp, "photos")
+            data_dir = os.path.join(tmp, "data")
+            os.makedirs(photo_dir)
+            os.makedirs(data_dir)
+            for index in range(2):
+                _create_image(os.path.join(photo_dir, f"photo_{index}.jpg"))
+
+            index_path = os.path.join(data_dir, "idx")
+            metadata_path = os.path.join(data_dir, "meta.json")
+            vector_store = VectorStore(dimension=8, index_path=index_path, metadata_path=metadata_path)
+            indexer = Indexer(
+                photo_dir=photo_dir,
+                vision=LocalVisionLLMService(),
+                embedding=FakeEmbeddingService(dimension=8),
+                vector_store=vector_store,
+                data_dir=data_dir,
+            )
+
+            first_result = indexer.build_index()
+            self.assertEqual(first_result["status"], "success")
+
+            with open(metadata_path, "r", encoding="utf-8") as file:
+                outdated_metadata = json.load(file)
+            for item in outdated_metadata:
+                item.pop("embedding_text", None)
+                item.pop("index_text_version", None)
+            with open(metadata_path, "w", encoding="utf-8") as file:
+                json.dump(outdated_metadata, file, ensure_ascii=False, indent=2)
+
+            reloaded_store = VectorStore(dimension=8, index_path=index_path, metadata_path=metadata_path)
+            reloaded_indexer = Indexer(
+                photo_dir=photo_dir,
+                vision=LocalVisionLLMService(),
+                embedding=FakeEmbeddingService(dimension=8),
+                vector_store=reloaded_store,
+                data_dir=data_dir,
+            )
+
+            with patch.object(reloaded_indexer, "process_batch", wraps=reloaded_indexer.process_batch) as process_batch:
+                second_result = reloaded_indexer.build_index()
+
+            self.assertEqual(second_result["status"], "success")
+            processed_paths = []
+            for call in process_batch.call_args_list:
+                processed_paths.extend(call.args[0])
+            self.assertEqual(
+                sorted(processed_paths),
+                sorted(os.path.join(photo_dir, f"photo_{index}.jpg") for index in range(2)),
+            )
+            self.assertTrue(
+                all(
+                    item.get("index_text_version") == EMBEDDING_TEXT_VERSION and item.get("embedding_text")
+                    for item in reloaded_store.metadata
+                )
             )
 
     def test_build_index_incrementally_adds_only_new_photos(self) -> None:

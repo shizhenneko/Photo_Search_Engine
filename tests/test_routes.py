@@ -4,6 +4,7 @@ import tempfile
 import time
 import unittest
 import json
+from typing import Any
 from pathlib import Path
 from io import BytesIO
 from unittest.mock import patch
@@ -14,7 +15,7 @@ project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from api.routes import register_routes
+from api.routes import _apply_rerank_pipeline, _calculate_rerank_search_pool_k, register_routes
 from core.indexer import Indexer
 from core.searcher import Searcher
 from tests.helpers import (
@@ -259,6 +260,120 @@ class RouteTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("请上传图片文件", response.get_json()["message"])
+
+    def test_rerank_pipeline_uses_full_candidate_pool_before_final_cut(self) -> None:
+        class RecordingTextRerankService:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def rerank(self, query: str, candidates: list[dict[str, Any]], top_k: int) -> list[dict[str, Any]]:
+                self.calls.append({"query": query, "count": len(candidates), "top_k": top_k})
+                return list(reversed(candidates))[:top_k]
+
+            def is_enabled(self) -> bool:
+                return True
+
+        class RecordingVisualRerankService:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def rerank(self, query: str, candidates: list[dict[str, Any]], rerank_top_k: int) -> list[dict[str, Any]]:
+                self.calls.append({"query": query, "count": len(candidates), "top_k": rerank_top_k})
+                return sorted(candidates, key=lambda item: item.get("photo_path", ""))[:rerank_top_k]
+
+            def is_enabled(self) -> bool:
+                return True
+
+        results = [
+            {"photo_path": f"/tmp/photo_{index}.jpg", "score": 0.9 - index * 0.1}
+            for index in range(5)
+        ]
+        text_service = RecordingTextRerankService()
+        visual_service = RecordingVisualRerankService()
+
+        reranked_results, rerank_state = _apply_rerank_pipeline(
+            results=results,
+            top_k=5,
+            rerank_top_k=2,
+            enable_text_rerank=True,
+            enable_visual_rerank=True,
+            text_query="请给我一张河南说唱之神的演出照片",
+            reference_image_path=None,
+            text_rerank_service=text_service,
+            visual_rerank_service=visual_service,
+        )
+
+        self.assertEqual(text_service.calls[0]["count"], 5)
+        self.assertEqual(text_service.calls[0]["top_k"], 5)
+        self.assertEqual(visual_service.calls[0]["count"], 5)
+        self.assertEqual(visual_service.calls[0]["top_k"], 5)
+        self.assertEqual(len(reranked_results), 2)
+        self.assertTrue(rerank_state["text_reranked"])
+        self.assertTrue(rerank_state["visual_reranked"])
+
+    def test_rerank_pipeline_does_not_trim_results_when_rerank_is_disabled(self) -> None:
+        results = [
+            {"photo_path": f"/tmp/photo_{index}.jpg", "score": 0.95 - index * 0.01}
+            for index in range(12)
+        ]
+
+        final_results, rerank_state = _apply_rerank_pipeline(
+            results=results,
+            top_k=12,
+            rerank_top_k=8,
+            enable_text_rerank=False,
+            enable_visual_rerank=False,
+            text_query="河南说唱之神演出",
+            reference_image_path=None,
+            text_rerank_service=None,
+            visual_rerank_service=None,
+        )
+
+        self.assertEqual(len(final_results), 12)
+        self.assertEqual([item["rank"] for item in final_results], list(range(1, 13)))
+        self.assertFalse(rerank_state["text_reranked"])
+        self.assertFalse(rerank_state["visual_reranked"])
+
+    def test_calculate_rerank_search_pool_k_expands_candidate_pool_for_visual_rerank(self) -> None:
+        self.assertEqual(
+            _calculate_rerank_search_pool_k(
+                top_k=5,
+                rerank_top_k=5,
+                enable_text_rerank=False,
+                enable_visual_rerank=True,
+            ),
+            15,
+        )
+
+    def test_search_photos_expands_base_pool_when_rerank_enabled(self) -> None:
+        with patch.object(self.searcher, "search", return_value=[]) as search_mock:
+            response = self.client.post(
+                "/search_photos",
+                json={
+                    "query": "河南说唱之神",
+                    "top_k": 5,
+                    "rerank_top_k": 5,
+                    "enable_visual_rerank": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        search_mock.assert_called_once_with("河南说唱之神", 15)
+
+    def test_search_by_image_expands_base_pool_when_rerank_enabled(self) -> None:
+        with patch.object(self.searcher, "search_by_image_path", return_value=[]) as search_mock:
+            response = self.client.post(
+                "/search_by_image",
+                json={
+                    "image_path": "/tmp/query.jpg",
+                    "top_k": 4,
+                    "rerank_top_k": 4,
+                    "enable_visual_rerank": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        search_mock.assert_called_once_with("/tmp/query.jpg", 12)
 
     def test_open_photo_location(self) -> None:
         paths = self._index_photos(1)

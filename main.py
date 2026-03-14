@@ -14,6 +14,7 @@ from config import get_config
 from core.indexer import Indexer
 from core.searcher import Searcher
 from utils.embedding_service import TextRerankService, TumuerEmbeddingService
+from utils.llm_compat import requires_api_key
 from utils.path_utils import normalize_local_path
 from utils.time_parser import TimeParser
 from utils.vector_store import VectorStore
@@ -22,6 +23,16 @@ from utils.vision_llm_service import SU8VisionLLMService
 
 def load_config() -> Dict[str, object]:
     return get_config()
+
+
+def _has_usable_api_config(api_key: object, base_url: object) -> bool:
+    normalized_api_key = str(api_key or "").strip()
+    normalized_base_url = str(base_url or "").strip()
+    if normalized_api_key:
+        return True
+    if not normalized_base_url:
+        return False
+    return not requires_api_key(normalized_base_url)
 
 
 def initialize_services(
@@ -47,16 +58,20 @@ def initialize_services(
     )
 
     vision_service = SU8VisionLLMService(
-        api_key=str(config.get("SU8_API_KEY", "")),
+        api_key=str(config.get("VISION_API_KEY", config.get("SU8_API_KEY", ""))),
         model_name=str(config.get("VISION_MODEL", "gpt-5.4")),
-        base_url=str(config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")),
+        base_url=str(config.get("VISION_BASE_URL", config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1"))),
         reasoning_effort=str(config.get("VISION_REASONING_EFFORT", "medium")),
+        enhanced_reasoning_effort=str(config.get("VISION_ENHANCED_REASONING_EFFORT", "low")),
         timeout=int(config.get("TIMEOUT", 45)),
         max_retries=int(config.get("MAX_RETRIES", 3)),
         use_base64=bool(config.get("USE_BASE64", True)),
         image_max_size=int(config.get("IMAGE_MAX_SIZE", 1024)),
         image_quality=int(config.get("IMAGE_QUALITY", 85)),
         image_format=str(config.get("IMAGE_FORMAT", "WEBP")),
+        base_max_output_tokens=int(config.get("VISION_BASE_MAX_TOKENS", 700)),
+        enhanced_max_output_tokens=int(config.get("VISION_ENHANCED_MAX_TOKENS", 420)),
+        repair_max_output_tokens=int(config.get("VISION_REPAIR_MAX_TOKENS", 420)),
     )
     enhanced_analysis_enabled = bool(config.get("ENHANCED_ANALYSIS_ENABLED", True))
     setattr(vision_service, "enhanced_analysis_enabled", enhanced_analysis_enabled)
@@ -86,17 +101,21 @@ def initialize_services(
             print(f"Warning: Failed to initialize Elasticsearch: {exc}. Keyword search will be disabled.")
 
     query_formatter = None
-    if config.get("QUERY_FORMAT_ENABLED", True) and config.get("QUERY_FORMAT_API_KEY"):
+    query_format_base_url = str(
+        config.get("QUERY_FORMAT_BASE_URL")
+        or config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
+    )
+    if config.get("QUERY_FORMAT_ENABLED", True) and _has_usable_api_config(
+        config.get("QUERY_FORMAT_API_KEY"),
+        query_format_base_url,
+    ):
         try:
             from utils.query_formatter import QueryFormatter
 
             query_formatter = QueryFormatter(
                 api_key=str(config.get("QUERY_FORMAT_API_KEY", "")),
                 model_name=str(config.get("QUERY_FORMAT_MODEL", "gpt-5.1")),
-                base_url=str(
-                    config.get("QUERY_FORMAT_BASE_URL")
-                    or config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
-                ),
+                base_url=query_format_base_url,
                 reasoning_effort=str(config.get("QUERY_FORMAT_REASONING_EFFORT", "low")),
                 timeout=int(config.get("TIMEOUT", 45)),
                 max_retries=int(config.get("MAX_RETRIES", 3)),
@@ -131,27 +150,42 @@ def initialize_services(
     )
 
     text_rerank_service: Optional[TextRerankService] = None
-    if config.get("TEXT_RERANK_API_KEY"):
+    text_rerank_base_url = str(config.get("TEXT_RERANK_BASE_URL", "https://router.tumuer.me/v1"))
+    if _has_usable_api_config(config.get("TEXT_RERANK_API_KEY"), text_rerank_base_url):
         try:
             text_rerank_service = TextRerankService(
                 api_key=str(config.get("TEXT_RERANK_API_KEY", "")),
                 model_name=str(config.get("TEXT_RERANK_MODEL", "Qwen/Qwen3-Reranker-8B")),
-                base_url=str(config.get("TEXT_RERANK_BASE_URL", "https://router.tumuer.me/v1")),
+                base_url=text_rerank_base_url,
                 timeout=int(config.get("TEXT_RERANK_TIMEOUT", 45)),
                 max_retries=int(config.get("MAX_RETRIES", 3)),
+                backend=str(config.get("TEXT_RERANK_BACKEND", "auto")),
             )
         except Exception as exc:
             print(f"Warning: Failed to initialize text rerank service: {exc}")
 
     visual_rerank_service = None
-    if config.get("VISUAL_RERANK_ENABLED", True) and config.get("SU8_API_KEY"):
+    visual_rerank_api_key = (
+        config.get("VISUAL_RERANK_API_KEY")
+        or config.get("VISION_API_KEY")
+        or config.get("SU8_API_KEY", "")
+    )
+    visual_rerank_base_url = str(
+        config.get("VISUAL_RERANK_BASE_URL")
+        or config.get("VISION_BASE_URL")
+        or config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
+    )
+    if config.get("VISUAL_RERANK_ENABLED", True) and _has_usable_api_config(
+        visual_rerank_api_key,
+        visual_rerank_base_url,
+    ):
         try:
             from utils.rerank_service import VisualRerankService
 
             visual_rerank_service = VisualRerankService(
-                api_key=str(config.get("SU8_API_KEY", "")),
+                api_key=str(visual_rerank_api_key),
                 model_name=str(config.get("VISUAL_RERANK_MODEL", config.get("VISION_MODEL", "gpt-5.4"))),
-                base_url=str(config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")),
+                base_url=visual_rerank_base_url,
                 reasoning_effort=str(config.get("VISUAL_RERANK_REASONING_EFFORT", "medium")),
                 timeout=int(config.get("VISUAL_RERANK_TIMEOUT", 60)),
                 max_retries=int(config.get("MAX_RETRIES", 3)),
@@ -199,9 +233,11 @@ def create_app(
 def _validate_required_config(config: Dict[str, object]) -> None:
     if not config.get("PHOTO_DIR"):
         raise ValueError("PHOTO_DIR环境变量未设置")
-    if not config.get("SU8_API_KEY"):
+    llm_api_key = config.get("SU8_API_KEY") or config.get("LLM_API_KEY")
+    llm_base_url = config.get("SU8_BASE_URL") or config.get("LLM_BASE_URL")
+    if not _has_usable_api_config(llm_api_key, llm_base_url):
         raise ValueError("SU8_API_KEY环境变量未设置")
-    if not config.get("EMBEDDING_API_KEY"):
+    if not _has_usable_api_config(config.get("EMBEDDING_API_KEY"), config.get("EMBEDDING_BASE_URL")):
         raise ValueError("EMBEDDING_API_KEY环境变量未设置")
 
 

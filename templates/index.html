@@ -1003,7 +1003,7 @@
                         <h3>Rerank 保留数量</h3>
                         <div class="field">
                             <label for="rerank-topk-input">Rerank Top K</label>
-                            <input id="rerank-topk-input" class="number" type="number" value="8" min="1" max="50">
+                            <input id="rerank-topk-input" class="number" type="number" value="12" min="1" max="50">
                         </div>
                     </div>
                     <div class="option-card">
@@ -1123,12 +1123,17 @@
 
         function getSearchOptions() {
             const topK = Math.min(Math.max(parseInt(document.getElementById("topk-input").value || "12", 10), 1), 50);
-            const rerankTopK = Math.min(Math.max(parseInt(document.getElementById("rerank-topk-input").value || String(topK), 10), 1), 50);
+            const enableTextRerank = document.getElementById("text-rerank-checkbox").checked;
+            const enableVisualRerank = document.getElementById("visual-rerank-checkbox").checked;
+            const rerankRequested = enableTextRerank || enableVisualRerank;
+            const rerankTopK = rerankRequested
+                ? Math.min(Math.max(parseInt(document.getElementById("rerank-topk-input").value || String(topK), 10), 1), topK)
+                : topK;
             return {
                 top_k: topK,
                 rerank_top_k: rerankTopK,
-                enable_text_rerank: document.getElementById("text-rerank-checkbox").checked,
-                enable_visual_rerank: document.getElementById("visual-rerank-checkbox").checked,
+                enable_text_rerank: enableTextRerank,
+                enable_visual_rerank: enableVisualRerank,
             };
         }
 

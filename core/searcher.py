@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from math import ceil
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
@@ -14,6 +15,9 @@ if TYPE_CHECKING:
     from utils.time_parser import TimeParser
     from utils.keyword_store import KeywordStore
     from utils.query_formatter import QueryFormatter
+
+
+MIN_RESULT_SCORE = 0.4
 
 
 class Searcher:
@@ -72,6 +76,7 @@ class Searcher:
         self.metric = getattr(vector_store, "metric", "cosine")
         self._metadata_by_path: Dict[str, Dict[str, Any]] = {}
         self._last_search_debug: Dict[str, Any] = self._empty_search_debug()
+        self._last_round_quality: Dict[str, Any] = {}
         self._refresh_metadata_cache()
 
     @staticmethod
@@ -109,6 +114,7 @@ class Searcher:
             "reason": reason,
             "intent": {
                 "search_text": str(intent.get("search_text") or "").strip(),
+                "retrieval_mode": str(intent.get("retrieval_mode") or "hybrid"),
                 "media_terms": list(intent.get("media_terms") or []),
                 "identity_terms": list(intent.get("identity_terms") or []),
                 "strict_identity_filter": bool(intent.get("strict_identity_filter", False)),
@@ -127,6 +133,9 @@ class Searcher:
 
     def _set_last_search_debug(self, debug: Dict[str, Any]) -> None:
         self._last_search_debug = debug
+
+    def _get_last_round_quality(self) -> Dict[str, Any]:
+        return dict(self._last_round_quality)
 
     def _deduplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         deduped: Dict[str, Dict[str, Any]] = {}
@@ -148,6 +157,91 @@ class Searcher:
                 deduped[key] = item
 
         return [deduped[key] for key in ordered_keys]
+
+    def _fill_results_to_top_k(
+        self,
+        primary_results: List[Dict[str, Any]],
+        fallback_results: List[Dict[str, Any]],
+        top_k: int,
+    ) -> List[Dict[str, Any]]:
+        filled: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for source in (primary_results, fallback_results):
+            for item in source:
+                photo_path = item.get("photo_path")
+                key = self._path_key(photo_path)
+                if not key or key in seen:
+                    continue
+                filled.append(item)
+                seen.add(key)
+                if len(filled) >= top_k:
+                    return filled
+        return filled
+
+    @staticmethod
+    def _sort_results_for_merge(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return sorted(
+            results,
+            key=lambda item: (
+                int(item.get("_confidence_bucket", 1)),
+                float(item.get("score", 0.0)),
+                -int(item.get("_relaxation_level", 0)),
+            ),
+            reverse=True,
+        )
+
+    @staticmethod
+    def _sanitize_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        sanitized: List[Dict[str, Any]] = []
+        for item in results:
+            clean = dict(item)
+            clean.pop("metadata", None)
+            for key in list(clean.keys()):
+                if key.startswith("_"):
+                    clean.pop(key, None)
+            sanitized.append(clean)
+        return sanitized
+
+    @staticmethod
+    def _intent_signature(intent: Dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            str(intent.get("retrieval_mode") or "hybrid").strip().lower(),
+            str(intent.get("search_text") or "").strip().lower(),
+            tuple(
+                sorted(
+                    str(item).strip().lower()
+                    for item in (intent.get("media_terms") or [])
+                    if str(item).strip()
+                )
+            ),
+            tuple(
+                sorted(
+                    str(item).strip().lower()
+                    for item in (intent.get("identity_terms") or [])
+                    if str(item).strip()
+                )
+            ),
+            bool(intent.get("strict_identity_filter", False)),
+        )
+
+    def _results_signature(self, results: List[Dict[str, Any]]) -> tuple[tuple[str, float], ...]:
+        signature: List[tuple[str, float]] = []
+        for item in results:
+            signature.append(
+                (
+                    self._path_key(item.get("photo_path", "")),
+                    round(float(item.get("score", 0.0)), 6),
+                )
+            )
+        return tuple(signature)
+
+    def _should_continue_multi_round_search(
+        self,
+        results: List[Dict[str, Any]],
+        top_k: int,
+    ) -> bool:
+        return self._should_expand_to_fill_results(results, top_k) or self._should_expand_results(results, top_k)
 
     def _refresh_metadata_cache(self) -> None:
         cache: Dict[str, Dict[str, Any]] = {}
@@ -197,12 +291,20 @@ class Searcher:
         original_query: str,
     ) -> str:
         parts: List[str] = []
-        if search_text.strip():
-            parts.append(search_text.strip())
-        if media_terms:
-            parts.append(" ".join(media_terms))
-        if identity_terms:
-            parts.append(" ".join(identity_terms))
+        normalized_search_text = search_text.strip()
+        normalized_media_terms = [term.strip() for term in media_terms if term and term.strip()]
+        normalized_identity_terms = [term.strip() for term in identity_terms if term and term.strip()]
+
+        if normalized_search_text:
+            parts.append(normalized_search_text)
+        if normalized_media_terms:
+            parts.append(" ".join(normalized_media_terms))
+
+        # 人物名/公众人物名称容易把一阶段召回拉向 OCR、海报或截图。
+        # 当 query 已具备视觉或媒介语义时，embedding 优先依赖这些可见语义；
+        # identity_terms 仍保留给 metadata boost 与后续 rerank 使用。
+        if normalized_identity_terms and not parts:
+            parts.append(" ".join(normalized_identity_terms))
         query_text = " ".join(parts).strip()
         return query_text or original_query.strip()
 
@@ -217,29 +319,7 @@ class Searcher:
 
         if candidate_intent.get("contract_satisfied") is False:
             return False
-
-        base_contract = base_intent.get("intent_contract") or {}
-        must_keep = [
-            str(item).strip().lower()
-            for item in (base_contract.get("must_keep") or [])
-            if str(item).strip()
-        ]
-        if not must_keep:
-            return True
-
-        candidate_texts = [
-            str(candidate_intent.get("search_text") or "").strip().lower(),
-            " ".join(str(item).strip().lower() for item in (candidate_intent.get("media_terms") or []) if str(item).strip()),
-            " ".join(str(item).strip().lower() for item in (candidate_intent.get("identity_terms") or []) if str(item).strip()),
-            str((candidate_intent.get("intent_contract") or {}).get("core_target") or "").strip().lower(),
-            " ".join(
-                str(item).strip().lower()
-                for item in ((candidate_intent.get("intent_contract") or {}).get("must_keep") or [])
-                if str(item).strip()
-            ),
-        ]
-        combined = " ".join(part for part in candidate_texts if part)
-        return all(token in combined for token in must_keep)
+        return True
 
     @staticmethod
     def _compute_metadata_boost(
@@ -248,12 +328,14 @@ class Searcher:
         identity_terms: List[str],
     ) -> float:
         boost = 1.0
-        metadata_media = set(metadata.get("media_types") or [])
-        metadata_identities = set(metadata.get("identity_names") or [])
-        if media_terms and metadata_media.intersection(media_terms):
+        metadata_media = {str(value).strip().lower() for value in (metadata.get("media_types") or []) if str(value).strip()}
+        metadata_identities = {str(value).strip().lower() for value in (metadata.get("identity_names") or []) if str(value).strip()}
+        query_media = {str(value).strip().lower() for value in media_terms if str(value).strip()}
+        query_identities = {str(value).strip().lower() for value in identity_terms if str(value).strip()}
+        if query_media and metadata_media.intersection(query_media):
             boost += 0.18
-        if identity_terms and metadata_identities.intersection(identity_terms):
-            boost += 0.28
+        if query_identities and metadata_identities.intersection(query_identities):
+            boost += 0.12
         return boost
 
     @staticmethod
@@ -288,6 +370,50 @@ class Searcher:
             if normalized_names.intersection(normalized_terms):
                 return True
         return False
+
+    @staticmethod
+    def _candidate_matches_media_terms(
+        metadata: Dict[str, Any],
+        media_terms: List[str],
+    ) -> bool:
+        if not media_terms:
+            return True
+
+        normalized_terms = [
+            term.strip().lower()
+            for term in media_terms
+            if term and term.strip()
+        ]
+        normalized_media = [
+            str(value).strip().lower()
+            for value in (metadata.get("media_types") or [])
+            if str(value).strip()
+        ]
+        if not normalized_terms:
+            return True
+        if not normalized_media:
+            return False
+
+        for term in normalized_terms:
+            for candidate in normalized_media:
+                if term == candidate or term in candidate or candidate in term:
+                    return True
+        return False
+
+    def _split_identity_matches(
+        self,
+        results: List[Dict[str, Any]],
+        identity_terms: List[str],
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        matched: List[Dict[str, Any]] = []
+        unmatched: List[Dict[str, Any]] = []
+        for item in results:
+            metadata = item.get("metadata", {})
+            if self._candidate_matches_identity_terms(metadata, identity_terms):
+                matched.append(item)
+            else:
+                unmatched.append(item)
+        return matched, unmatched
 
     def _extract_time_constraints(self, query: str) -> Dict[str, Any]:
         """
@@ -438,11 +564,22 @@ class Searcher:
         return round(max(threshold, 0.05), 6)
 
     @staticmethod
-    def _should_expand_results(results: List[Dict[str, Any]], top_k: int) -> bool:
+    def _should_expand_results(
+        results: List[Dict[str, Any]],
+        top_k: int,
+        round_quality: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         if not results:
             return True
         top_score = float(results[0].get("score", 0.0))
         if top_score < 0.55:
+            return True
+        if round_quality:
+            if int(round_quality.get("fallback_used_count", 0)) > 0:
+                return True
+            if int(round_quality.get("reliable_count", len(results))) < len(results):
+                return True
+        elif any(float(item.get("score", 0.0)) < MIN_RESULT_SCORE for item in results):
             return True
         if len(results) < min(top_k, 3) and top_score < 0.72:
             return True
@@ -521,7 +658,12 @@ class Searcher:
         # 保护下限:不低于0.05
         return max(threshold, 0.05)
 
-    def _calculate_candidate_k(self, normalized_top_k: int, has_time_filter: bool) -> int:
+    def _calculate_candidate_k(
+        self,
+        normalized_top_k: int,
+        has_time_filter: bool,
+        relaxation_level: int = 0,
+    ) -> int:
         """
         根据数据集规模和时间过滤动态计算候选数量。
 
@@ -559,8 +701,47 @@ class Searcher:
                 min(int(total_items * 0.01), 500)
             )
 
+        if relaxation_level > 0:
+            expansion_floor = normalized_top_k * (base_multiplier + relaxation_level)
+            candidate_k = max(candidate_k, expansion_floor)
+            candidate_k = ceil(candidate_k * (1 + min(relaxation_level, 3) * 0.35))
+
         # 不超过实际数据量
         return min(candidate_k, total_items)
+
+    @staticmethod
+    def _get_round_score_floors(relaxation_level: int) -> tuple[float, float]:
+        normalized_level = max(0, int(relaxation_level))
+        strict_floor = max(0.22, MIN_RESULT_SCORE - 0.08 * normalized_level)
+        broad_floor = max(0.12, strict_floor - 0.12)
+        return round(strict_floor, 6), round(broad_floor, 6)
+
+    def _assign_confidence_bucket(
+        self,
+        *,
+        item: Dict[str, Any],
+        strict_threshold: float,
+        broad_threshold: float,
+        media_terms: List[str],
+        identity_terms: List[str],
+        strict_identity_filter: bool,
+    ) -> int:
+        score = float(item.get("score", 0.0))
+        if score >= strict_threshold:
+            bucket = 3
+        elif score >= broad_threshold:
+            bucket = 2
+        else:
+            bucket = 1
+
+        metadata = item.get("metadata") or {}
+        if media_terms and not self._candidate_matches_media_terms(metadata, media_terms):
+            bucket = max(1, bucket - 1)
+
+        if identity_terms and not self._candidate_matches_identity_terms(metadata, identity_terms):
+            bucket = max(1, bucket - (1 if strict_identity_filter else 0))
+
+        return bucket
 
     def _hybrid_search(
         self,
@@ -577,7 +758,7 @@ class Searcher:
         执行混合检索（向量 + 关键字 + EXIF过滤）。
 
         改进：
-        - 向量检索只基于 description 语义匹配
+        - 向量检索基于 embedding_text 对应的视觉语义匹配
         - EXIF 条件（时间、季节、时段）通过 Elasticsearch 精确过滤
         - 分数融合时考虑 ES 过滤结果
 
@@ -593,7 +774,7 @@ class Searcher:
         media_terms = media_terms or []
         identity_terms = identity_terms or []
 
-        # 1. 向量检索（基于 retrieval_text 的语义匹配）
+        # 1. 向量检索（基于 embedding_text 的语义匹配）
         vector_results = self.vector_store.search(query_embedding, candidate_k)
 
         # 2. 构建向量分数映射
@@ -657,9 +838,6 @@ class Searcher:
             normalized_path = normalize_local_path(photo_path)
             if normalized_path and not os.path.exists(normalized_path):
                 continue
-            if strict_identity_filter and identity_terms and not self._candidate_matches_identity_terms(metadata, identity_terms):
-                continue
-
             # 只按命中的检索通道做归一融合。
             # 这样当图片没有 BM25 命中时，不会因为 keyword_score=0 被无端压分。
             available_weight = 0.0
@@ -877,17 +1055,22 @@ class Searcher:
         constraints: Dict[str, Any],
         normalized_top_k: int,
         has_filter: bool,
+        relaxation_level: int = 0,
     ) -> List[Dict[str, Any]]:
         query_embedding = self.embedding_service.generate_embedding(embedding_query)
-        candidate_k = self._calculate_candidate_k(normalized_top_k, has_filter)
+        candidate_k = self._calculate_candidate_k(
+            normalized_top_k,
+            has_filter,
+            relaxation_level=relaxation_level,
+        )
 
         if self.keyword_store is not None:
             combined_results = self._hybrid_search(
-                embedding_query,
+                query,
                 query_embedding,
                 candidate_k,
                 filters=constraints,
-                allow_keyword_only_results=False,
+                allow_keyword_only_results=True,
                 media_terms=media_terms,
                 identity_terms=identity_terms,
                 strict_identity_filter=strict_identity_filter,
@@ -901,8 +1084,12 @@ class Searcher:
             normalized_top_k=normalized_top_k,
             has_filter=has_filter,
             constraints=constraints,
+            search_text=str(intent.get("search_text") or ""),
+            media_terms=media_terms,
             identity_terms=identity_terms,
             strict_identity_filter=strict_identity_filter,
+            relaxation_level=relaxation_level,
+            strip_internal=False,
         )
 
     def _maybe_reflect_query_results(
@@ -915,10 +1102,14 @@ class Searcher:
         constraints: Dict[str, Any],
         has_filter: bool,
         debug: Dict[str, Any],
+        relaxation_level: int = 2,
+        seen_intent_signatures: Optional[set[tuple[Any, ...]]] = None,
     ) -> List[Dict[str, Any]]:
         if not self.query_formatter or not self.query_formatter.is_enabled():
             return current_results
-        if not self._should_expand_results(current_results, normalized_top_k):
+        needs_reflection_for_quality = self._should_expand_results(current_results, normalized_top_k)
+        needs_reflection_for_count = self._should_expand_to_fill_results(current_results, normalized_top_k)
+        if not needs_reflection_for_quality and not needs_reflection_for_count:
             return current_results
 
         reflection = self.query_formatter.reflect_on_weak_results(
@@ -930,6 +1121,11 @@ class Searcher:
             return current_results
         if not self._intent_contract_is_satisfied(base_intent, reflection):
             return current_results
+        reflection_signature = self._intent_signature(reflection)
+        if seen_intent_signatures is not None:
+            if reflection_signature in seen_intent_signatures:
+                return current_results
+            seen_intent_signatures.add(reflection_signature)
 
         embedding_query = self._build_query_text(
             search_text=str(reflection.get("search_text") or ""),
@@ -947,6 +1143,7 @@ class Searcher:
             constraints=constraints,
             normalized_top_k=normalized_top_k,
             has_filter=has_filter,
+            relaxation_level=relaxation_level,
         )
         if not reflected_results:
             return current_results
@@ -963,9 +1160,58 @@ class Searcher:
             )
         )
 
-        if self._should_expand_results(reflected_results, normalized_top_k):
+        merged_results = [dict(item) for item in reflected_results]
+        merged_results.extend(dict(item) for item in current_results)
+        merged_results = self._deduplicate_results(merged_results)
+        merged_results = self._sort_results_for_merge(merged_results)
+        final_results = self._fill_results_to_top_k(
+            merged_results,
+            current_results,
+            normalized_top_k,
+        )
+        for rank, item in enumerate(final_results, start=1):
+            item["rank"] = rank
+        return final_results
+
+    def _continue_reflection_rounds(
+        self,
+        *,
+        query: str,
+        base_intent: Dict[str, Any],
+        current_results: List[Dict[str, Any]],
+        normalized_top_k: int,
+        constraints: Dict[str, Any],
+        has_filter: bool,
+        debug: Dict[str, Any],
+        start_relaxation_level: int = 2,
+    ) -> List[Dict[str, Any]]:
+        if not self.query_formatter or not self.query_formatter.is_enabled():
             return current_results
-        return reflected_results
+
+        reflection_round = max(2, int(start_relaxation_level))
+        results = current_results
+        seen_intent_signatures: set[tuple[Any, ...]] = set()
+
+        while self._should_continue_multi_round_search(results, normalized_top_k):
+            before_signature = self._results_signature(results)
+            updated_results = self._maybe_reflect_query_results(
+                query=query,
+                base_intent=base_intent,
+                current_results=results,
+                normalized_top_k=normalized_top_k,
+                constraints=constraints,
+                has_filter=has_filter,
+                debug=debug,
+                relaxation_level=reflection_round,
+                seen_intent_signatures=seen_intent_signatures,
+            )
+            after_signature = self._results_signature(updated_results)
+            if after_signature == before_signature:
+                break
+            results = updated_results
+            reflection_round += 1
+
+        return results
 
     def _maybe_expand_query_results(
         self,
@@ -973,6 +1219,7 @@ class Searcher:
         query: str,
         base_intent: Dict[str, Any],
         base_results: List[Dict[str, Any]],
+        base_round_quality: Optional[Dict[str, Any]],
         normalized_top_k: int,
         constraints: Dict[str, Any],
         has_filter: bool,
@@ -982,7 +1229,11 @@ class Searcher:
             return base_results
         if not self.query_expansion_enabled or self.query_expansion_max_alternatives <= 0:
             return base_results
-        should_expand_for_quality = self._should_expand_results(base_results, normalized_top_k)
+        should_expand_for_quality = self._should_expand_results(
+            base_results,
+            normalized_top_k,
+            round_quality=base_round_quality,
+        )
         should_expand_for_count = self._should_expand_to_fill_results(base_results, normalized_top_k)
         if not should_expand_for_quality and not should_expand_for_count:
             return base_results
@@ -992,53 +1243,57 @@ class Searcher:
             base_intent=base_intent,
             max_alternatives=self.query_expansion_max_alternatives,
         )
-        if not alternatives:
-            return base_results
-
-        debug["expansion_triggered"] = True
         merged: List[Dict[str, Any]] = [dict(item) for item in base_results]
         best_results: List[Dict[str, Any]] = base_results
-        for alt in alternatives:
-            if not self._intent_contract_is_satisfied(base_intent, alt):
-                continue
-            embedding_query = self._build_query_text(
-                search_text=str(alt.get("search_text") or ""),
-                media_terms=list(alt.get("media_terms") or []),
-                identity_terms=list(alt.get("identity_terms") or []),
-                original_query=query,
-            )
-            alt_results = self._run_single_search_round(
-                query=query,
-                intent=alt,
-                embedding_query=embedding_query,
-                media_terms=list(alt.get("media_terms") or []),
-                identity_terms=list(alt.get("identity_terms") or []),
-                strict_identity_filter=bool(alt.get("strict_identity_filter", False)),
-                constraints=constraints,
-                normalized_top_k=normalized_top_k,
-                has_filter=has_filter,
-            )
-            debug["alternatives"].append(dict(alt))
-            debug["rounds"].append(
-                self._round_summary(
-                    round_name="expansion",
-                    intent=alt,
-                    results=alt_results,
-                    reason=str(alt.get("reason") or "").strip(),
+        final_results = base_results
+        if alternatives:
+            debug["expansion_triggered"] = True
+            for alt_index, alt in enumerate(alternatives, start=1):
+                if not self._intent_contract_is_satisfied(base_intent, alt):
+                    continue
+                embedding_query = self._build_query_text(
+                    search_text=str(alt.get("search_text") or ""),
+                    media_terms=list(alt.get("media_terms") or []),
+                    identity_terms=list(alt.get("identity_terms") or []),
+                    original_query=query,
                 )
-            )
-            if alt_results:
-                current_best_score = float(best_results[0].get("score", 0.0)) if best_results else 0.0
-                alt_best_score = float(alt_results[0].get("score", 0.0))
-                if alt_best_score > current_best_score:
-                    best_results = alt_results
-            merged.extend(dict(item) for item in alt_results)
+                alt_results = self._run_single_search_round(
+                    query=query,
+                    intent=alt,
+                    embedding_query=embedding_query,
+                    media_terms=list(alt.get("media_terms") or []),
+                    identity_terms=list(alt.get("identity_terms") or []),
+                    strict_identity_filter=bool(alt.get("strict_identity_filter", False)),
+                    constraints=constraints,
+                    normalized_top_k=normalized_top_k,
+                    has_filter=has_filter,
+                    relaxation_level=alt_index,
+                )
+                debug["alternatives"].append(dict(alt))
+                debug["rounds"].append(
+                    self._round_summary(
+                        round_name="expansion",
+                        intent=alt,
+                        results=alt_results,
+                        reason=str(alt.get("reason") or "").strip(),
+                    )
+                )
+                if alt_results:
+                    current_best_score = float(best_results[0].get("score", 0.0)) if best_results else 0.0
+                    alt_best_score = float(alt_results[0].get("score", 0.0))
+                    if alt_best_score > current_best_score:
+                        best_results = alt_results
+                merged.extend(dict(item) for item in alt_results)
 
-        merged = self._deduplicate_results(merged)
-        merged.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
-        final_results = merged[:normalized_top_k]
-        for rank, item in enumerate(final_results, start=1):
-            item["rank"] = rank
+            merged = self._deduplicate_results(merged)
+            merged = self._sort_results_for_merge(merged)
+            final_results = self._fill_results_to_top_k(
+                merged,
+                base_results,
+                normalized_top_k,
+            )
+            for rank, item in enumerate(final_results, start=1):
+                item["rank"] = rank
 
         expansion_reason = ""
         if debug["alternatives"]:
@@ -1050,19 +1305,16 @@ class Searcher:
                 expansion_reason = "第一轮结果数量不足，尝试保守扩写查询意图"
         debug["expansion_reason"] = expansion_reason
 
-        if self._should_expand_results(final_results, normalized_top_k):
-            reflected = self._maybe_reflect_query_results(
-                query=query,
-                base_intent=base_intent,
-                current_results=best_results,
-                normalized_top_k=normalized_top_k,
-                constraints=constraints,
-                has_filter=has_filter,
-                debug=debug,
-            )
-            if reflected is not best_results:
-                return reflected
-        return final_results
+        return self._continue_reflection_rounds(
+            query=query,
+            base_intent=base_intent,
+            current_results=final_results,
+            normalized_top_k=normalized_top_k,
+            constraints=constraints,
+            has_filter=has_filter,
+            debug=debug,
+            start_relaxation_level=max(2, len(debug["alternatives"]) + 1),
+        )
 
     def _finalize_results(
         self,
@@ -1070,38 +1322,105 @@ class Searcher:
         normalized_top_k: int,
         has_filter: bool,
         constraints: Dict[str, Any],
+        search_text: str = "",
+        media_terms: Optional[List[str]] = None,
         identity_terms: Optional[List[str]] = None,
         strict_identity_filter: bool = False,
+        relaxation_level: int = 0,
+        strip_internal: bool = True,
     ) -> List[Dict[str, Any]]:
         filtered_results = []
+        media_terms = media_terms or []
         identity_terms = identity_terms or []
         for item in combined_results:
             if self.keyword_store is None and has_filter:
                 meta = item.get("metadata", {})
                 if not self._check_time_match_v2(meta, constraints):
                     continue
-            if strict_identity_filter and identity_terms:
-                meta = item.get("metadata", {})
-                if not self._candidate_matches_identity_terms(meta, identity_terms):
-                    continue
-            filtered_results.append(item)
+            filtered_results.append(dict(item))
 
         filtered_results = self._deduplicate_results(filtered_results)
+        fallback_results = filtered_results
 
+        has_visual_grounding = bool(str(search_text or "").strip()) or bool(media_terms)
+        should_promote_labeled_identity = strict_identity_filter and identity_terms and not has_visual_grounding
+
+        if should_promote_labeled_identity:
+            matched_results, unmatched_results = self._split_identity_matches(filtered_results, identity_terms)
+            if matched_results:
+                filtered_results = matched_results + unmatched_results
+                fallback_results = filtered_results
+
+        strict_floor, broad_floor = self._get_round_score_floors(relaxation_level)
         scores = [item["score"] for item in filtered_results]
         if scores:
             dynamic_threshold = self._calculate_dynamic_threshold(scores, normalized_top_k)
-            threshold_filtered = [
-                item for item in filtered_results if item["score"] >= dynamic_threshold
-            ]
+            strict_threshold = max(dynamic_threshold, strict_floor)
+            broad_threshold = min(
+                strict_threshold - 0.05,
+                max(broad_floor, strict_threshold * 0.84),
+            )
+            broad_threshold = round(max(broad_floor, broad_threshold), 6)
         else:
-            threshold_filtered = filtered_results
+            strict_threshold = strict_floor
+            broad_threshold = broad_floor
 
-        final_results = threshold_filtered[:normalized_top_k]
+        reliable_results: List[Dict[str, Any]] = []
+        generalized_results: List[Dict[str, Any]] = []
+        for item in filtered_results:
+            bucket = self._assign_confidence_bucket(
+                item=item,
+                strict_threshold=strict_threshold,
+                broad_threshold=broad_threshold,
+                media_terms=media_terms,
+                identity_terms=identity_terms,
+                strict_identity_filter=strict_identity_filter,
+            )
+            item["_confidence_bucket"] = bucket
+            item["_relaxation_level"] = max(0, int(relaxation_level))
+            if bucket >= 3:
+                reliable_results.append(item)
+            elif bucket >= 2:
+                generalized_results.append(item)
+
+        prioritized_results = reliable_results + generalized_results
+
+        final_results = self._fill_results_to_top_k(
+            prioritized_results,
+            fallback_results,
+            normalized_top_k,
+        )
+        prioritized_keys = {
+            self._path_key(item.get("photo_path", ""))
+            for item in prioritized_results
+            if item.get("photo_path")
+        }
+        reliable_keys = {
+            self._path_key(item.get("photo_path", ""))
+            for item in reliable_results
+            if item.get("photo_path")
+        }
+        fallback_used_count = 0
+        for item in final_results:
+            key = self._path_key(item.get("photo_path", ""))
+            if key and key not in prioritized_keys:
+                fallback_used_count += 1
+
+        self._last_round_quality = {
+            "raw_count": len(filtered_results),
+            "returned_count": len(final_results),
+            "reliable_count": len(reliable_results),
+            "generalized_count": len(prioritized_results),
+            "fallback_used_count": fallback_used_count,
+            "strict_threshold": round(strict_threshold, 6),
+            "broad_threshold": round(broad_threshold, 6),
+            "relaxation_level": max(0, int(relaxation_level)),
+            "top_score": round(float(filtered_results[0].get("score", 0.0)), 6) if filtered_results else 0.0,
+        }
         for rank, item in enumerate(final_results, start=1):
             item["rank"] = rank
-            if "metadata" in item:
-                del item["metadata"]
+        if strip_internal:
+            return self._sanitize_results(final_results)
         return final_results
 
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
@@ -1109,7 +1428,7 @@ class Searcher:
         解析查询、执行混合检索、时间过滤并返回排序结果。
 
         改进：
-        - embedding 改为基于 retrieval_text 风格的组合查询文本
+        - embedding 基于更偏视觉语义的组合查询文本
         - EXIF 条件（时间、季节、时段）通过 Elasticsearch 精确过滤
         - 支持更细粒度的时段查询（7档细分）
         """
@@ -1134,6 +1453,7 @@ class Searcher:
         media_terms: List[str] = []
         identity_terms: List[str] = []
         strict_identity_filter = False
+        retrieval_mode = "hybrid"
         time_hints = {}
 
         if query_formatter_enabled:
@@ -1147,6 +1467,9 @@ class Searcher:
                 "season": format_result.get("season"),
                 "time_period": format_result.get("time_period"),
             }
+            retrieval_mode = str(format_result.get("retrieval_mode") or "").strip().lower()
+            if retrieval_mode not in {"hybrid", "filter_only"}:
+                retrieval_mode = "filter_only" if (not formatted_query and any(time_hints.values())) else "hybrid"
 
         # 2. 时间解析（返回结构化过滤条件）
         constraints: Dict[str, Any] = {
@@ -1173,12 +1496,13 @@ class Searcher:
 
         # 3. 只有“纯 EXIF/时间过滤查询”才降级为纯关键字检索。
         # 其判定依据是：LLM 没有抽出任何视觉语义，且确实存在过滤条件。
-        is_filter_only_query = query_formatter_enabled and not cleaned_query and has_filter
+        is_filter_only_query = query_formatter_enabled and retrieval_mode == "filter_only" and has_filter
         if is_filter_only_query:
             # 纯过滤查询：跳过向量检索，直接使用 ES 关键字与过滤检索
             print(f"[DEBUG] 纯过滤查询模式，constraints: {constraints}")
             filter_only_intent = {
                 "search_text": cleaned_query,
+                "retrieval_mode": retrieval_mode,
                 "media_terms": list(media_terms),
                 "identity_terms": list(identity_terms),
                 "strict_identity_filter": strict_identity_filter,
@@ -1211,6 +1535,7 @@ class Searcher:
         )
         base_intent = {
             "search_text": cleaned_query,
+            "retrieval_mode": retrieval_mode,
             "media_terms": list(media_terms),
             "identity_terms": list(identity_terms),
             "strict_identity_filter": strict_identity_filter,
@@ -1232,7 +1557,9 @@ class Searcher:
             constraints=constraints,
             normalized_top_k=normalized_top_k,
             has_filter=has_filter,
+            relaxation_level=0,
         )
+        base_round_quality = self._get_last_round_quality()
         debug["rounds"].append(
             self._round_summary(
                 round_name="base",
@@ -1244,11 +1571,13 @@ class Searcher:
             query=query,
             base_intent=base_intent,
             base_results=first_round_results,
+            base_round_quality=base_round_quality,
             normalized_top_k=normalized_top_k,
             constraints=constraints,
             has_filter=has_filter,
             debug=debug,
         )
+        final_results = self._sanitize_results(final_results)
         self._set_last_search_debug(debug)
         return final_results
 

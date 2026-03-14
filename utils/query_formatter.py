@@ -7,6 +7,13 @@ from typing import Any, Dict, Optional
 
 from openai import OpenAI
 
+from utils.llm_compat import (
+    create_chat_completion,
+    extract_response_text,
+    normalize_openai_base_url,
+    requires_api_key,
+    resolve_api_key,
+)
 
 class QueryFormatter:
     """
@@ -54,16 +61,17 @@ class QueryFormatter:
         Raises:
             ValueError: API 密钥未设置时抛出
         """
-        if not api_key:
+        if requires_api_key(base_url) and not api_key:
             raise ValueError("QUERY_FORMAT_API_KEY 未设置")
-        
-        self.api_key = api_key
+
+        resolved_api_key = resolve_api_key(api_key, base_url)
+        self.api_key = resolved_api_key
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = normalize_openai_base_url(base_url)
         self.reasoning_effort = reasoning_effort
         self.timeout = timeout
         self.max_retries = max_retries
-        self.client = client or OpenAI(api_key=api_key, base_url=base_url)
+        self.client = client or OpenAI(api_key=resolved_api_key, base_url=self.base_url)
     
     def format_query(self, user_query: str) -> Dict[str, Any]:
         """
@@ -99,21 +107,28 @@ class QueryFormatter:
 
 输出字段固定为：
 1. search_text
-2. media_terms
-3. identity_terms
-4. strict_identity_filter
-5. intent_mode
-6. intent_contract
-7. time_hint
-8. season
-9. time_period
+2. retrieval_mode
+3. media_terms
+4. identity_terms
+5. strict_identity_filter
+6. intent_mode
+7. intent_contract
+8. time_hint
+9. season
+10. time_period
 
 原则：
 - 以理解用户真正想找的图像内容为目标，而不是机械抽词。
 - search_text 可以做保守的语义归纳、压缩或措辞标准化，但不能编造用户没有表达的实体、动作、场景或属性。
-- media_terms 只在你对媒介类型判断清楚时才返回，使用内部规范值：album_cover, poster, stage_performance, screen。
-- identity_terms 用于提取明确的人名、艺名、公众人物称呼或稳定别称；不确定时宁可不填。
-- strict_identity_filter 表示该查询是否应把身份匹配视为硬约束。只有当用户明确要找某个特定人物本人的照片时才设为 true。
+- search_text 应优先表达“正确结果里应该能直接看到什么”，而不是只重复名字、标题、口号或其他非视觉标签。
+- 如果 query 含有命名实体、身份称呼、稳定别称或抽象标签，且用户本质上在找某种可见主体/场景/构图，search_text 应尽量转成保守的可见表达；精确名字或称呼保留到 identity_terms。
+- 如果 query 主要是时间、季节、时段、设备、文件属性或其他过滤条件，且缺少稳定的可见目标，search_text 可以为空。
+- retrieval_mode 默认是 hybrid。只有当用户主要在表达时间、季节、时段、设备等过滤条件，且几乎没有稳定的可见主体需要语义召回时，才使用 filter_only。
+- media_terms 是 LLM 认为对检索有帮助的媒介或载体词，可为空；不要为了迎合固定词表而改写用户意图。
+- identity_terms 用于提取明确的名字、称呼、编号、系列名或其他稳定命名约束；不确定时宁可不填。
+- media_terms、identity_terms、intent_contract 都是检索提示，不是硬过滤条件；除 retrieval_mode=filter_only 外，不要把它们理解成“只能返回字段命中的图片”。
+- strict_identity_filter 表示该查询是否应把身份匹配视为硬约束。只有当用户明确表达“必须是本人/只要这个人/不要其他人/不能错人”这类强约束时才设为 true。
+- 不要因为 query 里出现了命名对象，就自动把 strict_identity_filter 设为 true；只有当“不能错对象”是明确要求时才这样做。
 - intent_mode 只能是 strict 或 open。
 - 当用户在找明确且不可替换的目标时，intent_mode 应为 strict。这里的“明确目标”不只包括特定人物，也包括特定物体、特定载体、特定内容组合或明确不可替换的检索对象。
 - intent_contract 用来表达这个 query 的最小不可丢失目标，格式固定为：
@@ -124,12 +139,14 @@ class QueryFormatter:
   }}
 - strict 模式下，后续任何扩写或反思都只能围绕 intent_contract 做保守重述，不能把目标替换成更泛的同类概念。
 - time_hint 保留原始时间表达；season 和 time_period 做结构化归纳。
+- 不要依赖具体示例去套用模式，应直接理解当前 query。
 - 只返回 JSON，不要解释。
 """
 
         prompt = f"""输出 JSON，字段固定如下：
 {{
   "search_text": "",
+  "retrieval_mode": "hybrid",
   "media_terms": [],
   "identity_terms": [],
   "strict_identity_filter": false,
@@ -146,43 +163,27 @@ class QueryFormatter:
 
 抽取规则：
 - search_text 用于后续语义检索；可以更像“检索意图表达”，但必须保守。
+- retrieval_mode 默认填 hybrid；只有在 query 明显是纯过滤需求时才填 filter_only。
 - 删除礼貌词、任务词和空泛检索词，例如：帮我找、给我看、搜索、检索、照片、图片、相片、截图。
-- media_terms 只做内部规范化：
-  - 专辑/唱片/封套/专辑封面 -> album_cover
-  - 海报/宣传海报 -> poster
-  - 演出/演唱会/现场/live -> stage_performance
-  - 屏幕/截图 -> screen
-- strict_identity_filter:
-  - “请帮我找陶喆的照片” -> true
-  - “像陶喆风格的舞台照” -> false
-  - “陶喆演唱会现场” -> 通常 true
-- intent_mode:
-  - 若 query 可以被更泛化的近义表达替代，设为 open
-  - 若 query 存在明确不可替换的核心目标，设为 strict
+- 如果 query 中有名字、称呼、标题或抽象标签，不要让 search_text 退化成只重复这些词；优先保留能直接看到的主体、场景、动作、构图或载体特征。
+- 如果 query 缺少稳定的视觉目标，且本质上只是过滤条件，search_text 允许为空。
+- media_terms 若返回，应使用对检索有帮助的简短载体词或媒介词，不要求来自固定集合。
+- media_terms、identity_terms 是帮助召回和后续排序的提示，不是要求结果必须在某个字段里命中。
+- strict_identity_filter 只在用户明确要求“必须是这个特定人物本人，且不能接受其他人或仅文字提及”时设为 true。
+- intent_mode 若 query 存在明确不可替换的核心目标，则设为 strict，否则设为 open。
 - intent_contract:
   - core_target: 用一句短语概括用户真正要找的东西
-  - must_keep: 保留不可替换的核心词或目标，可是人物、物体、载体或内容组合
+  - must_keep: 只保留你确信属于不可丢失目标的词；不确定时宁可留空
   - avoid_drift: 简短说明后续不该漂移到什么方向
-- 不要把“海边”发散成“沙滩海浪蓝天”，也不要把“频谱分析仪 屏幕”发散成“仪器特写 波形曲线 参数读数”。
+- 不要把明确目标替换成更泛的同类概念。
 - 如果 query 同时包含时间和画面内容，search_text 主要保留画面内容；时间相关信息填入其余字段。
-
-示例：
-- 用户 query: "去年的照片"
-  输出: {{"search_text": "", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "intent_mode": "open", "intent_contract": {{"core_target": "去年的照片", "must_keep": [], "avoid_drift": ""}}, "time_hint": "去年", "season": null, "time_period": null}}
-- 用户 query: "夏天海边的照片"
-  输出: {{"search_text": "海边", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "intent_mode": "open", "intent_contract": {{"core_target": "夏天海边的照片", "must_keep": ["海边"], "avoid_drift": ""}}, "time_hint": null, "season": "夏天", "time_period": null}}
-- 用户 query: "频谱分析仪 屏幕"
-  输出: {{"search_text": "频谱分析仪 屏幕", "media_terms": ["screen"], "identity_terms": [], "strict_identity_filter": false, "intent_mode": "strict", "intent_contract": {{"core_target": "频谱分析仪屏幕", "must_keep": ["频谱分析仪", "屏幕"], "avoid_drift": "不要扩成泛化仪器或一般曲线图"}}, "time_hint": null, "season": null, "time_period": null}}
-- 用户 query: "去年傍晚的篮球场"
-  输出: {{"search_text": "篮球场", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "intent_mode": "open", "intent_contract": {{"core_target": "去年傍晚的篮球场照片", "must_keep": ["篮球场"], "avoid_drift": ""}}, "time_hint": "去年", "season": null, "time_period": "傍晚"}}
-- 用户 query: "周杰伦演唱会"
-  输出: {{"search_text": "演唱会现场", "media_terms": ["stage_performance"], "identity_terms": ["周杰伦"], "strict_identity_filter": true, "intent_mode": "strict", "intent_contract": {{"core_target": "周杰伦演唱会现场", "must_keep": ["周杰伦", "演唱会现场"], "avoid_drift": "不要扩成其他男歌手、专辑或泛化舞台照"}}, "time_hint": null, "season": null, "time_period": null}}
 
 用户 query: {user_query}"""
 
         for attempt in range(self.max_retries):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": system_message},
@@ -191,12 +192,13 @@ class QueryFormatter:
                     temperature=0,
                     response_format={"type": "json_object"},
                     timeout=self.timeout,
-                    extra_body={"reasoning_effort": self.reasoning_effort},
+                    reasoning_effort=self.reasoning_effort,
                 )
-                
-                payload = json.loads(response.choices[0].message.content)
+
+                payload = json.loads(extract_response_text(response))
                 result = {
                     "search_text": str(payload.get("search_text") or "").strip(),
+                    "retrieval_mode": payload.get("retrieval_mode"),
                     "media_terms": payload.get("media_terms") or [],
                     "identity_terms": payload.get("identity_terms") or [],
                     "strict_identity_filter": bool(payload.get("strict_identity_filter", False)),
@@ -209,17 +211,23 @@ class QueryFormatter:
                     "original_query": user_query,
                 }
 
-                allowed_media_terms = {"album_cover", "poster", "stage_performance", "screen"}
                 result["media_terms"] = [
                     str(value).strip()
                     for value in result["media_terms"]
-                    if str(value).strip() in allowed_media_terms
+                    if str(value).strip()
                 ]
                 result["identity_terms"] = [
                     str(value).strip()
                     for value in result["identity_terms"]
                     if str(value).strip()
                 ]
+                result["retrieval_mode"] = self._normalize_retrieval_mode(
+                    result.get("retrieval_mode"),
+                    search_text=result["search_text"],
+                    time_hint=result["time_hint"],
+                    season=result["season"],
+                    time_period=result["time_period"],
+                )
                 result["intent_mode"] = self._normalize_intent_mode(
                     result.get("intent_mode"),
                     strict_identity_filter=result["strict_identity_filter"],
@@ -233,13 +241,11 @@ class QueryFormatter:
                     intent_mode=result["intent_mode"],
                 )
 
-                allowed_seasons = {"春天", "夏天", "秋天", "冬天"}
-                if result["season"] not in allowed_seasons:
-                    result["season"] = None
+                if result["season"] is not None:
+                    result["season"] = str(result["season"]).strip() or None
 
-                allowed_periods = {"凌晨", "早晨", "上午", "中午", "下午", "傍晚", "夜晚"}
-                if result["time_period"] not in allowed_periods:
-                    result["time_period"] = None
+                if result["time_period"] is not None:
+                    result["time_period"] = str(result["time_period"]).strip() or None
 
                 if result["time_hint"] is not None:
                     result["time_hint"] = str(result["time_hint"]).strip() or None
@@ -251,6 +257,7 @@ class QueryFormatter:
                     # 降级：返回原始查询
                     return {
                         "search_text": user_query,
+                        "retrieval_mode": "hybrid",
                         "media_terms": [],
                         "identity_terms": [],
                         "strict_identity_filter": False,
@@ -273,6 +280,7 @@ class QueryFormatter:
         
         return {
             "search_text": user_query,
+            "retrieval_mode": "hybrid",
             "media_terms": [],
             "identity_terms": [],
             "strict_identity_filter": False,
@@ -295,6 +303,23 @@ class QueryFormatter:
         if normalized in {"strict", "open"}:
             return normalized
         return "strict" if strict_identity_filter else "open"
+
+    @staticmethod
+    def _normalize_retrieval_mode(
+        value: Any,
+        *,
+        search_text: str,
+        time_hint: Any = None,
+        season: Any = None,
+        time_period: Any = None,
+    ) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized in {"hybrid", "filter_only"}:
+            return normalized
+        has_filter = bool(time_hint or season or time_period)
+        if has_filter and not str(search_text or "").strip():
+            return "filter_only"
+        return "hybrid"
 
     @staticmethod
     def _normalize_intent_contract(
@@ -334,20 +359,6 @@ class QueryFormatter:
             must_keep.append(normalized)
             seen.add(lowered)
 
-        if not must_keep:
-            seed_terms = identity_terms or media_terms
-            if intent_mode == "strict" and not seed_terms and search_text.strip():
-                seed_terms = [search_text.strip()]
-            for item in seed_terms:
-                normalized = str(item or "").strip()
-                if not normalized:
-                    continue
-                lowered = normalized.lower()
-                if lowered in seen:
-                    continue
-                must_keep.append(normalized)
-                seen.add(lowered)
-
         avoid_drift = str(contract.get("avoid_drift") or inherited.get("avoid_drift") or "").strip()
         return {
             "core_target": core_target,
@@ -367,6 +378,7 @@ class QueryFormatter:
     ) -> Dict[str, Any]:
         result = {
             "search_text": str(payload.get("search_text") or "").strip(),
+            "retrieval_mode": payload.get("retrieval_mode"),
             "media_terms": payload.get("media_terms") or [],
             "identity_terms": payload.get("identity_terms") or [],
             "strict_identity_filter": bool(payload.get("strict_identity_filter", False)),
@@ -380,17 +392,23 @@ class QueryFormatter:
             "reason": str(payload.get("reason") or "").strip(),
         }
 
-        allowed_media_terms = {"album_cover", "poster", "stage_performance", "screen"}
         result["media_terms"] = [
             str(value).strip()
             for value in result["media_terms"]
-            if str(value).strip() in allowed_media_terms
+            if str(value).strip()
         ]
         result["identity_terms"] = [
             str(value).strip()
             for value in result["identity_terms"]
             if str(value).strip()
         ]
+        result["retrieval_mode"] = QueryFormatter._normalize_retrieval_mode(
+            result.get("retrieval_mode"),
+            search_text=result["search_text"],
+            time_hint=result["time_hint"],
+            season=result["season"],
+            time_period=result["time_period"],
+        )
         base_contract = {}
         if isinstance(base_intent, dict):
             maybe_contract = base_intent.get("intent_contract")
@@ -410,13 +428,11 @@ class QueryFormatter:
             base_contract=base_contract,
         )
 
-        allowed_seasons = {"春天", "夏天", "秋天", "冬天"}
-        if result["season"] not in allowed_seasons:
-            result["season"] = None
+        if result["season"] is not None:
+            result["season"] = str(result["season"]).strip() or None
 
-        allowed_periods = {"凌晨", "早晨", "上午", "中午", "下午", "傍晚", "夜晚"}
-        if result["time_period"] not in allowed_periods:
-            result["time_period"] = None
+        if result["time_period"] is not None:
+            result["time_period"] = str(result["time_period"]).strip() or None
 
         if result["time_hint"] is not None:
             result["time_hint"] = str(result["time_hint"]).strip() or None
@@ -444,6 +460,7 @@ class QueryFormatter:
  "alternatives": [
     {{
       "search_text": "",
+      "retrieval_mode": "hybrid",
       "media_terms": [],
       "identity_terms": [],
       "strict_identity_filter": false,
@@ -468,15 +485,18 @@ class QueryFormatter:
 - 如果原查询已经足够明确，允许返回空数组。
 - 每个替代意图必须保持和原查询同一目标，不得偏题。
 - 可以补充更容易检索的视觉表达、常见载体或同一意图下的保守语义重述。
+- 如果原查询的核心约束是名字、称呼、编号、标题或其他命名标签，且直接重复这些词不利于视觉召回，可以把 search_text 改写成更容易看见的主体、场景、动作、构图或载体表达，但不能改变目标。
+- retrieval_mode 通常保持 hybrid；只有当原查询本身就是明确纯过滤需求时，才允许使用 filter_only。
 - 你必须显式判断替代意图是否仍然遵守第一轮意图中的 intent_contract；如果遵守，contract_satisfied=true，否则为 false。
 - 如果第一轮 intent_mode 是 strict，那么替代意图必须保留 core_target 和 must_keep，不允许把目标扩成更泛的同类对象、同类人物或同类场景。
-- strict_identity_filter 只有在替代意图仍然要求“必须是这个人本人”时才为 true。
+- strict_identity_filter 只有在替代意图仍然要求“必须是这个人本人，且不能接受错人或仅文字提及”时才为 true。
 - 不允许把“明确的人/物/载体/内容组合”改写成泛化类别词。
 - 只返回 JSON，不要解释。"""
 
         for attempt in range(self.max_retries):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": system_message},
@@ -485,9 +505,9 @@ class QueryFormatter:
                     temperature=0,
                     response_format={"type": "json_object"},
                     timeout=self.timeout,
-                    extra_body={"reasoning_effort": self.reasoning_effort},
+                    reasoning_effort=self.reasoning_effort,
                 )
-                payload = json.loads(response.choices[0].message.content)
+                payload = json.loads(extract_response_text(response))
                 alternatives = payload.get("alternatives") or []
                 normalized: list[Dict[str, Any]] = []
                 for item in alternatives[:max_alternatives]:
@@ -529,6 +549,7 @@ class QueryFormatter:
 只返回 JSON：
 {{
   "search_text": "",
+  "retrieval_mode": "hybrid",
   "media_terms": [],
   "identity_terms": [],
   "strict_identity_filter": false,
@@ -559,8 +580,10 @@ class QueryFormatter:
 要求：
 - 如果当前结果已经足够接近，允许返回空 JSON {{}}。
 - 反思的目标是“在不改原始目标的前提下修正检索表达”，不是换目标。
+- 如果原查询主要依赖名字、称呼、标题、编号或其他命名标签，而当前结果又偏弱，优先考虑把名字主导的表达改成更直接可见的主体、场景、动作、构图或载体表达。
+- retrieval_mode 默认保持 hybrid；只有在原查询就是纯过滤需求时，才改成 filter_only。
 - 你必须显式判断新的意图是否仍然遵守第一轮 intent_contract；如果遵守，contract_satisfied=true，否则为 false。
-- 如果原查询是明确的人物检索，只有当你仍然认为必须找该人物本人时，strict_identity_filter 才为 true。
+- 只有当你仍然判断“不能错对象”是刚性要求时，strict_identity_filter 才为 true。
 - 如果第一轮 intent_mode 是 strict，那么新的意图必须保留 core_target 和 must_keep，只能做更稳健的重述或收紧，不能改成泛化替代品。
 - 你可以决定“更强调媒介类型”、“更强调主体近景”、“把抽象描述改成更容易检索的视觉表达”，但不能改变原始目标。
 - reason 必须简短说明你为何这样调整。
@@ -568,7 +591,8 @@ class QueryFormatter:
 
         for attempt in range(self.max_retries):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": system_message},
@@ -577,9 +601,9 @@ class QueryFormatter:
                     temperature=0,
                     response_format={"type": "json_object"},
                     timeout=self.timeout,
-                    extra_body={"reasoning_effort": self.reasoning_effort},
+                    reasoning_effort=self.reasoning_effort,
                 )
-                payload = json.loads(response.choices[0].message.content)
+                payload = json.loads(extract_response_text(response))
                 if not isinstance(payload, dict) or not payload:
                     return {}
                 return self._normalize_intent_payload(

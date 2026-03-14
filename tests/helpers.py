@@ -109,6 +109,7 @@ class FakeStructuredVisionService:
             "identity_names": [],
             "identity_evidence": [],
             "analysis_flags": {},
+            "embedding_text": "photo 测试图片",
             "retrieval_text": "photo 测试图片",
         }
 

@@ -336,7 +336,7 @@ class SearcherTests(unittest.TestCase):
             self.assertTrue(all(item["photo_path"] != uploaded_path for item in results))
             self.assertTrue(all(item["photo_path"] in indexed_paths for item in results))
 
-    def test_identity_query_filters_out_candidates_without_matching_identity_evidence(self) -> None:
+    def test_identity_query_prefers_matching_identity_evidence_but_can_backfill(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             exact_path = os.path.join(tmp, "exact.jpg")
             generic_path = os.path.join(tmp, "generic.jpg")
@@ -389,7 +389,7 @@ class SearcherTests(unittest.TestCase):
             )
 
             results = searcher.search("请帮我找陶喆的照片", top_k=5)
-            self.assertEqual([item["photo_path"] for item in results], [exact_path])
+            self.assertEqual([item["photo_path"] for item in results], [exact_path, generic_path])
 
     def test_identity_style_query_does_not_force_hard_identity_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -605,7 +605,7 @@ class SearcherTests(unittest.TestCase):
             query_formatter=FakeQueryFormatter(
                 {
                     "周杰伦演唱会": {
-                        "search_text": "",
+                        "search_text": "真人出镜 舞台现场 演唱会表演",
                         "media_terms": ["stage_performance"],
                         "identity_terms": ["周杰伦"],
                         "time_hint": None,
@@ -623,10 +623,171 @@ class SearcherTests(unittest.TestCase):
         ) as generate_embedding:
             searcher.search("周杰伦演唱会", top_k=5)
 
-        generate_embedding.assert_called_once_with("stage_performance 周杰伦")
-        _, kwargs = hybrid_search.call_args
+        generate_embedding.assert_called_once_with("真人出镜 舞台现场 演唱会表演 stage_performance")
+        args, kwargs = hybrid_search.call_args
+        self.assertEqual(args[0], "周杰伦演唱会")
         self.assertEqual(kwargs["media_terms"], ["stage_performance"])
         self.assertEqual(kwargs["identity_terms"], ["周杰伦"])
+
+    def test_finalize_results_skips_label_prefilter_when_query_has_visual_grounding(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+        )
+
+        combined_results = [
+            {
+                "photo_path": "/tmp/live.jpg",
+                "description": "现场照片",
+                "score": 0.86,
+                "vector_score": 0.86,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {
+                    "photo_path": "/tmp/live.jpg",
+                    "identity_names": [],
+                    "media_types": ["stage_performance"],
+                },
+            },
+            {
+                "photo_path": "/tmp/screen.jpg",
+                "description": "带名字的截图",
+                "score": 0.78,
+                "vector_score": 0.78,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {
+                    "photo_path": "/tmp/screen.jpg",
+                    "identity_names": ["河南说唱之神"],
+                    "media_types": ["screen"],
+                },
+            },
+        ]
+
+        with patch.object(searcher, "_calculate_dynamic_threshold", return_value=0.1):
+            results = searcher._finalize_results(
+                combined_results=combined_results,
+                normalized_top_k=2,
+                has_filter=False,
+                constraints={},
+                search_text="真人出镜 舞台现场 说唱演出",
+                media_terms=["stage_performance"],
+                identity_terms=["河南说唱之神"],
+                strict_identity_filter=True,
+            )
+
+        self.assertEqual(
+            [item["photo_path"] for item in results],
+            ["/tmp/live.jpg", "/tmp/screen.jpg"],
+        )
+
+    def test_finalize_results_prioritizes_media_matches_for_album_queries(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+        )
+
+        combined_results = [
+            {
+                "photo_path": "/tmp/screen.jpg",
+                "description": "带歌名的截图",
+                "score": 0.86,
+                "vector_score": 0.86,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {
+                    "photo_path": "/tmp/screen.jpg",
+                    "media_types": ["screen"],
+                },
+            },
+            {
+                "photo_path": "/tmp/cover.jpg",
+                "description": "专辑封面",
+                "score": 0.79,
+                "vector_score": 0.79,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {
+                    "photo_path": "/tmp/cover.jpg",
+                    "media_types": ["album_cover"],
+                },
+            },
+        ]
+
+        with patch.object(searcher, "_calculate_dynamic_threshold", return_value=0.4):
+            results = searcher._finalize_results(
+                combined_results=combined_results,
+                normalized_top_k=2,
+                has_filter=False,
+                constraints={},
+                search_text="专辑封面 艺人海报",
+                media_terms=["album_cover"],
+                identity_terms=[],
+                strict_identity_filter=False,
+            )
+
+        self.assertEqual(
+            [item["photo_path"] for item in results],
+            ["/tmp/cover.jpg", "/tmp/screen.jpg"],
+        )
+
+    def test_search_uses_filter_only_mode_from_query_formatter(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        keyword_store = Mock()
+        keyword_store.search_with_filters.return_value = [
+            {"photo_path": "/tmp/a.jpg", "score": 1.0},
+        ]
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=keyword_store,
+            query_formatter=FakeQueryFormatter(
+                {
+                    "去年的照片": {
+                        "search_text": "",
+                        "retrieval_mode": "filter_only",
+                        "media_terms": [],
+                        "identity_terms": [],
+                        "strict_identity_filter": False,
+                        "time_hint": "去年",
+                        "season": None,
+                        "time_period": None,
+                        "original_query": "去年的照片",
+                    }
+                }
+            ),
+        )
+
+        with patch.object(searcher, "_filter_only_search", return_value=[]) as filter_only_search, \
+             patch.object(searcher.embedding_service, "generate_embedding") as generate_embedding:
+            searcher.search("去年的照片", top_k=5)
+
+        filter_only_search.assert_called_once()
+        generate_embedding.assert_not_called()
 
     def test_search_does_not_expand_when_first_round_is_strong(self) -> None:
         vector_store = Mock()
@@ -757,6 +918,131 @@ class SearcherTests(unittest.TestCase):
         self.assertEqual(results[0]["photo_path"], "/tmp/screenshot.jpg")
         self.assertEqual(results[1]["photo_path"], "/tmp/photo.jpg")
 
+    def test_search_expands_when_top_k_is_filled_by_weak_backfill(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 30
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "河南说唱之神专辑封面": {
+                    "search_text": "说唱歌手 专辑封面",
+                    "media_terms": ["album_cover"],
+                    "identity_terms": ["河南说唱之神"],
+                    "strict_identity_filter": False,
+                    "intent_mode": "open",
+                    "intent_contract": {
+                        "core_target": "河南说唱之神专辑封面",
+                        "must_keep": ["专辑封面"],
+                        "avoid_drift": "不要扩成普通自拍或截图",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "河南说唱之神专辑封面",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[
+            {
+                "search_text": "唱片封面 艺人海报 方形封套",
+                "media_terms": ["album_cover"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "河南说唱之神专辑封面",
+                    "must_keep": ["专辑封面"],
+                    "avoid_drift": "不要扩成普通自拍或截图",
+                },
+                "contract_satisfied": True,
+                "reason": "第一轮后半段结果偏弱，补充更直接的封面载体表达",
+            }
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        first_round_results = [
+            {
+                "photo_path": "/tmp/cover-a.jpg",
+                "description": "专辑封面 A",
+                "score": 0.93,
+                "vector_score": 0.93,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/cover-a.jpg", "media_types": ["album_cover"]},
+            },
+            {
+                "photo_path": "/tmp/cover-b.jpg",
+                "description": "专辑封面 B",
+                "score": 0.81,
+                "vector_score": 0.81,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/cover-b.jpg", "media_types": ["album_cover"]},
+            },
+            {
+                "photo_path": "/tmp/screen-a.jpg",
+                "description": "截图 A",
+                "score": 0.38,
+                "vector_score": 0.38,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/screen-a.jpg", "media_types": ["screen"]},
+            },
+            {
+                "photo_path": "/tmp/screen-b.jpg",
+                "description": "截图 B",
+                "score": 0.34,
+                "vector_score": 0.34,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/screen-b.jpg", "media_types": ["screen"]},
+            },
+        ]
+        expanded_results = [
+            {
+                "photo_path": "/tmp/cover-c.jpg",
+                "description": "专辑封面 C",
+                "score": 0.77,
+                "vector_score": 0.77,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/cover-c.jpg", "media_types": ["album_cover"]},
+            },
+            {
+                "photo_path": "/tmp/cover-d.jpg",
+                "description": "专辑封面 D",
+                "score": 0.73,
+                "vector_score": 0.73,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/cover-d.jpg", "media_types": ["album_cover"]},
+            },
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[first_round_results, expanded_results]), \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("河南说唱之神专辑封面", top_k=4)
+
+        query_formatter.expand_query_intents.assert_called_once()
+        self.assertEqual(
+            [item["photo_path"] for item in results],
+            ["/tmp/cover-a.jpg", "/tmp/cover-b.jpg", "/tmp/cover-c.jpg", "/tmp/cover-d.jpg"],
+        )
+        debug = searcher.get_last_search_debug()
+        self.assertTrue(debug["expansion_triggered"])
+        self.assertFalse(debug["reflection_triggered"])
+
     def test_search_expands_when_first_round_is_weak(self) -> None:
         vector_store = Mock()
         vector_store.load.return_value = True
@@ -827,17 +1113,14 @@ class SearcherTests(unittest.TestCase):
                 "metadata": {"photo_path": "/tmp/better.jpg", "identity_names": ["陶喆"]},
             },
         ]
-        expected_results = [
-            {"photo_path": "/tmp/better.jpg", "description": "舞台男歌手", "score": 0.78, "vector_score": 0.78, "keyword_score": 0.0, "rank": 1},
-        ]
-
         with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_round_results]) as hybrid_search, \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
             results = searcher.search("请帮我找陶喆的照片", top_k=5)
 
         self.assertEqual(hybrid_search.call_count, 2)
         query_formatter.expand_query_intents.assert_called_once()
-        self.assertEqual(results, expected_results)
+        self.assertEqual(results[0]["photo_path"], "/tmp/better.jpg")
+        self.assertEqual(results[1]["photo_path"], "/tmp/weak.jpg")
 
     def test_search_skips_expansion_that_breaks_strict_contract_for_non_person_query(self) -> None:
         vector_store = Mock()
@@ -1055,7 +1338,8 @@ class SearcherTests(unittest.TestCase):
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
             results = searcher.search("请帮我找陶喆的照片", top_k=5)
 
-        self.assertEqual(results, expanded_results)
+        self.assertEqual(results[0]["photo_path"], "/tmp/better.jpg")
+        self.assertEqual(results[1]["photo_path"], "/tmp/weak.jpg")
         debug = searcher.get_last_search_debug()
         self.assertEqual(debug["base_intent"]["identity_terms"], ["陶喆"])
         self.assertTrue(debug["expansion_triggered"])
@@ -1180,7 +1464,8 @@ class SearcherTests(unittest.TestCase):
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
             results = searcher.search("请帮我找陶喆的照片", top_k=5)
 
-        self.assertEqual(results, reflected_results)
+        self.assertEqual(results[0]["photo_path"], "/tmp/final.jpg")
+        self.assertEqual(len(results), 3)
         debug = searcher.get_last_search_debug()
         self.assertTrue(debug["expansion_triggered"])
         self.assertTrue(debug["reflection_triggered"])
@@ -1188,6 +1473,477 @@ class SearcherTests(unittest.TestCase):
         self.assertEqual(len(debug["rounds"]), 3)
         self.assertEqual(debug["rounds"][2]["round"], "reflection")
         self.assertEqual(debug["rounds"][2]["top_score"], 0.82)
+
+    def test_search_uses_reflection_when_expansion_result_count_is_still_below_top_k(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "河南说唱之神": {
+                    "search_text": "",
+                    "media_terms": [],
+                    "identity_terms": ["河南说唱之神"],
+                    "strict_identity_filter": True,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "河南说唱之神的照片",
+                        "must_keep": ["河南说唱之神"],
+                        "avoid_drift": "不要漂移到截图或其他人物",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "河南说唱之神",
+                }
+            }
+        )
+        query_formatter.expansion_mapping["河南说唱之神"] = [
+            {
+                "search_text": "舞台现场 说唱歌手 演出照",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "河南说唱之神的照片",
+                    "must_keep": ["河南说唱之神"],
+                    "avoid_drift": "不要漂移到截图或其他人物",
+                },
+                "contract_satisfied": True,
+                "time_hint": None,
+                "season": None,
+                "time_period": None,
+                "original_query": "河南说唱之神",
+                "reason": "补充演出现场语义",
+            }
+        ]
+        query_formatter.reflection_mapping["河南说唱之神"] = {
+            "search_text": "舞台近景 现场表演 人像特写",
+            "media_terms": ["stage_performance"],
+            "identity_terms": ["河南说唱之神"],
+            "strict_identity_filter": True,
+            "intent_mode": "strict",
+            "intent_contract": {
+                "core_target": "河南说唱之神的照片",
+                "must_keep": ["河南说唱之神"],
+                "avoid_drift": "不要漂移到截图或其他人物",
+            },
+            "contract_satisfied": True,
+            "time_hint": None,
+            "season": None,
+            "time_period": None,
+            "original_query": "河南说唱之神",
+            "reason": "结果数量仍不足，补充更直接的人像现场语义",
+        }
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        weak_results = [
+            {
+                "photo_path": "/tmp/netease.jpg",
+                "description": "网易云截图",
+                "score": 0.61,
+                "vector_score": 0.61,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/netease.jpg", "identity_names": []},
+            },
+        ]
+        still_sparse_results = [
+            {
+                "photo_path": "/tmp/show-1.jpg",
+                "description": "现场照片 1",
+                "score": 0.74,
+                "vector_score": 0.74,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/show-1.jpg", "identity_names": ["河南说唱之神"]},
+            },
+        ]
+        reflected_results = [
+            {
+                "photo_path": "/tmp/show-2.jpg",
+                "description": "现场照片 2",
+                "score": 0.72,
+                "vector_score": 0.72,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/show-2.jpg", "identity_names": ["河南说唱之神"]},
+            },
+            {
+                "photo_path": "/tmp/show-3.jpg",
+                "description": "现场照片 3",
+                "score": 0.69,
+                "vector_score": 0.69,
+                "keyword_score": 0.0,
+                "rank": 2,
+                "metadata": {"photo_path": "/tmp/show-3.jpg", "identity_names": ["河南说唱之神"]},
+            },
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, still_sparse_results, reflected_results]), \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("河南说唱之神", top_k=4)
+
+        self.assertEqual(len(results), 4)
+        self.assertEqual(
+            [item["photo_path"] for item in results],
+            ["/tmp/show-1.jpg", "/tmp/show-2.jpg", "/tmp/show-3.jpg", "/tmp/netease.jpg"],
+        )
+        debug = searcher.get_last_search_debug()
+        self.assertTrue(debug["expansion_triggered"])
+        self.assertTrue(debug["reflection_triggered"])
+
+    def test_search_continues_reflection_rounds_until_top_k_is_filled(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 20
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "河南说唱之神演出照片": {
+                    "search_text": "说唱歌手 舞台演出",
+                    "media_terms": ["stage_performance"],
+                    "identity_terms": ["河南说唱之神"],
+                    "strict_identity_filter": False,
+                    "intent_mode": "open",
+                    "intent_contract": {
+                        "core_target": "河南说唱之神演出照片",
+                        "must_keep": ["演出"],
+                        "avoid_drift": "不要扩成生活照或截图",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "河南说唱之神演出照片",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[])
+        query_formatter.reflect_on_weak_results = Mock(side_effect=[
+            {
+                "search_text": "舞台近景 现场表演",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "河南说唱之神演出照片",
+                    "must_keep": ["演出"],
+                    "avoid_drift": "不要扩成生活照或截图",
+                },
+                "contract_satisfied": True,
+                "reason": "第一轮结果数量不足，补充近景现场表达",
+            },
+            {
+                "search_text": "舞台特写 麦克风 现场人像",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "河南说唱之神演出照片",
+                    "must_keep": ["演出"],
+                    "avoid_drift": "不要扩成生活照或截图",
+                },
+                "contract_satisfied": True,
+                "reason": "继续补充更直接的人像舞台特写",
+            },
+            {},
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        base_results = [
+            {
+                "photo_path": "/tmp/show-a.jpg",
+                "description": "演出照片 A",
+                "score": 0.84,
+                "vector_score": 0.84,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-a.jpg", "media_types": ["stage_performance"]},
+            },
+            {
+                "photo_path": "/tmp/screen.jpg",
+                "description": "截图",
+                "score": 0.31,
+                "vector_score": 0.31,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/screen.jpg", "media_types": ["screen"]},
+            },
+        ]
+        reflected_round_one = [
+            {
+                "photo_path": "/tmp/show-b.jpg",
+                "description": "演出照片 B",
+                "score": 0.76,
+                "vector_score": 0.76,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-b.jpg", "media_types": ["stage_performance"]},
+            },
+        ]
+        reflected_round_two = [
+            {
+                "photo_path": "/tmp/show-c.jpg",
+                "description": "演出照片 C",
+                "score": 0.71,
+                "vector_score": 0.71,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-c.jpg", "media_types": ["stage_performance"]},
+            },
+            {
+                "photo_path": "/tmp/show-d.jpg",
+                "description": "演出照片 D",
+                "score": 0.66,
+                "vector_score": 0.66,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-d.jpg", "media_types": ["stage_performance"]},
+            },
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[base_results, reflected_round_one, reflected_round_two]), \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("河南说唱之神演出照片", top_k=4)
+
+        self.assertEqual(
+            [item["photo_path"] for item in results],
+            ["/tmp/show-a.jpg", "/tmp/show-b.jpg", "/tmp/show-c.jpg", "/tmp/show-d.jpg"],
+        )
+        self.assertGreaterEqual(query_formatter.reflect_on_weak_results.call_count, 2)
+        debug = searcher.get_last_search_debug()
+        self.assertTrue(debug["reflection_triggered"])
+        self.assertEqual(debug["rounds"][-1]["round"], "reflection")
+
+    def test_reflection_merge_does_not_replace_existing_results_when_reflected_round_is_still_sparse(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=FakeQueryFormatter(),
+        )
+
+        current_results = [
+            {
+                "photo_path": "/tmp/a.jpg",
+                "description": "a",
+                "score": 0.77,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/a.jpg"},
+            },
+            {
+                "photo_path": "/tmp/b.jpg",
+                "description": "b",
+                "score": 0.71,
+                "rank": 2,
+                "metadata": {"photo_path": "/tmp/b.jpg"},
+            },
+        ]
+        reflected_results = [
+            {
+                "photo_path": "/tmp/c.jpg",
+                "description": "c",
+                "score": 0.74,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/c.jpg"},
+            },
+        ]
+
+        searcher.query_formatter.reflection_mapping["test query"] = {
+            "search_text": "refined",
+            "media_terms": [],
+            "identity_terms": [],
+            "strict_identity_filter": False,
+            "intent_mode": "open",
+            "contract_satisfied": True,
+            "reason": "数量不足",
+        }
+        debug = searcher._empty_search_debug()
+        with patch.object(searcher, "_run_single_search_round", return_value=reflected_results):
+            results = searcher._maybe_reflect_query_results(
+                query="test query",
+                base_intent={"intent_mode": "open"},
+                current_results=current_results,
+                normalized_top_k=4,
+                constraints={},
+                has_filter=False,
+                debug=debug,
+            )
+
+        self.assertEqual(
+            [item["photo_path"] for item in results],
+            ["/tmp/a.jpg", "/tmp/c.jpg", "/tmp/b.jpg"],
+        )
+
+    def test_finalize_results_fills_to_top_k_after_threshold_filtering(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+        )
+
+        combined_results = [
+            {
+                "photo_path": "/tmp/a.jpg",
+                "description": "a",
+                "score": 0.95,
+                "vector_score": 0.95,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/a.jpg"},
+            },
+            {
+                "photo_path": "/tmp/b.jpg",
+                "description": "b",
+                "score": 0.76,
+                "vector_score": 0.76,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/b.jpg"},
+            },
+            {
+                "photo_path": "/tmp/c.jpg",
+                "description": "c",
+                "score": 0.71,
+                "vector_score": 0.71,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/c.jpg"},
+            },
+            {
+                "photo_path": "/tmp/d.jpg",
+                "description": "d",
+                "score": 0.69,
+                "vector_score": 0.69,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/d.jpg"},
+            },
+        ]
+
+        with patch.object(searcher, "_calculate_dynamic_threshold", return_value=0.75):
+            results = searcher._finalize_results(
+                combined_results=combined_results,
+                normalized_top_k=4,
+                has_filter=False,
+                constraints={},
+            )
+
+        self.assertEqual(len(results), 4)
+        self.assertEqual([item["photo_path"] for item in results], [
+            "/tmp/a.jpg",
+            "/tmp/b.jpg",
+            "/tmp/c.jpg",
+            "/tmp/d.jpg",
+        ])
+        self.assertEqual([item["rank"] for item in results], [1, 2, 3, 4])
+
+    def test_finalize_results_prefers_scores_above_point_four_but_backfills_when_needed(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+        )
+
+        combined_results = [
+            {
+                "photo_path": "/tmp/a.jpg",
+                "description": "a",
+                "score": 0.88,
+                "vector_score": 0.88,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/a.jpg"},
+            },
+            {
+                "photo_path": "/tmp/b.jpg",
+                "description": "b",
+                "score": 0.52,
+                "vector_score": 0.52,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/b.jpg"},
+            },
+            {
+                "photo_path": "/tmp/c.jpg",
+                "description": "c",
+                "score": 0.39,
+                "vector_score": 0.39,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/c.jpg"},
+            },
+            {
+                "photo_path": "/tmp/d.jpg",
+                "description": "d",
+                "score": 0.22,
+                "vector_score": 0.22,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/d.jpg"},
+            },
+        ]
+
+        with patch.object(searcher, "_calculate_dynamic_threshold", return_value=0.1):
+            results = searcher._finalize_results(
+                combined_results=combined_results,
+                normalized_top_k=3,
+                has_filter=False,
+                constraints={},
+            )
+
+        self.assertEqual([item["photo_path"] for item in results], [
+            "/tmp/a.jpg",
+            "/tmp/b.jpg",
+            "/tmp/c.jpg",
+        ])
+        self.assertEqual([item["rank"] for item in results], [1, 2, 3])
 
 
 if __name__ == "__main__":
