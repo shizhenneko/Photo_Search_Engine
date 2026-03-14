@@ -127,6 +127,20 @@ class VectorStoreTests(unittest.TestCase):
             results = store.search([0.1] * self.dimension, top_k=5)
             self.assertEqual(len(results), 5)
 
+    def test_get_embedding_by_photo_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            index_path = os.path.join(tmp, "index.bin")
+            metadata_path = os.path.join(tmp, "metadata.json")
+            store = VectorStore(dimension=self.dimension, index_path=index_path, metadata_path=metadata_path)
+
+            store.add_item([0.1] * self.dimension, {"photo_path": "/a.jpg"})
+            store.add_item([0.2] * self.dimension, {"photo_path": "/b.jpg"})
+
+            embedding = store.get_embedding_by_photo_path("/b.jpg")
+            self.assertEqual(len(embedding), self.dimension)
+            expected = 1.0 / (self.dimension ** 0.5)
+            self.assertAlmostEqual(embedding[0], expected, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()

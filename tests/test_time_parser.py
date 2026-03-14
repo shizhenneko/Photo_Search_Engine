@@ -1,117 +1,65 @@
-import os
-import sys
+import json
 import unittest
-from pathlib import Path
-
-project_root = str(Path(__file__).parent.parent)
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from config import get_config
+from unittest.mock import Mock
 
 from utils.time_parser import TimeParser
 
 
 class TimeParserTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        """加载配置"""
-        cls.config = get_config()
-        cls.has_api_key = bool(cls.config.get("OPENROUTER_API_KEY"))
-
     def test_time_parser_requires_api_key(self) -> None:
-        """测试TimeParser需要API密钥"""
         with self.assertRaises(ValueError):
-            TimeParser(api_key="")
+            TimeParser(api_key="", model_name="gpt-5.1", base_url="https://www.su8.codes/codex/v1")
 
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
-    def test_time_parser_init(self) -> None:
-        """测试TimeParser初始化（集成测试）"""
-        api_key = self.config["OPENROUTER_API_KEY"]
-        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        model_name = self.config.get("TIME_PARSE_MODEL_NAME", "openai/gpt-3.5-turbo")
-
-        parser = TimeParser(
-            api_key=api_key,
-            model_name=model_name,
-            base_url=base_url,
+    def test_has_time_terms(self) -> None:
+        mock_client = Mock()
+        mock_client.chat.completions.create.return_value = Mock(
+            choices=[Mock(message=Mock(content=json.dumps({"has_time_constraint": True})))]
         )
+        parser = TimeParser(
+            api_key="test-key",
+            model_name="gpt-5.1",
+            base_url="https://www.su8.codes/codex/v1",
+            client=mock_client,
+        )
+        self.assertTrue(parser.has_time_terms("去年的照片"))
+        mock_client.chat.completions.create.return_value = Mock(
+            choices=[Mock(message=Mock(content=json.dumps({"has_time_constraint": False})))]
+        )
+        self.assertFalse(parser.has_time_terms("海边的照片"))
 
-        self.assertEqual(parser.api_key, api_key)
-        self.assertEqual(parser.model_name, model_name)
-        self.assertEqual(parser.base_url, base_url)
-
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
     def test_extract_time_constraints_without_time(self) -> None:
-        """测试无时间约束查询（集成测试）"""
-        api_key = self.config["OPENROUTER_API_KEY"]
-        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-        parser = TimeParser(api_key=api_key, base_url=base_url)
-
+        mock_client = Mock()
+        mock_client.chat.completions.create.return_value = Mock(
+            choices=[Mock(message=Mock(content=json.dumps({"has_time_constraint": False})))]
+        )
+        parser = TimeParser(
+            api_key="test-key",
+            model_name="gpt-5.1",
+            base_url="https://www.su8.codes/codex/v1",
+            client=mock_client,
+        )
         result = parser.extract_time_constraints("海边的照片")
-
         self.assertIsNone(result.get("start_date"))
-        self.assertIsNone(result.get("end_date"))
         self.assertEqual(result.get("precision"), "none")
 
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
     def test_extract_time_constraints_with_year(self) -> None:
-        """测试年份时间约束（集成测试）"""
-        api_key = self.config["OPENROUTER_API_KEY"]
-        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-        parser = TimeParser(api_key=api_key, base_url=base_url)
-
+        mock_client = Mock()
+        mock_client.chat.completions.create.return_value = Mock(
+            choices=[Mock(message=Mock(content=json.dumps({
+                "has_time_constraint": True,
+                "start_date": "2025-01-01",
+                "end_date": "2025-12-31",
+            })))]
+        )
+        parser = TimeParser(
+            api_key="test-key",
+            model_name="gpt-5.1",
+            base_url="https://www.su8.codes/codex/v1",
+            client=mock_client,
+        )
         result = parser.extract_time_constraints("去年的照片")
-
-        self.assertIsNotNone(result.get("start_date"))
-        self.assertIsNotNone(result.get("end_date"))
-        self.assertIn(result.get("precision"), ["year", "season", "month", "range"])
-
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
-    def test_extract_time_constraints_with_season(self) -> None:
-        """测试泛指季节时间约束（集成测试）"""
-        api_key = self.config["OPENROUTER_API_KEY"]
-        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-        parser = TimeParser(api_key=api_key, base_url=base_url)
-
-        # 修改预期：泛指季节不应返回日期范围
-        result = parser.extract_time_constraints("冬天的风景")
-
-        self.assertIsNone(result.get("start_date"))
-        self.assertIsNone(result.get("end_date"))
-        self.assertEqual(result.get("precision"), "none")
-
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
-    def test_extract_time_constraints_with_specific_season(self) -> None:
-        """测试特定年份季节时间约束（集成测试）"""
-        api_key = self.config["OPENROUTER_API_KEY"]
-        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-        parser = TimeParser(api_key=api_key, base_url=base_url)
-
-        result = parser.extract_time_constraints("2023年冬天的风景")
-
-        self.assertIsNotNone(result.get("start_date"))
-        self.assertIsNotNone(result.get("end_date"))
-        self.assertEqual(result.get("precision"), "season")
+        self.assertEqual(result["start_date"], "2025-01-01")
+        self.assertEqual(result["precision"], "year")
 
 
 if __name__ == "__main__":

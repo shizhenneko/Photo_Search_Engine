@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import re
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import numpy as np
+from utils.path_utils import normalize_local_path, same_file_path
+from utils.structured_analysis import build_match_summary
 from utils.vector_store import VectorStore
 
 if TYPE_CHECKING:
@@ -30,6 +32,8 @@ class Searcher:
         top_k: int = 10,
         vector_weight: float = 0.8,
         keyword_weight: float = 0.2,
+        query_expansion_enabled: bool = True,
+        query_expansion_max_alternatives: int = 2,
     ) -> None:
         """
         初始化检索器并记录索引路径与加载状态。
@@ -60,10 +64,96 @@ class Searcher:
         self.top_k = max(1, top_k)
         self.vector_weight = vector_weight
         self.keyword_weight = keyword_weight
+        self.query_expansion_enabled = bool(query_expansion_enabled)
+        self.query_expansion_max_alternatives = max(0, int(query_expansion_max_alternatives))
         self.index_loaded = False
         self.index_path = vector_store.index_path
         self.metadata_path = vector_store.metadata_path
         self.metric = getattr(vector_store, "metric", "cosine")
+        self._metadata_by_path: Dict[str, Dict[str, Any]] = {}
+        self._last_search_debug: Dict[str, Any] = self._empty_search_debug()
+        self._refresh_metadata_cache()
+
+    @staticmethod
+    def _empty_search_debug() -> Dict[str, Any]:
+        return {
+            "mode": "text",
+            "base_intent": {},
+            "expansion_triggered": False,
+            "expansion_reason": "",
+            "alternatives": [],
+            "reflection_triggered": False,
+            "reflection_reason": "",
+            "reflection": {},
+            "rounds": [],
+        }
+
+    @staticmethod
+    def _path_key(photo_path: str) -> str:
+        normalized = normalize_local_path(photo_path) if photo_path else ""
+        if not normalized and photo_path:
+            normalized = str(photo_path).strip()
+        return os.path.normcase(normalized)
+
+    @staticmethod
+    def _round_summary(
+        *,
+        round_name: str,
+        intent: Dict[str, Any],
+        results: List[Dict[str, Any]],
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        top_score = float(results[0].get("score", 0.0)) if results else 0.0
+        return {
+            "round": round_name,
+            "reason": reason,
+            "intent": {
+                "search_text": str(intent.get("search_text") or "").strip(),
+                "media_terms": list(intent.get("media_terms") or []),
+                "identity_terms": list(intent.get("identity_terms") or []),
+                "strict_identity_filter": bool(intent.get("strict_identity_filter", False)),
+                "time_hint": intent.get("time_hint"),
+                "season": intent.get("season"),
+                "time_period": intent.get("time_period"),
+            },
+            "result_count": len(results),
+            "top_score": round(top_score, 6),
+        }
+
+    def get_last_search_debug(self) -> Dict[str, Any]:
+        return dict(self._last_search_debug)
+
+    def _set_last_search_debug(self, debug: Dict[str, Any]) -> None:
+        self._last_search_debug = debug
+
+    def _deduplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        deduped: Dict[str, Dict[str, Any]] = {}
+        ordered_keys: List[str] = []
+
+        for item in results:
+            photo_path = item.get("photo_path")
+            key = self._path_key(photo_path)
+            if not key:
+                continue
+
+            existing = deduped.get(key)
+            if existing is None:
+                deduped[key] = item
+                ordered_keys.append(key)
+                continue
+
+            if float(item.get("score", 0.0)) > float(existing.get("score", 0.0)):
+                deduped[key] = item
+
+        return [deduped[key] for key in ordered_keys]
+
+    def _refresh_metadata_cache(self) -> None:
+        cache: Dict[str, Dict[str, Any]] = {}
+        for item in self.vector_store.metadata or []:
+            photo_path = item.get("photo_path")
+            if photo_path:
+                cache[photo_path] = item
+        self._metadata_by_path = cache
 
     def load_index(self) -> bool:
         """
@@ -79,6 +169,7 @@ class Searcher:
             raise ValueError("向量维度不一致")
 
         self.index_loaded = True
+        self._refresh_metadata_cache()
         return True
 
     def validate_query(self, query: str) -> bool:
@@ -88,11 +179,78 @@ class Searcher:
         if not isinstance(query, str):
             return False
         text = query.strip()
-        if len(text) < 5 or len(text) > 500:
+        if len(text) < 1 or len(text) > 500:
             return False
-        if re.fullmatch(r"[\W_]+", text):
+        if all(not char.isalnum() and not ("\u4e00" <= char <= "\u9fff") for char in text):
+            return False
+        if len(text) == 1 and text.isascii() and text.isalpha():
             return False
         return True
+
+    @staticmethod
+    def _build_query_text(
+        search_text: str,
+        media_terms: List[str],
+        identity_terms: List[str],
+        original_query: str,
+    ) -> str:
+        parts: List[str] = []
+        if search_text.strip():
+            parts.append(search_text.strip())
+        if media_terms:
+            parts.append(" ".join(media_terms))
+        if identity_terms:
+            parts.append(" ".join(identity_terms))
+        query_text = " ".join(parts).strip()
+        return query_text or original_query.strip()
+
+    @staticmethod
+    def _compute_metadata_boost(
+        metadata: Dict[str, Any],
+        media_terms: List[str],
+        identity_terms: List[str],
+    ) -> float:
+        boost = 1.0
+        metadata_media = set(metadata.get("media_types") or [])
+        metadata_identities = set(metadata.get("identity_names") or [])
+        if media_terms and metadata_media.intersection(media_terms):
+            boost += 0.18
+        if identity_terms and metadata_identities.intersection(identity_terms):
+            boost += 0.28
+        return boost
+
+    @staticmethod
+    def _candidate_matches_identity_terms(
+        metadata: Dict[str, Any],
+        identity_terms: List[str],
+    ) -> bool:
+        if not identity_terms:
+            return True
+
+        normalized_terms = {term.strip().lower() for term in identity_terms if term and term.strip()}
+        if not normalized_terms:
+            return True
+
+        identity_names = {
+            str(name).strip().lower()
+            for name in (metadata.get("identity_names") or [])
+            if str(name).strip()
+        }
+        if identity_names.intersection(normalized_terms):
+            return True
+
+        for candidate in metadata.get("identity_candidates") or []:
+            if not isinstance(candidate, dict):
+                continue
+            names = [candidate.get("name")] + list(candidate.get("aliases") or [])
+            normalized_names = {
+                str(name).strip().lower()
+                for name in names
+                if str(name).strip()
+            }
+            if normalized_names.intersection(normalized_terms):
+                return True
+        return False
 
     def _extract_time_constraints(self, query: str) -> Dict[str, Any]:
         """
@@ -123,37 +281,6 @@ class Searcher:
             result["start_date"] = constraints.get("start_date")
             result["end_date"] = constraints.get("end_date")
             result["precision"] = constraints.get("precision", "none")
-
-            # 从查询中提取季节和时段
-            season_match = re.search(r"(春天|夏天|秋天|冬天|春季|夏季|秋季|冬季)", query)
-            if season_match:
-                season_text = season_match.group(1)
-                # 统一为"春天"格式
-                season_map = {
-                    "春天": "春天", "春季": "春天",
-                    "夏天": "夏天", "夏季": "夏天",
-                    "秋天": "秋天", "秋季": "秋天",
-                    "冬天": "冬天", "冬季": "冬天",
-                }
-                result["season"] = season_map.get(season_text)
-
-            # 从查询中提取时段
-            time_period_match = re.search(
-                r"(凌晨|早晨|早上|上午|中午|下午|傍晚|晚上|夜晚|深夜)", query
-            )
-            if time_period_match:
-                period_text = time_period_match.group(1)
-                # 统一时段名称
-                period_map = {
-                    "凌晨": "凌晨", "深夜": "凌晨",
-                    "早晨": "早晨", "早上": "早晨",
-                    "上午": "上午",
-                    "中午": "中午",
-                    "下午": "下午",
-                    "傍晚": "傍晚",
-                    "晚上": "夜晚", "夜晚": "夜晚",
-                }
-                result["time_period"] = period_map.get(period_text)
 
             # 如果有精确日期，提取年月日
             if result["start_date"] and result["start_date"] == result["end_date"]:
@@ -189,7 +316,7 @@ class Searcher:
         for item in results:
             metadata = item.get("metadata") or {}
             exif_data = metadata.get("exif_data") or {}
-            timestamp = exif_data.get("datetime") or metadata.get("file_time")
+            timestamp = exif_data.get("datetime")
             if not timestamp:
                 continue
             photo_date = self._parse_date(timestamp)
@@ -272,6 +399,17 @@ class Searcher:
 
         # 下限保护
         return round(max(threshold, 0.05), 6)
+
+    @staticmethod
+    def _should_expand_results(results: List[Dict[str, Any]], top_k: int) -> bool:
+        if not results:
+            return True
+        top_score = float(results[0].get("score", 0.0))
+        if top_score < 0.55:
+            return True
+        if len(results) < min(top_k, 3) and top_score < 0.72:
+            return True
+        return False
 
     def _get_gradient_threshold(
         self,
@@ -382,37 +520,16 @@ class Searcher:
         # 不超过实际数据量
         return min(candidate_k, total_items)
 
-    def _has_time_terms(self, query: str) -> bool:
-        patterns = [
-            r"\d{4}年",
-            r"\d{1,2}月",
-            r"\d{1,2}日",
-            r"\d{4}-\d{1,2}-\d{1,2}",
-            r"去年|今年|前年|明年|上个月|下个月|上周|下周|本周|这个月|上个?星期|下个?星期",
-            r"春天|夏天|秋天|冬天|季节|月份|年份",
-        ]
-        return any(re.search(pattern, query) for pattern in patterns)
-
-    def _strip_time_terms(self, query: str) -> str:
-        cleaned = query
-        patterns = [
-            r"\d{4}年",
-            r"\d{1,2}月",
-            r"\d{1,2}日",
-            r"\d{4}-\d{1,2}-\d{1,2}",
-            r"去年|今年|前年|明年|上个月|下个月|上周|下周|本周|这个月|上个?星期|下个?星期",
-            r"春天|夏天|秋天|冬天|季节|月份|年份",
-        ]
-        for pattern in patterns:
-            cleaned = re.sub(pattern, " ", cleaned)
-        return re.sub(r"\s+", " ", cleaned).strip()
-
     def _hybrid_search(
         self,
         query: str,
         query_embedding: List[float],
         candidate_k: int,
         filters: Optional[Dict[str, Any]] = None,
+        allow_keyword_only_results: bool = False,
+        media_terms: Optional[List[str]] = None,
+        identity_terms: Optional[List[str]] = None,
+        strict_identity_filter: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         执行混合检索（向量 + 关键字 + EXIF过滤）。
@@ -431,7 +548,10 @@ class Searcher:
         Returns:
             List[Dict[str, Any]]: 混合排序后的结果
         """
-        # 1. 向量检索（纯语义匹配）
+        media_terms = media_terms or []
+        identity_terms = identity_terms or []
+
+        # 1. 向量检索（基于 retrieval_text 的语义匹配）
         vector_results = self.vector_store.search(query_embedding, candidate_k)
 
         # 2. 构建向量分数映射
@@ -450,13 +570,14 @@ class Searcher:
         es_filtered_paths: Optional[set] = None
 
         if self.keyword_store is not None:
+            keyword_candidate_k = max(1, min(candidate_k, max(self.top_k * 3, 15)))
             # 构建 ES 过滤条件
             es_filters = self._build_es_filters(filters) if filters else {}
 
             if es_filters:
                 # 使用带过滤的搜索
                 keyword_results = self.keyword_store.search_with_filters(
-                    query, es_filters, candidate_k
+                    query, es_filters, keyword_candidate_k
                 )
                 # 记录 ES 返回的路径集合，用于后续过滤
                 es_filtered_paths = set()
@@ -465,12 +586,14 @@ class Searcher:
                     es_filtered_paths.add(item["photo_path"])
             else:
                 # 无过滤条件，普通搜索
-                keyword_results = self.keyword_store.search(query, candidate_k)
+                keyword_results = self.keyword_store.search(query, keyword_candidate_k)
                 for item in keyword_results:
                     keyword_scores[item["photo_path"]] = item["score"]
 
         # 4. 混合评分
-        all_paths = set(vector_scores.keys()) | set(keyword_scores.keys())
+        all_paths = set(vector_scores.keys())
+        if allow_keyword_only_results:
+            all_paths |= set(keyword_scores.keys())
         combined_results: List[Dict[str, Any]] = []
 
         for photo_path in all_paths:
@@ -482,16 +605,42 @@ class Searcher:
 
             v_score = vector_scores.get(photo_path, 0.0)
             k_score = keyword_scores.get(photo_path, 0.0)
+            has_vector = photo_path in vector_scores
+            has_keyword = photo_path in keyword_scores
 
-            # 加权融合
-            combined_score = (
-                self.vector_weight * v_score + self.keyword_weight * k_score
-            )
+            # 搜索结果必须来自当前本地向量索引，避免 ES 中历史脏文档或失效路径进入结果。
+            metadata = self._get_metadata_by_path(photo_path)
+            if metadata is None:
+                continue
+            normalized_path = normalize_local_path(photo_path)
+            if normalized_path and not os.path.exists(normalized_path):
+                continue
+            if strict_identity_filter and identity_terms and not self._candidate_matches_identity_terms(metadata, identity_terms):
+                continue
 
-            # 获取元数据
-            metadata = vector_metadata.get(photo_path)
-            if not metadata:
-                metadata = {"photo_path": photo_path, "description": "Keyword Match Only"}
+            # 只按命中的检索通道做归一融合。
+            # 这样当图片没有 BM25 命中时，不会因为 keyword_score=0 被无端压分。
+            available_weight = 0.0
+            weighted_score = 0.0
+            if has_vector:
+                available_weight += self.vector_weight
+                weighted_score += self.vector_weight * v_score
+            if has_keyword:
+                available_weight += self.keyword_weight
+                weighted_score += self.keyword_weight * k_score
+            if available_weight <= 0:
+                continue
+            combined_score = weighted_score / available_weight
+            combined_score *= self._compute_metadata_boost(metadata, media_terms, identity_terms)
+
+            # 若仅命中关键词且向量完全缺失，只作为弱候选保留，避免 BM25 单独把无关结果顶到前面。
+            if has_keyword and not has_vector:
+                combined_score *= 0.65
+
+            # 无时间过滤时，纯关键词候选必须达到更高阈值才允许进入结果，
+            # 避免大量“文件名/BM25 命中但视觉无关”的项目污染结果集。
+            if has_keyword and not has_vector and es_filtered_paths is None and k_score < 0.45:
+                continue
 
             combined_results.append({
                 "photo_path": photo_path,
@@ -501,6 +650,7 @@ class Searcher:
                 "keyword_score": round(k_score, 6),
                 "rank": 0,
                 "metadata": metadata,
+                "match_summary": build_match_summary(metadata),
             })
 
         # 5. 按混合分数降序排序
@@ -551,17 +701,13 @@ class Searcher:
         Returns:
             Optional[Dict[str, Any]]: 元数据，未找到返回 None
         """
-        if not self.vector_store.metadata:
-            return None
-        
-        for item in self.vector_store.metadata:
-            if item.get("photo_path") == photo_path:
-                return item
-        return None
+        if not self._metadata_by_path:
+            self._refresh_metadata_cache()
+        return self._metadata_by_path.get(photo_path)
 
     def _filter_only_search(
         self, 
-        query: str,
+        query: Optional[str],
         constraints: Dict[str, Any], 
         top_k: int
     ) -> List[Dict[str, Any]]:
@@ -571,7 +717,7 @@ class Searcher:
         当查询只包含时间/季节/时段等过滤条件时调用此方法。
         
         Args:
-            query: 原始查询文本（用于 ES 关键字匹配）
+            query: 纯文本查询，可为空；纯 EXIF 过滤时应传 None
             constraints: 过滤条件（year, month, season, time_period, start_date, end_date）
             top_k: 返回数量
         
@@ -587,7 +733,7 @@ class Searcher:
         
         # 使用 ES 执行带关键字的过滤搜索
         results = self.keyword_store.search_with_filters(
-            query=query,  # 传入原始查询以利用 ES 关键字检索
+            query=query,
             filters=es_filters,
             top_k=top_k * 2  # 多取一些用于后续处理
         )
@@ -608,6 +754,7 @@ class Searcher:
                 "description": metadata.get("description", "") if metadata else "",
                 "score": 1.0,  # 纯过滤查询不计算相似度
                 "rank": rank,
+                "match_summary": build_match_summary(metadata or {}),
             })
         
         return final_results
@@ -640,6 +787,7 @@ class Searcher:
                     "description": item.get("description", ""),
                     "score": 1.0,
                     "rank": 0,
+                    "match_summary": build_match_summary(item),
                 })
         
         # 按照片路径排序（简单的默认排序）
@@ -648,37 +796,299 @@ class Searcher:
         # 设置排名
         for rank, item in enumerate(filtered_results[:top_k], start=1):
             item["rank"] = rank
-        
+
         return filtered_results[:top_k]
+
+    def _vector_results_to_combined(
+        self,
+        raw_results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        combined_results = []
+        for item in raw_results:
+            metadata = item.get("metadata") or {}
+            photo_path = metadata.get("photo_path")
+            normalized_path = normalize_local_path(photo_path) if photo_path else ""
+            if not photo_path or not normalized_path or not os.path.exists(normalized_path):
+                continue
+            score = self._distance_to_score(float(item.get("distance", 0.0)))
+            combined_results.append(
+                {
+                    "photo_path": photo_path,
+                    "description": metadata.get("description"),
+                    "retrieval_text": metadata.get("retrieval_text"),
+                    "score": score,
+                    "metadata": metadata,
+                    "match_summary": build_match_summary(metadata),
+                }
+            )
+        return self._deduplicate_results(combined_results)
+
+    def _run_single_search_round(
+        self,
+        *,
+        query: str,
+        intent: Dict[str, Any],
+        embedding_query: str,
+        media_terms: List[str],
+        identity_terms: List[str],
+        strict_identity_filter: bool,
+        constraints: Dict[str, Any],
+        normalized_top_k: int,
+        has_filter: bool,
+    ) -> List[Dict[str, Any]]:
+        query_embedding = self.embedding_service.generate_embedding(embedding_query)
+        candidate_k = self._calculate_candidate_k(normalized_top_k, has_filter)
+
+        if self.keyword_store is not None:
+            combined_results = self._hybrid_search(
+                embedding_query,
+                query_embedding,
+                candidate_k,
+                filters=constraints,
+                allow_keyword_only_results=False,
+                media_terms=media_terms,
+                identity_terms=identity_terms,
+                strict_identity_filter=strict_identity_filter,
+            )
+        else:
+            raw_results = self.vector_store.search(query_embedding, candidate_k)
+            combined_results = self._vector_results_to_combined(raw_results)
+
+        return self._finalize_results(
+            combined_results=combined_results,
+            normalized_top_k=normalized_top_k,
+            has_filter=has_filter,
+            constraints=constraints,
+            identity_terms=identity_terms,
+            strict_identity_filter=strict_identity_filter,
+        )
+
+    def _maybe_reflect_query_results(
+        self,
+        *,
+        query: str,
+        base_intent: Dict[str, Any],
+        current_results: List[Dict[str, Any]],
+        normalized_top_k: int,
+        constraints: Dict[str, Any],
+        has_filter: bool,
+        debug: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        if not self.query_formatter or not self.query_formatter.is_enabled():
+            return current_results
+        if not self._should_expand_results(current_results, normalized_top_k):
+            return current_results
+
+        reflection = self.query_formatter.reflect_on_weak_results(
+            user_query=query,
+            base_intent=base_intent,
+            weak_results=current_results,
+        )
+        if not reflection:
+            return current_results
+
+        embedding_query = self._build_query_text(
+            search_text=str(reflection.get("search_text") or ""),
+            media_terms=list(reflection.get("media_terms") or []),
+            identity_terms=list(reflection.get("identity_terms") or []),
+            original_query=query,
+        )
+        reflected_results = self._run_single_search_round(
+            query=query,
+            intent=reflection,
+            embedding_query=embedding_query,
+            media_terms=list(reflection.get("media_terms") or []),
+            identity_terms=list(reflection.get("identity_terms") or []),
+            strict_identity_filter=bool(reflection.get("strict_identity_filter", False)),
+            constraints=constraints,
+            normalized_top_k=normalized_top_k,
+            has_filter=has_filter,
+        )
+        if not reflected_results:
+            return current_results
+
+        debug["reflection_triggered"] = True
+        debug["reflection_reason"] = str(reflection.get("reason") or "").strip()
+        debug["reflection"] = dict(reflection)
+        debug["rounds"].append(
+            self._round_summary(
+                round_name="reflection",
+                intent=reflection,
+                results=reflected_results,
+                reason=str(reflection.get("reason") or "").strip(),
+            )
+        )
+
+        if self._should_expand_results(reflected_results, normalized_top_k):
+            return current_results
+        return reflected_results
+
+    def _maybe_expand_query_results(
+        self,
+        *,
+        query: str,
+        base_intent: Dict[str, Any],
+        base_results: List[Dict[str, Any]],
+        normalized_top_k: int,
+        constraints: Dict[str, Any],
+        has_filter: bool,
+        debug: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        if not self.query_formatter or not self.query_formatter.is_enabled():
+            return base_results
+        if not self.query_expansion_enabled or self.query_expansion_max_alternatives <= 0:
+            return base_results
+        if not self._should_expand_results(base_results, normalized_top_k):
+            return base_results
+
+        alternatives = self.query_formatter.expand_query_intents(
+            user_query=query,
+            base_intent=base_intent,
+            max_alternatives=self.query_expansion_max_alternatives,
+        )
+        if not alternatives:
+            return base_results
+
+        debug["expansion_triggered"] = True
+        merged: List[Dict[str, Any]] = [dict(item) for item in base_results]
+        best_results: List[Dict[str, Any]] = base_results
+        for alt in alternatives:
+            embedding_query = self._build_query_text(
+                search_text=str(alt.get("search_text") or ""),
+                media_terms=list(alt.get("media_terms") or []),
+                identity_terms=list(alt.get("identity_terms") or []),
+                original_query=query,
+            )
+            alt_results = self._run_single_search_round(
+                query=query,
+                intent=alt,
+                embedding_query=embedding_query,
+                media_terms=list(alt.get("media_terms") or []),
+                identity_terms=list(alt.get("identity_terms") or []),
+                strict_identity_filter=bool(alt.get("strict_identity_filter", False)),
+                constraints=constraints,
+                normalized_top_k=normalized_top_k,
+                has_filter=has_filter,
+            )
+            debug["alternatives"].append(dict(alt))
+            debug["rounds"].append(
+                self._round_summary(
+                    round_name="expansion",
+                    intent=alt,
+                    results=alt_results,
+                    reason=str(alt.get("reason") or "").strip(),
+                )
+            )
+            if alt_results:
+                current_best_score = float(best_results[0].get("score", 0.0)) if best_results else 0.0
+                alt_best_score = float(alt_results[0].get("score", 0.0))
+                if alt_best_score > current_best_score:
+                    best_results = alt_results
+            merged.extend(dict(item) for item in alt_results)
+
+        merged = self._deduplicate_results(merged)
+        merged.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+        final_results = merged[:normalized_top_k]
+        for rank, item in enumerate(final_results, start=1):
+            item["rank"] = rank
+
+        expansion_reason = ""
+        if debug["alternatives"]:
+            expansion_reason = "第一轮结果偏弱，尝试保守扩写查询意图"
+        debug["expansion_reason"] = expansion_reason
+
+        if self._should_expand_results(final_results, normalized_top_k):
+            reflected = self._maybe_reflect_query_results(
+                query=query,
+                base_intent=base_intent,
+                current_results=best_results,
+                normalized_top_k=normalized_top_k,
+                constraints=constraints,
+                has_filter=has_filter,
+                debug=debug,
+            )
+            if reflected is not best_results:
+                return reflected
+        return final_results
+
+    def _finalize_results(
+        self,
+        combined_results: List[Dict[str, Any]],
+        normalized_top_k: int,
+        has_filter: bool,
+        constraints: Dict[str, Any],
+        identity_terms: Optional[List[str]] = None,
+        strict_identity_filter: bool = False,
+    ) -> List[Dict[str, Any]]:
+        filtered_results = []
+        identity_terms = identity_terms or []
+        for item in combined_results:
+            if self.keyword_store is None and has_filter:
+                meta = item.get("metadata", {})
+                if not self._check_time_match_v2(meta, constraints):
+                    continue
+            if strict_identity_filter and identity_terms:
+                meta = item.get("metadata", {})
+                if not self._candidate_matches_identity_terms(meta, identity_terms):
+                    continue
+            filtered_results.append(item)
+
+        filtered_results = self._deduplicate_results(filtered_results)
+
+        scores = [item["score"] for item in filtered_results]
+        if scores:
+            dynamic_threshold = self._calculate_dynamic_threshold(scores, normalized_top_k)
+            threshold_filtered = [
+                item for item in filtered_results if item["score"] >= dynamic_threshold
+            ]
+        else:
+            threshold_filtered = filtered_results
+
+        final_results = threshold_filtered[:normalized_top_k]
+        for rank, item in enumerate(final_results, start=1):
+            item["rank"] = rank
+            if "metadata" in item:
+                del item["metadata"]
+        return final_results
 
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """
         解析查询、执行混合检索、时间过滤并返回排序结果。
 
         改进：
-        - embedding 只基于纯 description 语义匹配
+        - embedding 改为基于 retrieval_text 风格的组合查询文本
         - EXIF 条件（时间、季节、时段）通过 Elasticsearch 精确过滤
         - 支持更细粒度的时段查询（7档细分）
         """
         if not self.validate_query(query):
-            raise ValueError("查询内容不合法，请输入5-500字符的描述")
+            raise ValueError("查询内容不合法，请输入1-500字符的描述")
 
         if not self.index_loaded and not self.load_index():
             raise ValueError("索引未加载，请先初始化索引")
 
         normalized_top_k = max(1, min(int(top_k), 50))
-        
+        debug = self._empty_search_debug()
+        debug["mode"] = "text"
+
         # 1. 查询格式化
-        # 架构改进：QueryFormatter 返回纯语义的 search_text（用于 embedding）
-        # 时间信息作为独立字段（用于 ES 过滤）
-        formatted_query = query
+        # 优先信任 QueryFormatter 的 LLM 输出：
+        # - search_text: 可向量化的视觉语义
+        # - season/time_period/time_hint: 仅用于 EXIF/时间过滤
+        query_formatter_enabled = bool(
+            self.query_formatter is not None and self.query_formatter.is_enabled()
+        )
+        formatted_query = query.strip()
+        media_terms: List[str] = []
+        identity_terms: List[str] = []
+        strict_identity_filter = False
         time_hints = {}
-        
-        if self.query_formatter is not None and self.query_formatter.is_enabled():
+
+        if query_formatter_enabled:
             format_result = self.query_formatter.format_query(query)
-            # search_text 是纯视觉语义描述，不含时间信息
-            formatted_query = format_result.get("search_text", query)
-            # 时间信息作为独立字段保存
+            formatted_query = (format_result.get("search_text") or "").strip()
+            media_terms = list(format_result.get("media_terms") or [])
+            identity_terms = list(format_result.get("identity_terms") or [])
+            strict_identity_filter = bool(format_result.get("strict_identity_filter", False))
             time_hints = {
                 "time_hint": format_result.get("time_hint"),
                 "season": format_result.get("season"),
@@ -693,182 +1103,232 @@ class Searcher:
             "precision": "none",
         }
         cleaned_query = formatted_query
-        # 扩展过滤检测：时间词、时段词、季节词
-        has_filter = (
-            self._has_time_terms(query) or 
-            self._has_time_period_terms(query) or
-            self._has_season_terms(query)
+        has_filter = bool(
+            time_hints.get("time_hint")
+            or time_hints.get("season")
+            or time_hints.get("time_period")
         )
 
         if has_filter:
             constraints = self._extract_time_constraints(query)
-            # 清除时间词、时段词、季节词，保留纯语义部分用于 embedding
-            if not (self.query_formatter and self.query_formatter.is_enabled()):
-                cleaned_query = self._strip_time_terms(query)
-                cleaned_query = self._strip_time_period_terms(cleaned_query)
-                cleaned_query = self._strip_season_terms(cleaned_query) or query
-        
+
         # 合并 QueryFormatter 的时间提示到 ES 过滤条件
         if time_hints.get("season") and not constraints.get("season"):
             constraints["season"] = time_hints["season"]
         if time_hints.get("time_period") and not constraints.get("time_period"):
             constraints["time_period"] = time_hints["time_period"]
 
-        # 3. 检测是否为纯过滤查询（只有过滤条件，没有视觉内容）
-        is_pure_filter = self._is_pure_filter_query(query, cleaned_query)
-        
-        # 额外兜底检查：如果 QueryFormatter 启用但返回了通用描述，也视为纯过滤
-        # 这是为了防止 LLM 在纯过滤场景下仍然生成一些通用词汇
-        if not is_pure_filter and self.query_formatter and self.query_formatter.is_enabled():
-            # 检查 cleaned_query 是否只包含通用词汇
-            test_query = cleaned_query
-            generic_patterns = [r"照片", r"图片", r"相片", r"场景", r"画面", r"摄影", r"作品", r"影像", r"各种"]
-            for pattern in generic_patterns:
-                test_query = re.sub(pattern, "", test_query)
-            test_query = re.sub(r"\s+", "", test_query).strip()
-            
-            # 如果清理后为空且原查询有过滤条件，判定为纯过滤
-            if len(test_query) < 2 and (
-                self._has_time_terms(query) or 
-                self._has_season_terms(query) or 
-                self._has_time_period_terms(query)
-            ):
-                is_pure_filter = True
-                print(f"[DEBUG] QueryFormatter兜底：检测到纯过滤查询，跳过向量检索")
-        
-        if is_pure_filter:
+        # 3. 只有“纯 EXIF/时间过滤查询”才降级为纯关键字检索。
+        # 其判定依据是：LLM 没有抽出任何视觉语义，且确实存在过滤条件。
+        is_filter_only_query = query_formatter_enabled and not cleaned_query and has_filter
+        if is_filter_only_query:
             # 纯过滤查询：跳过向量检索，直接使用 ES 关键字与过滤检索
             print(f"[DEBUG] 纯过滤查询模式，constraints: {constraints}")
-            return self._filter_only_search(query, constraints, normalized_top_k)
+            filter_only_intent = {
+                "search_text": cleaned_query,
+                "media_terms": list(media_terms),
+                "identity_terms": list(identity_terms),
+                "strict_identity_filter": strict_identity_filter,
+                "time_hint": time_hints.get("time_hint"),
+                "season": time_hints.get("season"),
+                "time_period": time_hints.get("time_period"),
+            }
+            results = self._filter_only_search(None, constraints, normalized_top_k)
+            debug["base_intent"] = dict(filter_only_intent)
+            debug["rounds"].append(
+                self._round_summary(
+                    round_name="base",
+                    intent=filter_only_intent,
+                    results=results,
+                    reason="纯时间过滤查询",
+                )
+            )
+            self._set_last_search_debug(debug)
+            return results
 
         # 4. 向量检索（仅基于纯语义描述生成 embedding）
-        # cleaned_query 不包含时间信息，保证向量空间的纯净性
-        # 空值防护：确保 cleaned_query 不为空
-        if not cleaned_query or not cleaned_query.strip():
-            cleaned_query = "照片 图片 场景"
-        
-        query_embedding = self.embedding_service.generate_embedding(cleaned_query)
-        candidate_k = self._calculate_candidate_k(normalized_top_k, has_filter)
-
-        # 5. 执行检索（混合检索 + ES 过滤）
-        if self.keyword_store is not None:
-            # 混合检索：向量语义 + ES 关键字 + EXIF 过滤
-            combined_results = self._hybrid_search(
-                query, query_embedding, candidate_k, filters=constraints
+        # 除纯过滤查询外，其余一律走混合检索。
+        # search_text 不做发散改写，直接使用格式化器从原 query 中抽出的视觉片段。
+        # 若格式化器异常未产出，则仅回退到原始 query，避免把普通查询误判成纯过滤。
+        embedding_query = self._build_query_text(
+            search_text=cleaned_query,
+            media_terms=media_terms,
+            identity_terms=identity_terms,
+            original_query=query,
+        )
+        base_intent = {
+            "search_text": cleaned_query,
+            "media_terms": list(media_terms),
+            "identity_terms": list(identity_terms),
+            "strict_identity_filter": strict_identity_filter,
+            "time_hint": time_hints.get("time_hint"),
+            "season": time_hints.get("season"),
+            "time_period": time_hints.get("time_period"),
+            "original_query": query,
+        }
+        debug["base_intent"] = dict(base_intent)
+        first_round_results = self._run_single_search_round(
+            query=query,
+            intent=base_intent,
+            embedding_query=embedding_query,
+            media_terms=media_terms,
+            identity_terms=identity_terms,
+            strict_identity_filter=strict_identity_filter,
+            constraints=constraints,
+            normalized_top_k=normalized_top_k,
+            has_filter=has_filter,
+        )
+        debug["rounds"].append(
+            self._round_summary(
+                round_name="base",
+                intent=base_intent,
+                results=first_round_results,
             )
-        else:
-            # 降级为纯向量检索 + 内存时间过滤
-            raw_results = self.vector_store.search(query_embedding, candidate_k)
-            combined_results = []
-            for item in raw_results:
-                metadata = item.get("metadata") or {}
-                score = self._distance_to_score(float(item.get("distance", 0.0)))
-                combined_results.append({
-                    "photo_path": metadata.get("photo_path"),
-                    "description": metadata.get("description"),
-                    "score": score,
-                    "metadata": metadata,
-                })
+        )
+        final_results = self._maybe_expand_query_results(
+            query=query,
+            base_intent=base_intent,
+            base_results=first_round_results,
+            normalized_top_k=normalized_top_k,
+            constraints=constraints,
+            has_filter=has_filter,
+            debug=debug,
+        )
+        self._set_last_search_debug(debug)
+        return final_results
 
-        # 6. 结果过滤链
-        filtered_results = []
-        for item in combined_results:
-            # 如果没有 ES（纯向量模式），需要内存过滤时间
-            if self.keyword_store is None and has_filter:
-                meta = item.get("metadata", {})
-                if not self._check_time_match_v2(meta, constraints):
-                    continue
-            filtered_results.append(item)
+    def search_by_image_path(self, image_path: str, top_k: int = 10) -> List[Dict[str, Any]]:
+        if not self.index_loaded and not self.load_index():
+            raise ValueError("索引未加载，请先初始化索引")
 
-        # 7. 动态阈值过滤
-        scores = [item["score"] for item in filtered_results]
-        if scores:
-            dynamic_threshold = self._calculate_dynamic_threshold(scores, normalized_top_k)
-            threshold_filtered = [
-                item for item in filtered_results
-                if item["score"] >= dynamic_threshold
-            ]
-        else:
-            threshold_filtered = filtered_results
+        normalized_path = normalize_local_path(image_path)
+        if not normalized_path or not os.path.isabs(normalized_path):
+            raise ValueError("图片路径必须为绝对路径")
 
-        # 8. 返回 Top-K 结果
-        final_results = threshold_filtered[:normalized_top_k]
+        query_embedding = self.vector_store.get_embedding_by_photo_path(normalized_path)
+        if query_embedding is None:
+            for metadata in self.vector_store.metadata:
+                candidate_path = metadata.get("photo_path")
+                if candidate_path and same_file_path(candidate_path, normalized_path):
+                    query_embedding = self.vector_store.get_embedding_by_photo_path(candidate_path)
+                    normalized_path = candidate_path
+                    break
 
-        for rank, item in enumerate(final_results, start=1):
+        if query_embedding is None:
+            raise ValueError("图片路径未建立索引，请先重建索引或确认路径存在于数据库中")
+
+        normalized_top_k = max(1, min(int(top_k), 50))
+        debug = self._empty_search_debug()
+        debug["mode"] = "text"
+        candidate_k = min(
+            self.vector_store.get_total_items(),
+            max(normalized_top_k + 1, normalized_top_k * 5),
+        )
+        raw_results = self.vector_store.search(query_embedding, candidate_k)
+        combined_results = self._vector_results_to_combined(raw_results)
+
+        filtered = [
+            item
+            for item in combined_results
+            if item.get("photo_path") and not same_file_path(item["photo_path"], normalized_path)
+        ]
+        filtered = self._deduplicate_results(filtered)
+
+        for rank, item in enumerate(filtered[:normalized_top_k], start=1):
             item["rank"] = rank
             if "metadata" in item:
                 del item["metadata"]
-                
-        return final_results
-
-    def _has_time_period_terms(self, query: str) -> bool:
-        """检查查询中是否包含时段词汇。"""
-        patterns = [
-            r"凌晨|早晨|早上|上午|中午|下午|傍晚|晚上|夜晚|深夜",
-        ]
-        return any(re.search(pattern, query) for pattern in patterns)
-
-    def _has_season_terms(self, query: str) -> bool:
-        """检查查询中是否包含季节词汇。"""
-        pattern = r"春天|夏天|秋天|冬天|春季|夏季|秋季|冬季"
-        return bool(re.search(pattern, query))
-
-    def _strip_season_terms(self, query: str) -> str:
-        """从查询中移除季节词汇。"""
-        pattern = r"春天|夏天|秋天|冬天|春季|夏季|秋季|冬季"
-        cleaned = re.sub(pattern, " ", query)
-        return re.sub(r"\s+", " ", cleaned).strip()
-
-    def _is_pure_filter_query(self, query: str, cleaned_query: str) -> bool:
-        """
-        检测是否为纯过滤查询（只有过滤条件，没有视觉内容）。
-        
-        纯过滤查询特征：
-        - 包含时间词汇（年、月、日、去年、今年等）
-        - 包含季节词汇（春天、夏天、秋天、冬天）
-        - 包含时段词汇（早上、中午、晚上等）
-        - 清理后的查询为空或只剩"的照片"、"拍的"等无意义词
-        
-        Args:
-            query: 原始查询
-            cleaned_query: 清理时间/季节/时段词汇后的查询
-        
-        Returns:
-            bool: 是否为纯过滤查询
-        """
-        # 检查是否包含过滤条件
-        has_filter = (
-            self._has_time_terms(query) or 
-            self._has_time_period_terms(query) or
-            self._has_season_terms(query)
+        results = filtered[:normalized_top_k]
+        self._set_last_search_debug(
+            {
+                "mode": "image_path",
+                "base_intent": {"image_path": normalized_path},
+                "expansion_triggered": False,
+                "expansion_reason": "",
+                "alternatives": [],
+                "reflection_triggered": False,
+                "reflection_reason": "",
+                "reflection": {},
+                "rounds": [
+                    {
+                        "round": "base",
+                        "reason": "按参考图 embedding 检索相似图片",
+                        "intent": {"image_path": normalized_path},
+                        "result_count": len(results),
+                        "top_score": round(float(results[0].get("score", 0.0)), 6) if results else 0.0,
+                    }
+                ],
+            }
         )
-        
-        if not has_filter:
-            return False
-        
-        # 检查清理后是否还有有意义的内容
-        # 移除常见的无意义词汇
-        noise_patterns = [
-            r"的?照片", r"的?图片", r"的?相片", 
-            r"拍的", r"拍摄的", r"的$", r"^的"
-        ]
-        meaningful_text = cleaned_query
-        for pattern in noise_patterns:
-            meaningful_text = re.sub(pattern, "", meaningful_text)
-        meaningful_text = meaningful_text.strip()
-        
-        # 如果清理后为空或长度过短，认为是纯过滤查询
-        return len(meaningful_text) < 2
+        return results
 
-    def _strip_time_period_terms(self, query: str) -> str:
-        """从查询中移除时段词汇。"""
-        patterns = [
-            r"凌晨|早晨|早上|上午|中午|下午|傍晚|晚上|夜晚|深夜",
+    def search_by_uploaded_image(
+        self,
+        image_path: str,
+        analysis: Dict[str, Any],
+        top_k: int = 10,
+    ) -> List[Dict[str, Any]]:
+        if not self.index_loaded and not self.load_index():
+            raise ValueError("索引未加载，请先初始化索引")
+
+        normalized_path = normalize_local_path(image_path)
+        if not normalized_path or not os.path.isabs(normalized_path):
+            raise ValueError("上传图片路径必须为绝对路径")
+        if not os.path.exists(normalized_path):
+            raise ValueError("上传图片不存在")
+
+        retrieval_text = str((analysis or {}).get("retrieval_text") or "").strip()
+        if not retrieval_text:
+            retrieval_text = str((analysis or {}).get("description") or "").strip()
+        if not retrieval_text:
+            raise ValueError("上传图片分析结果为空，无法进行相似图检索")
+
+        query_embedding = self.embedding_service.generate_embedding(retrieval_text)
+        normalized_top_k = max(1, min(int(top_k), 50))
+        candidate_k = min(
+            self.vector_store.get_total_items(),
+            max(normalized_top_k * 5, normalized_top_k + 5),
+        )
+        raw_results = self.vector_store.search(query_embedding, candidate_k)
+        combined_results = self._vector_results_to_combined(raw_results)
+
+        filtered = [
+            item
+            for item in combined_results
+            if item.get("photo_path") and not same_file_path(item["photo_path"], normalized_path)
         ]
-        cleaned = query
-        for pattern in patterns:
-            cleaned = re.sub(pattern, " ", cleaned)
-        return re.sub(r"\s+", " ", cleaned).strip()
+        filtered = self._deduplicate_results(filtered)
+
+        for rank, item in enumerate(filtered[:normalized_top_k], start=1):
+            item["rank"] = rank
+            if "metadata" in item:
+                del item["metadata"]
+        results = filtered[:normalized_top_k]
+        self._set_last_search_debug(
+            {
+                "mode": "uploaded_image",
+                "base_intent": {
+                    "image_path": normalized_path,
+                    "retrieval_text": retrieval_text,
+                },
+                "expansion_triggered": False,
+                "expansion_reason": "",
+                "alternatives": [],
+                "reflection_triggered": False,
+                "reflection_reason": "",
+                "reflection": {},
+                "rounds": [
+                    {
+                        "round": "base",
+                        "reason": "按上传图片分析结果生成 embedding 检索相似图片",
+                        "intent": {"retrieval_text": retrieval_text},
+                        "result_count": len(results),
+                        "top_score": round(float(results[0].get("score", 0.0)), 6) if results else 0.0,
+                    }
+                ],
+            }
+        )
+        return results
 
     def _check_time_match_v2(self, metadata: Dict[str, Any], constraints: Dict[str, Any]) -> bool:
         """
@@ -883,24 +1343,33 @@ class Searcher:
         """
         time_info = metadata.get("time_info") or {}
         exif_data = metadata.get("exif_data") or {}
+        exif_datetime = exif_data.get("datetime")
 
         # 检查季节
         if constraints.get("season"):
+            if not exif_datetime:
+                return False
             if time_info.get("season") != constraints["season"]:
                 return False
 
         # 检查时段
         if constraints.get("time_period"):
+            if not exif_datetime:
+                return False
             if time_info.get("time_period") != constraints["time_period"]:
                 return False
 
         # 检查年份
         if constraints.get("year"):
+            if not exif_datetime:
+                return False
             if time_info.get("year") != constraints["year"]:
                 return False
 
         # 检查月份
         if constraints.get("month"):
+            if not exif_datetime:
+                return False
             if time_info.get("month") != constraints["month"]:
                 return False
 
@@ -909,7 +1378,7 @@ class Searcher:
         end_date = constraints.get("end_date")
         if start_date or end_date:
             # 获取照片日期
-            photo_datetime_str = time_info.get("datetime_str") or exif_data.get("datetime") or metadata.get("file_time")
+            photo_datetime_str = time_info.get("datetime_str") or exif_datetime
             if not photo_datetime_str:
                 return False
 

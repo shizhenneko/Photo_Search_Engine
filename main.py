@@ -4,7 +4,8 @@ import os
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 if TYPE_CHECKING:
-    from utils.rerank_service import RerankService
+    from utils.embedding_service import TextRerankService
+    from utils.rerank_service import VisualRerankService
 
 from flask import Flask
 
@@ -12,71 +13,45 @@ from api.routes import register_routes
 from config import get_config
 from core.indexer import Indexer
 from core.searcher import Searcher
-from utils.embedding_service import T5EmbeddingService
+from utils.embedding_service import TextRerankService, TumuerEmbeddingService
+from utils.path_utils import normalize_local_path
 from utils.time_parser import TimeParser
 from utils.vector_store import VectorStore
-from utils.vision_llm_service import OpenRouterVisionLLMService
+from utils.vision_llm_service import SU8VisionLLMService
 
 
 def load_config() -> Dict[str, object]:
-    """
-    加载配置（从config.py读取）。
-
-    Returns:
-        Dict[str, object]: 配置字典
-    """
     return get_config()
 
 
-def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher, Optional["RerankService"]]:
-    """
-    初始化所有服务实例。
-
-    Args:
-        config: 配置字典
-
-    Returns:
-        Tuple[Indexer, Searcher, Optional[RerankService]]: 索引构建器、检索器与Rerank服务实例
-    """
+def initialize_services(
+    config: Dict[str, object],
+) -> Tuple[Indexer, Searcher, Optional["TextRerankService"], Optional["VisualRerankService"]]:
     data_dir = str(config.get("DATA_DIR", "./data"))
     os.makedirs(data_dir, exist_ok=True)
 
-    # 使用阿里百炼 Embedding 服务，如果未配置 API Key 则回退到本地模型
-    embedding_api_key = str(config.get("EMBEDDING_API_KEY", ""))
-
-    if embedding_api_key and embedding_api_key != "None":
-        from utils.embedding_service import DashscopeEmbeddingService
-
-        dashscope_service = DashscopeEmbeddingService(
-            api_key=embedding_api_key,
-            model_name=str(config.get("EMBEDDING_MODEL", "text-embedding-v4")),
-            base_url=str(config.get("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")),
-            timeout=int(config.get("TIMEOUT", 30)),
-            max_retries=int(config.get("MAX_RETRIES", 3)),
-        )
-        embedding_service = dashscope_service
-        embedding_dimension = dashscope_service.dimension
-    else:
-        print("Warning: EMBEDDING_API_KEY not set. Falling back to local T5EmbeddingService.")
-        embedding_service = T5EmbeddingService(
-            model_name=str(config.get("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5"))
-        )
-        embedding_dimension = int(config.get("EMBEDDING_DIMENSION", 4096))
+    embedding_service = TumuerEmbeddingService(
+        api_key=str(config.get("EMBEDDING_API_KEY", "")),
+        model_name=str(config.get("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")),
+        base_url=str(config.get("EMBEDDING_BASE_URL", "https://router.tumuer.me/v1")),
+        timeout=int(config.get("TIMEOUT", 45)),
+        max_retries=int(config.get("MAX_RETRIES", 3)),
+        dimension=int(config.get("EMBEDDING_DIMENSION", 4096)),
+    )
 
     vector_store = VectorStore(
-        dimension=embedding_dimension,
+        dimension=int(config.get("EMBEDDING_DIMENSION", 4096)),
         index_path=str(config.get("INDEX_PATH", os.path.join(data_dir, "photo_search.index"))),
         metadata_path=str(config.get("METADATA_PATH", os.path.join(data_dir, "metadata.json"))),
         metric=str(config.get("VECTOR_METRIC", "cosine")),
     )
 
-    vision_service = OpenRouterVisionLLMService(
-        api_key=str(config.get("OPENROUTER_API_KEY", "")),
-        model_name=str(config.get("VISION_MODEL_NAME", "openai/gpt-4o")),
-        base_url=str(config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")),
-        server_host=str(config.get("SERVER_HOST", "localhost")),
-        server_port=int(config.get("SERVER_PORT", 5000)),
-        timeout=int(config.get("TIMEOUT", 30)),
+    vision_service = SU8VisionLLMService(
+        api_key=str(config.get("SU8_API_KEY", "")),
+        model_name=str(config.get("VISION_MODEL", "gpt-5.4")),
+        base_url=str(config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")),
+        reasoning_effort=str(config.get("VISION_REASONING_EFFORT", "medium")),
+        timeout=int(config.get("TIMEOUT", 45)),
         max_retries=int(config.get("MAX_RETRIES", 3)),
         use_base64=bool(config.get("USE_BASE64", True)),
         image_max_size=int(config.get("IMAGE_MAX_SIZE", 1024)),
@@ -84,12 +59,12 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher, O
         image_format=str(config.get("IMAGE_FORMAT", "WEBP")),
     )
 
-    openrouter_api_key = str(config.get("OPENROUTER_API_KEY", ""))
     time_parser = TimeParser(
-        api_key=openrouter_api_key,
-        model_name=str(config.get("TIME_PARSE_MODEL_NAME", "openai/gpt-3.5-turbo")),
-        base_url=str(config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")),
-        timeout=int(config.get("TIMEOUT", 30)),
+        api_key=str(config.get("SU8_API_KEY", "")),
+        model_name=str(config.get("TIME_PARSE_MODEL", "gpt-5.1")),
+        base_url=str(config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")),
+        reasoning_effort=str(config.get("TIME_PARSE_REASONING_EFFORT", "low")),
+        timeout=int(config.get("TIMEOUT", 45)),
         max_retries=int(config.get("MAX_RETRIES", 3)),
     )
 
@@ -97,6 +72,7 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher, O
     if config.get("ELASTICSEARCH_HOST"):
         try:
             from utils.keyword_store import KeywordStore
+
             keyword_store = KeywordStore(
                 host=str(config.get("ELASTICSEARCH_HOST")),
                 port=int(config.get("ELASTICSEARCH_PORT", 9200)),
@@ -104,34 +80,38 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher, O
                 username=str(config.get("ELASTICSEARCH_USERNAME")) if config.get("ELASTICSEARCH_USERNAME") else None,
                 password=str(config.get("ELASTICSEARCH_PASSWORD")) if config.get("ELASTICSEARCH_PASSWORD") else None,
             )
-        except Exception as e:
-            print(f"Warning: Failed to initialize Elasticsearch: {e}. Keyword search will be disabled.")
+        except Exception as exc:
+            print(f"Warning: Failed to initialize Elasticsearch: {exc}. Keyword search will be disabled.")
 
     query_formatter = None
-    qf_api_key = str(config.get("QUERY_FORMAT_API_KEY", ""))
-    if qf_api_key and qf_api_key != "None":
+    if config.get("QUERY_FORMAT_ENABLED", True) and config.get("QUERY_FORMAT_API_KEY"):
         try:
             from utils.query_formatter import QueryFormatter
+
             query_formatter = QueryFormatter(
-                api_key=qf_api_key,
-                model_name=str(config.get("QUERY_FORMAT_MODEL", "kimi-k2-0905-preview")),
-                base_url=str(config.get("QUERY_FORMAT_BASE_URL", "https://api.moonshot.cn/v1")),
-                timeout=int(config.get("TIMEOUT", 30)),
+                api_key=str(config.get("QUERY_FORMAT_API_KEY", "")),
+                model_name=str(config.get("QUERY_FORMAT_MODEL", "gpt-5.1")),
+                base_url=str(
+                    config.get("QUERY_FORMAT_BASE_URL")
+                    or config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
+                ),
+                reasoning_effort=str(config.get("QUERY_FORMAT_REASONING_EFFORT", "low")),
+                timeout=int(config.get("TIMEOUT", 45)),
                 max_retries=int(config.get("MAX_RETRIES", 3)),
             )
-        except Exception as e:
-             print(f"Warning: Failed to initialize QueryFormatter: {e}. Query formatting will be disabled.")
+        except Exception as exc:
+            print(f"Warning: Failed to initialize QueryFormatter: {exc}. Query formatting will be disabled.")
 
     indexer = Indexer(
-        photo_dir=str(config.get("PHOTO_DIR", "")),
+        photo_dir=normalize_local_path(str(config.get("PHOTO_DIR", ""))),
         vision=vision_service,
         embedding=embedding_service,
         vector_store=vector_store,
         keyword_store=keyword_store,
         data_dir=data_dir,
-        batch_size=int(config.get("BATCH_SIZE", 10)),
+        batch_size=int(config.get("BATCH_SIZE", 8)),
         max_retries=int(config.get("MAX_RETRIES", 3)),
-        timeout=int(config.get("TIMEOUT", 30)),
+        timeout=int(config.get("TIMEOUT", 45)),
     )
 
     searcher = Searcher(
@@ -141,56 +121,67 @@ def initialize_services(config: Dict[str, object]) -> Tuple[Indexer, Searcher, O
         keyword_store=keyword_store,
         query_formatter=query_formatter,
         data_dir=data_dir,
-        top_k=int(config.get("TOP_K", 10)),
+        top_k=int(config.get("TOP_K", 12)),
         vector_weight=float(config.get("VECTOR_WEIGHT", 0.8)),
         keyword_weight=float(config.get("KEYWORD_WEIGHT", 0.2)),
+        query_expansion_enabled=bool(config.get("QUERY_EXPANSION_ENABLED", True)),
+        query_expansion_max_alternatives=int(config.get("QUERY_EXPANSION_MAX_ALTERNATIVES", 2)),
     )
 
-    # 初始化 RerankService（复用 Vision LLM 配置）
-    rerank_service = None
-    openrouter_api_key = str(config.get("OPENROUTER_API_KEY", ""))
-    if config.get("RERANK_ENABLED", True) and openrouter_api_key:
+    text_rerank_service: Optional[TextRerankService] = None
+    if config.get("TEXT_RERANK_API_KEY"):
         try:
-            from utils.rerank_service import RerankService
-            rerank_service = RerankService(
-                api_key=openrouter_api_key,
-                model_name=str(config.get("RERANK_MODEL_NAME", "")),
-                base_url=str(config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")),
-                timeout=int(config.get("RERANK_TIMEOUT", 60)),
+            text_rerank_service = TextRerankService(
+                api_key=str(config.get("TEXT_RERANK_API_KEY", "")),
+                model_name=str(config.get("TEXT_RERANK_MODEL", "Qwen/Qwen3-Reranker-8B")),
+                base_url=str(config.get("TEXT_RERANK_BASE_URL", "https://router.tumuer.me/v1")),
+                timeout=int(config.get("TEXT_RERANK_TIMEOUT", 45)),
+                max_retries=int(config.get("MAX_RETRIES", 3)),
+            )
+        except Exception as exc:
+            print(f"Warning: Failed to initialize text rerank service: {exc}")
+
+    visual_rerank_service = None
+    if config.get("VISUAL_RERANK_ENABLED", True) and config.get("SU8_API_KEY"):
+        try:
+            from utils.rerank_service import VisualRerankService
+
+            visual_rerank_service = VisualRerankService(
+                api_key=str(config.get("SU8_API_KEY", "")),
+                model_name=str(config.get("VISUAL_RERANK_MODEL", config.get("VISION_MODEL", "gpt-5.4"))),
+                base_url=str(config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")),
+                reasoning_effort=str(config.get("VISUAL_RERANK_REASONING_EFFORT", "medium")),
+                timeout=int(config.get("VISUAL_RERANK_TIMEOUT", 60)),
                 max_retries=int(config.get("MAX_RETRIES", 3)),
                 image_max_size=int(config.get("RERANK_IMAGE_MAX_SIZE", 512)),
                 image_quality=int(config.get("RERANK_IMAGE_QUALITY", 75)),
-                max_images=int(config.get("RERANK_MAX_IMAGES", 10)),
+                image_format=str(config.get("RERANK_IMAGE_FORMAT", "WEBP")),
+                max_images=int(config.get("RERANK_MAX_IMAGES", 12)),
             )
-            print(f"RerankService initialized with model: {config.get('RERANK_MODEL_NAME')}")
-        except Exception as e:
-            print(f"Warning: Failed to initialize RerankService: {e}. Rerank will be disabled.")
+        except Exception as exc:
+            print(f"Warning: Failed to initialize visual rerank service: {exc}")
 
-    return indexer, searcher, rerank_service
+    return indexer, searcher, text_rerank_service, visual_rerank_service
 
 
 def create_app(
     indexer: Indexer,
     searcher: Searcher,
     config: Dict[str, object],
-    rerank_service: Optional["RerankService"] = None,
+    text_rerank_service: Optional["TextRerankService"] = None,
+    visual_rerank_service: Optional["VisualRerankService"] = None,
 ) -> Flask:
-    """
-    创建并配置Flask应用。
-
-    Args:
-        indexer: 索引构建器实例
-        searcher: 检索器实例
-        config: 配置字典
-        rerank_service: Rerank服务实例（可选）
-
-    Returns:
-        Flask: 配置好的Flask应用实例
-    """
     app = Flask(__name__)
     app.secret_key = str(config.get("SECRET_KEY", "dev-secret-key"))
 
-    register_routes(app, indexer, searcher, config, rerank_service=rerank_service)
+    register_routes(
+        app,
+        indexer,
+        searcher,
+        config,
+        text_rerank_service=text_rerank_service,
+        visual_rerank_service=visual_rerank_service,
+    )
 
     @app.errorhandler(404)
     def not_found(error: object) -> tuple[dict, int]:
@@ -204,34 +195,29 @@ def create_app(
 
 
 def _validate_required_config(config: Dict[str, object]) -> None:
-    """
-    校验必要配置，缺失时抛出异常。
-
-    Args:
-        config: 配置字典
-
-    Raises:
-        ValueError: 必要配置缺失
-    """
     if not config.get("PHOTO_DIR"):
         raise ValueError("PHOTO_DIR环境变量未设置")
-    if not config.get("OPENROUTER_API_KEY") and not config.get("EMBEDDING_API_KEY"):
-        raise ValueError("OPENROUTER_API_KEY 或 EMBEDDING_API_KEY 至少需要设置一个")
+    if not config.get("SU8_API_KEY"):
+        raise ValueError("SU8_API_KEY环境变量未设置")
+    if not config.get("EMBEDDING_API_KEY"):
+        raise ValueError("EMBEDDING_API_KEY环境变量未设置")
 
 
 def main() -> None:
-    """
-    主函数：初始化服务并启动Flask应用。
-    """
     config = load_config()
     _validate_required_config(config)
 
-    indexer, searcher, rerank_service = initialize_services(config)
-    app = create_app(indexer, searcher, config, rerank_service=rerank_service)
+    indexer, searcher, text_rerank_service, visual_rerank_service = initialize_services(config)
+    app = create_app(
+        indexer,
+        searcher,
+        config,
+        text_rerank_service=text_rerank_service,
+        visual_rerank_service=visual_rerank_service,
+    )
 
-    host = str(config.get("SERVER_HOST", "localhost"))
-    port = int(config.get("SERVER_PORT", 5000))
-
+    host = str(config.get("SERVER_HOST", "127.0.0.1"))
+    port = int(config.get("SERVER_PORT", 10001))
     print(f"启动服务器: http://{host}:{port}")
     app.run(host=host, port=port, debug=False)
 

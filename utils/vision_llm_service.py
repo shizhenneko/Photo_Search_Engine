@@ -1,280 +1,360 @@
 from __future__ import annotations
 
 import base64
+import json
 import time
-import urllib.parse
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
 from utils.image_parser import get_image_dimensions, resize_and_optimize_image
+from utils.structured_analysis import (
+    normalize_analysis_payload,
+    should_run_enhanced_analysis,
+)
 
 
 class VisionLLMService(ABC):
-    """
-    Vision LLM服务抽象接口。
-    """
+    """视觉模型抽象接口。"""
+
+    def get_last_analysis_metrics(self) -> Optional[Dict[str, Any]]:
+        """返回最近一次 analyze_image 的诊断指标。"""
+        return None
 
     @abstractmethod
     def generate_description(self, image_path: str) -> str:
-        """
-        生成图片描述（中文，50-200字）。
-
-        Args:
-            image_path (str): 图片路径
-
-        Returns:
-            str: 描述文本
-        """
+        """生成图片中文描述。"""
 
     @abstractmethod
     def generate_description_batch(self, image_paths: List[str]) -> List[str]:
-        """
-        批量生成描述。
+        """批量生成图片描述。"""
 
-        Args:
-            image_paths (List[str]): 图片路径列表
+    @abstractmethod
+    def analyze_image(self, image_path: str) -> Dict[str, Any]:
+        """生成结构化图片分析结果。"""
 
-        Returns:
-            List[str]: 描述列表
-        """
+    @abstractmethod
+    def analyze_image_batch(self, image_paths: List[str]) -> List[Dict[str, Any]]:
+        """批量生成结构化图片分析结果。"""
 
 
-class OpenRouterVisionLLMService(VisionLLMService):
-    """
-    OpenRouter Vision LLM服务实现。
-
-    默认使用 Base64 编码方式，因为 OpenRouter 远程服务器无法访问本地 localhost。
-
-    成本优化策略：
-    1. 图片自动缩放至 max_size（默认 1024 像素）
-    2. JPEG/WebP 压缩质量默认 85
-    3. 支持 WEBP 格式（更小的文件大小）
-    """
+class SU8VisionLLMService(VisionLLMService):
+    """通过 SU8 中转调用视觉模型。"""
 
     def __init__(
         self,
         api_key: str,
-        model_name: str = "openai/gpt-4o",
-        base_url: str = "https://openrouter.ai/api/v1",
-        server_host: str = "localhost",
-        server_port: int = 5000,
+        model_name: str,
+        base_url: str,
+        reasoning_effort: str = "medium",
         timeout: int = 30,
         max_retries: int = 3,
-        client: Optional[OpenAI] = None,
-        public_base_url: Optional[str] = None,
-        use_public_image_url: bool = False,
         use_base64: bool = True,
         image_max_size: int = 1024,
         image_quality: int = 85,
         image_format: str = "WEBP",
+        client: Optional[OpenAI] = None,
     ) -> None:
-        """
-        初始化OpenRouter Vision服务。
-
-        Args:
-            api_key (str): OpenRouter API密钥
-            model_name (str): 模型名称
-            base_url (str): OpenRouter API地址
-            server_host (str): 本地服务host
-            server_port (int): 本地服务port
-            timeout (int): API超时时间（秒）
-            max_retries (int): 最大重试次数
-            client (Optional[OpenAI]): OpenAI客户端实例
-            public_base_url (Optional[str]): 公网可访问的服务基地址（如ngrok）
-            use_public_image_url (bool): 是否使用公开可访问的测试图片URL（仅用于测试）
-            use_base64 (bool): 是否使用 Base64 编码方式（默认 True，推荐）
-            image_max_size (int): 图片最大边长（像素），默认 1024
-            image_quality (int): JPEG/WebP 压缩质量（1-100），默认 85
-            image_format (str): 图片输出格式，"JPEG" 或 "WEBP"（推荐）或 "PNG"
-        """
         if not api_key:
-            raise ValueError("OPENROUTER_API_KEY 未设置")
+            raise ValueError("SU8_API_KEY 未设置")
         self.api_key = api_key
         self.model_name = model_name
         self.base_url = base_url
-        self.server_host = server_host
-        self.server_port = server_port
-        self.public_base_url = public_base_url
+        self.reasoning_effort = reasoning_effort
         self.timeout = timeout
-        self.max_retries = max_retries
-        self.client = client or OpenAI(api_key=api_key, base_url=base_url)
-        self.use_public_image_url = use_public_image_url
+        self.max_retries = max(1, max_retries)
         self.use_base64 = use_base64
         self.image_max_size = max(256, min(4096, image_max_size))
         self.image_quality = max(1, min(100, image_quality))
-        self.image_format = image_format.upper() if image_format.upper() in ["JPEG", "WEBP", "PNG"] else "WEBP"
-
-    def _get_image_url(self, image_path: str) -> str:
-        """
-        生成图片URL。
-
-        Args:
-            image_path (str): 图片路径
-
-        Returns:
-            str: 图片URL
-        """
-        if self.use_public_image_url:
-            return (
-                "https://raw.githubusercontent.com/ultralytics/yolov5/master/"
-                "data/images/bus.jpg"
-            )
-        encoded_path = urllib.parse.quote(image_path)
-        if self.public_base_url:
-            base = self.public_base_url.rstrip("/")
-            return f"{base}/photo?path={encoded_path}"
-        return f"http://{self.server_host}:{self.server_port}/photo?path={encoded_path}"
+        self.image_format = image_format.upper() if image_format.upper() in {"JPEG", "PNG", "WEBP"} else "WEBP"
+        self.client = client or OpenAI(api_key=api_key, base_url=base_url)
+        self._last_analysis_metrics: Optional[Dict[str, Any]] = None
 
     def _get_image_base64(self, image_path: str) -> str:
-        """
-        生成 Base64 编码的图片 URL。
+        image_bytes = resize_and_optimize_image(
+            image_path,
+            max_size=self.image_max_size,
+            quality=self.image_quality,
+            format=self.image_format,
+        )
+        mime_type = {
+            "JPEG": "image/jpeg",
+            "PNG": "image/png",
+            "WEBP": "image/webp",
+        }.get(self.image_format, "image/webp")
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
+        return f"data:{mime_type};base64,{encoded}"
 
-        使用优化策略降低 Token 消耗：
-        1. 自动缩放至 max_size
-        2. 使用 WEBP 格式压缩（质量 85）
-
-        Args:
-            image_path (str): 图片路径
-
-        Returns:
-            str: data:image/...;base64,... 格式的 URL
-        """
-        try:
-            image_bytes = resize_and_optimize_image(
-                image_path,
-                max_size=self.image_max_size,
-                quality=self.image_quality,
-                format=self.image_format,
-            )
-            base64_str = base64.b64encode(image_bytes).decode("utf-8")
-
-            mime_type = {
-                "JPEG": "image/jpeg",
-                "PNG": "image/png",
-                "WEBP": "image/webp",
-            }.get(self.image_format, "image/jpeg")
-
-            return f"data:{mime_type};base64,{base64_str}"
-        except Exception:
-            raise ValueError(f"图片编码失败: {image_path}")
-
-    def generate_description(self, image_path: str) -> str:
-        """
-        生成图片描述（中文）。
-
-        默认使用 Base64 编码方式，因为 OpenRouter 远程服务器无法访问本地 localhost。
-
-        Args:
-            image_path (str): 图片路径
-
-        Returns:
-            str: 描述文本
-        """
-        prompt = (
-            "请为这张图片生成一段中文描述，用于语义检索。\n\n"
+    def _build_description_prompt(self) -> str:
+        return (
+            "你是图片结构化理解器。请严格观察图片并返回 JSON。\n"
             "要求：\n"
-            "- 长度：50-200字\n"
-            "- 描述场景、主体、动作、环境和氛围\n"
-            "- 禁止推测拍摄时间（如下午、傍晚、夏天）\n"
-            "- 禁止描述图片外信息\n"
-            "- 直接描述，不要用\"这张照片展示了\"开头\n\n"
-            "示例：开阔的草坪上，一个穿红色外套的小男孩正在放飞蝴蝶形状的风筝。"
-            "彩色的尾巴在空中飘动，背景是绿树和蓝天白云，画面充满童趣和活力。"
+            "1. 只描述可见内容，但允许识别载体类型、可读文字、公众人物候选和媒介属性。\n"
+            "2. description 用于前端展示，应自然、准确、简洁。\n"
+            "3. outer_scene_summary 描述相机实际拍到的外层场景。\n"
+            "4. inner_content_summary 描述被拍对象内部承载的内容，例如专辑封面、海报、屏幕内容。\n"
+            "5. media_types 必须从这些值中选择：album_cover, poster, stage_performance, screen, artwork_print, merch, document, graffiti, photo, other。\n"
+            "6. tags 返回数组，每项格式为 {\"tag\": \"...\", \"confidence\": 0-1}。\n"
+            "7. identity_candidates 返回数组，每项格式为 {\"name\": \"...\", \"aliases\": [], \"confidence\": 0-1, \"evidence_sources\": []}。\n"
+            "8. analysis_flags 返回布尔字典，可用键包括 text_heavy, has_stage, has_screen, has_packaging, has_public_figure_likelihood。\n"
+            "9. 对公众人物识别必须保守：只有当视觉特征或可读文字足以支持具体身份时，才返回具体姓名；否则返回空数组，不要用“像某某”硬猜。\n"
+            "10. evidence_sources 必须明确区分文字证据和视觉证据，例如 readable_text、visible_text、ocr_text、face_similarity、signature_stage_pose、hairstyle、tattoo。\n"
+            "11. 只返回 JSON，不要输出解释。"
         )
 
-        if self.use_base64:
-            image_content = self._get_image_base64(image_path)
-        else:
-            image_content = self._get_image_url(image_path)
-
-        messages = [
+    def _default_analysis(self, image_path: str) -> Dict[str, Any]:
+        return normalize_analysis_payload(
             {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_content}},
-                ],
-            }
+                "description": "一张照片",
+                "outer_scene_summary": "",
+                "inner_content_summary": "",
+                "media_types": ["photo"],
+                "tags": [],
+                "ocr_text": "",
+                "person_roles": [],
+                "identity_candidates": [],
+                "analysis_flags": {},
+            },
+            tag_min_confidence=0.65,
+            identity_text_threshold=0.7,
+            identity_visual_threshold=0.92,
+        )
+
+    def _create_completion(self, content: List[Dict[str, Any]]):
+        return self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": content}],
+            timeout=self.timeout,
+            response_format={"type": "json_object"},
+            extra_body={"reasoning_effort": self.reasoning_effort},
+        )
+
+    def _parse_json_response(self, response_text: str) -> Dict[str, Any]:
+        cleaned = (response_text or "").strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.strip("`")
+            cleaned = cleaned.replace("json", "", 1).strip()
+        data = json.loads(cleaned)
+        if not isinstance(data, dict):
+            raise ValueError("视觉模型返回的分析结果不是对象")
+        return data
+
+    def _build_enhanced_prompt(self, base_analysis: Dict[str, Any]) -> str:
+        return (
+            "你将看到同一张图片，请基于已有初步分析做增强识别，只返回 JSON。\n"
+            "重点补强：\n"
+            "1. 更准确的 inner_content_summary。\n"
+            "2. 更准确的 OCR 文本。\n"
+            "3. 若图片中可能出现公众人物，请返回更高质量的 identity_candidates。\n"
+            "4. 若图片实际是专辑封面、海报、屏幕、舞台或周边，请修正 media_types。\n"
+            "5. 若公众人物无法凭视觉稳定唯一识别，请不要返回具体姓名；宁可留空，也不要误认。\n"
+            f"初步分析：{json.dumps(base_analysis, ensure_ascii=False)}"
+        )
+
+    def get_last_analysis_metrics(self) -> Optional[Dict[str, Any]]:
+        return dict(self._last_analysis_metrics) if self._last_analysis_metrics else None
+
+    def analyze_image(self, image_path: str) -> Dict[str, Any]:
+        encode_start = time.perf_counter()
+        image_url = self._get_image_base64(image_path)
+        encode_elapsed = time.perf_counter() - encode_start
+        content: List[Dict[str, Any]] = [
+            {"type": "text", "text": self._build_description_prompt()},
+            {"type": "image_url", "image_url": {"url": image_url}},
         ]
 
+        last_error: Optional[Exception] = None
+        self._last_analysis_metrics = {
+            "image_encode_seconds": round(encode_elapsed, 4),
+            "attempts": [],
+            "base_analysis_seconds": 0.0,
+            "base_parse_seconds": 0.0,
+            "base_normalize_seconds": 0.0,
+            "enhanced_prompt_seconds": 0.0,
+            "enhanced_analysis_seconds": 0.0,
+            "enhanced_parse_seconds": 0.0,
+            "enhanced_normalize_seconds": 0.0,
+            "enhanced_triggered": False,
+            "enhanced_succeeded": False,
+            "used_fallback": False,
+        }
         for attempt in range(self.max_retries):
+            attempt_metrics: Dict[str, Any] = {"attempt": attempt + 1}
             try:
-                print(f"[DEBUG] Vision LLM API调用 (第{attempt+1}/{self.max_retries}次), 模型: {self.model_name}, timeout: {self.timeout}s")
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    temperature=0.2,
-                    timeout=self.timeout,
+                base_request_start = time.perf_counter()
+                response = self._create_completion(content)
+                base_request_elapsed = time.perf_counter() - base_request_start
+                attempt_metrics["base_request_seconds"] = round(base_request_elapsed, 4)
+                self._last_analysis_metrics["base_analysis_seconds"] = round(
+                    self._last_analysis_metrics["base_analysis_seconds"] + base_request_elapsed, 4
                 )
-                content = response.choices[0].message.content.strip()
-                if not content:
-                    raise ValueError("Vision LLM返回空描述")
-                return content
+
+                parse_start = time.perf_counter()
+                parsed = self._parse_json_response(response.choices[0].message.content or "")
+                parse_elapsed = time.perf_counter() - parse_start
+                attempt_metrics["base_parse_seconds"] = round(parse_elapsed, 4)
+                self._last_analysis_metrics["base_parse_seconds"] = round(
+                    self._last_analysis_metrics["base_parse_seconds"] + parse_elapsed, 4
+                )
+
+                normalize_start = time.perf_counter()
+                normalized = normalize_analysis_payload(
+                    parsed,
+                    tag_min_confidence=0.65,
+                    identity_text_threshold=0.7,
+                    identity_visual_threshold=0.92,
+                )
+                normalize_elapsed = time.perf_counter() - normalize_start
+                attempt_metrics["base_normalize_seconds"] = round(normalize_elapsed, 4)
+                self._last_analysis_metrics["base_normalize_seconds"] = round(
+                    self._last_analysis_metrics["base_normalize_seconds"] + normalize_elapsed, 4
+                )
+
+                enhanced_needed = should_run_enhanced_analysis(normalized)
+                attempt_metrics["enhanced_triggered"] = enhanced_needed
+                self._last_analysis_metrics["enhanced_triggered"] = enhanced_needed
+                if enhanced_needed:
+                    try:
+                        enhanced_prompt_start = time.perf_counter()
+                        enhanced_prompt = self._build_enhanced_prompt(normalized)
+                        enhanced_prompt_elapsed = time.perf_counter() - enhanced_prompt_start
+                        attempt_metrics["enhanced_prompt_seconds"] = round(enhanced_prompt_elapsed, 4)
+                        self._last_analysis_metrics["enhanced_prompt_seconds"] = round(
+                            self._last_analysis_metrics["enhanced_prompt_seconds"] + enhanced_prompt_elapsed, 4
+                        )
+                        enhanced_content: List[Dict[str, Any]] = [
+                            {"type": "text", "text": enhanced_prompt},
+                            {"type": "image_url", "image_url": {"url": image_url}},
+                        ]
+                        enhanced_request_start = time.perf_counter()
+                        enhanced_response = self._create_completion(enhanced_content)
+                        enhanced_request_elapsed = time.perf_counter() - enhanced_request_start
+                        attempt_metrics["enhanced_request_seconds"] = round(enhanced_request_elapsed, 4)
+                        self._last_analysis_metrics["enhanced_analysis_seconds"] = round(
+                            self._last_analysis_metrics["enhanced_analysis_seconds"] + enhanced_request_elapsed, 4
+                        )
+
+                        enhanced_parse_start = time.perf_counter()
+                        enhanced_parsed = self._parse_json_response(
+                            enhanced_response.choices[0].message.content or ""
+                        )
+                        enhanced_parse_elapsed = time.perf_counter() - enhanced_parse_start
+                        attempt_metrics["enhanced_parse_seconds"] = round(enhanced_parse_elapsed, 4)
+                        self._last_analysis_metrics["enhanced_parse_seconds"] = round(
+                            self._last_analysis_metrics["enhanced_parse_seconds"] + enhanced_parse_elapsed, 4
+                        )
+
+                        merged = dict(normalized)
+                        merged.update(enhanced_parsed)
+                        enhanced_normalize_start = time.perf_counter()
+                        normalized = normalize_analysis_payload(
+                            merged,
+                            tag_min_confidence=0.65,
+                            identity_text_threshold=0.7,
+                            identity_visual_threshold=0.92,
+                        )
+                        enhanced_normalize_elapsed = time.perf_counter() - enhanced_normalize_start
+                        attempt_metrics["enhanced_normalize_seconds"] = round(enhanced_normalize_elapsed, 4)
+                        self._last_analysis_metrics["enhanced_normalize_seconds"] = round(
+                            self._last_analysis_metrics["enhanced_normalize_seconds"] + enhanced_normalize_elapsed, 4
+                        )
+                        attempt_metrics["enhanced_succeeded"] = True
+                        self._last_analysis_metrics["enhanced_succeeded"] = True
+                    except Exception as exc:
+                        attempt_metrics["enhanced_error"] = str(exc)
+                        attempt_metrics["enhanced_succeeded"] = False
+
+                attempt_metrics["status"] = "success"
+                self._last_analysis_metrics["attempts"].append(attempt_metrics)
+                return normalized
             except Exception as exc:
-                import traceback
-                print(f"[ERROR] Vision LLM API调用失败 (第{attempt+1}/{self.max_retries}次): {type(exc).__name__}: {exc}")
-                if attempt < self.max_retries - 1:
-                    print(f"[DEBUG] 将在1秒后重试...")
-                else:
-                    print(f"[ERROR] Vision LLM达到最大重试次数，放弃")
-                    traceback.print_exc()
-                    raise ValueError(f"生成描述失败: {exc}") from exc
+                last_error = exc
+                attempt_metrics["status"] = "failed"
+                attempt_metrics["error"] = str(exc)
+                self._last_analysis_metrics["attempts"].append(attempt_metrics)
+                if attempt == self.max_retries - 1:
+                    break
                 time.sleep(1)
 
-        raise ValueError("生成描述失败")
+        if last_error is not None:
+            raise ValueError(f"生成结构化分析失败: {last_error}") from last_error
+        raise ValueError("生成结构化分析失败")
+
+    def generate_description(self, image_path: str) -> str:
+        analysis = self.analyze_image(image_path)
+        description = str(analysis.get("description") or "").strip()
+        if not description:
+            raise ValueError("视觉模型返回空描述")
+        return description
 
     def generate_description_batch(self, image_paths: List[str]) -> List[str]:
-        """
-        批量生成描述。
+        return [self.generate_description(path) for path in image_paths]
 
-        Args:
-            image_paths (List[str]): 图片路径列表
-
-        Returns:
-            List[str]: 描述列表
-        """
-        descriptions: List[str] = []
-        for image_path in image_paths:
-            descriptions.append(self.generate_description(image_path))
-        return descriptions
+    def analyze_image_batch(self, image_paths: List[str]) -> List[Dict[str, Any]]:
+        return [self.analyze_image(path) for path in image_paths]
 
 
 class LocalVisionLLMService(VisionLLMService):
-    """
-    本地Vision服务（降级或离线场景使用）。
-    """
+    """测试用本地视觉服务。"""
+
+    def __init__(self) -> None:
+        self._last_analysis_metrics: Optional[Dict[str, Any]] = None
+
+    def get_last_analysis_metrics(self) -> Optional[Dict[str, Any]]:
+        return dict(self._last_analysis_metrics) if self._last_analysis_metrics else None
 
     def generate_description(self, image_path: str) -> str:
-        """
-        生成本地描述（基于图片尺寸）。
-
-        Args:
-            image_path (str): 图片路径
-
-        Returns:
-            str: 描述文本
-        """
-        width, height = get_image_dimensions(image_path)
-        if width == 0 or height == 0:
-            return "一张本地生成的图片描述"
-        return f"一张本地生成的图片描述，分辨率为{width}x{height}"
+        return self.analyze_image(image_path)["description"]
 
     def generate_description_batch(self, image_paths: List[str]) -> List[str]:
-        """
-        批量生成本地描述。
-
-        Args:
-            image_paths (List[str]): 图片路径列表
-
-        Returns:
-            List[str]: 描述列表
-        """
         return [self.generate_description(path) for path in image_paths]
 
+    def analyze_image(self, image_path: str) -> Dict[str, Any]:
+        width, height = get_image_dimensions(image_path)
+        self._last_analysis_metrics = {
+            "image_encode_seconds": 0.0,
+            "attempts": [{"attempt": 1, "status": "success", "base_request_seconds": 0.0}],
+            "base_analysis_seconds": 0.0,
+            "base_parse_seconds": 0.0,
+            "base_normalize_seconds": 0.0,
+            "enhanced_prompt_seconds": 0.0,
+            "enhanced_analysis_seconds": 0.0,
+            "enhanced_parse_seconds": 0.0,
+            "enhanced_normalize_seconds": 0.0,
+            "enhanced_triggered": False,
+            "enhanced_succeeded": False,
+            "used_fallback": False,
+        }
+        if width <= 0 or height <= 0:
+            return {
+                "description": "一张本地生成的图片描述",
+                "outer_scene_summary": "一张图片",
+                "inner_content_summary": "",
+                "media_types": ["photo"],
+                "tags": ["图片"],
+                "ocr_text": "",
+                "person_roles": [],
+                "identity_candidates": [],
+                "identity_names": [],
+                "identity_evidence": [],
+                "analysis_flags": {},
+                "retrieval_text": "photo 图片 一张本地生成的图片描述",
+            }
+        return {
+            "description": f"一张本地生成的图片描述，分辨率为{width}x{height}",
+            "outer_scene_summary": f"一张分辨率为{width}x{height}的图片",
+            "inner_content_summary": "",
+            "media_types": ["photo"],
+            "tags": ["图片", f"{width}x{height}"],
+            "ocr_text": "",
+            "person_roles": [],
+            "identity_candidates": [],
+            "identity_names": [],
+            "identity_evidence": [],
+            "analysis_flags": {},
+            "retrieval_text": f"photo 图片 {width}x{height}",
+        }
 
-class OpenAIVisionLLMService(OpenRouterVisionLLMService):
-    """
-    OpenAI命名兼容类（行为与OpenRouter实现一致）。
-    """
+    def analyze_image_batch(self, image_paths: List[str]) -> List[Dict[str, Any]]:
+        return [self.analyze_image(path) for path in image_paths]

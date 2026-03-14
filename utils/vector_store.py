@@ -47,6 +47,7 @@ class VectorStore:
         self.index = self._create_index(dimension) if dimension else None
         self.metadata: List[Dict] = []
         self._normalize = self.metric == "cosine"
+        self._embeddings: List[List[float]] = []
 
     def _create_index(self, dimension: int) -> faiss.Index:
         if self.metric == "cosine":
@@ -92,6 +93,7 @@ class VectorStore:
         vector = np.array([normalized], dtype="float32")
         self.index.add(vector)
         self.metadata.append(metadata)
+        self._embeddings.append(normalized)
 
     # 内部接口：仅允许searcher模块调用，禁止前端直接访问向量数据库
     def search(self, query_embedding: List[float], top_k: int) -> List[Dict]:
@@ -121,6 +123,17 @@ class VectorStore:
                 continue
             results.append({"metadata": self.metadata[index], "distance": float(distance)})
         return results
+
+    def get_embedding_by_photo_path(self, photo_path: str) -> Optional[List[float]]:
+        for index, metadata in enumerate(self.metadata):
+            if metadata.get("photo_path") == photo_path:
+                if index < len(self._embeddings):
+                    return list(self._embeddings[index])
+                break
+        return None
+
+    def has_photo_path(self, photo_path: str) -> bool:
+        return any(metadata.get("photo_path") == photo_path for metadata in self.metadata)
 
     def save(self) -> None:
         """
@@ -164,6 +177,11 @@ class VectorStore:
         if self.index.ntotal != len(self.metadata):
             raise ValueError("索引与元数据数量不一致，请重新构建索引")
         self.dimension = self.index.d
+        self._embeddings = []
+        if self.index.ntotal > 0:
+            for row in range(self.index.ntotal):
+                vector = self.index.reconstruct(row)
+                self._embeddings.append(vector.astype("float32").tolist())
         return True
 
     def get_total_items(self) -> int:
@@ -183,3 +201,4 @@ class VectorStore:
         """
         self.index = self._create_index(self.dimension) if self.dimension else None
         self.metadata = []
+        self._embeddings = []

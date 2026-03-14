@@ -1,1022 +1,274 @@
-# 照片搜索引擎 (Photo Search Engine)
+# 照片搜索引擎
 
-<div align="center">
+基于 Flask 的本地照片搜索系统，当前运行架构已经统一为：
 
-![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
-![Flask Version](https://img.shields.io/badge/flask-3.0.3-green)
-![License](https://img.shields.io/badge/license-MIT-orange)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
-![Status](https://img.shields.io/badge/status-production%20ready-brightgreen)
+- gpt: 视觉描述、时间解析、视觉 Rerank、QueryFormatter
+- `Qwen/Qwen3-Embedding-8B` 向量生成、`Qwen/Qwen3-Reranker-8B` 文本 Rerank
+- FAISS：向量索引
+- Elasticsearch：可选的关键词与时间过滤检索
 
-**基于AI的智能照片搜索引擎，支持自然语言查询**
+系统支持文本搜图、以图搜图、上传图片搜图、文本重排、视觉重排，并在结果中返回图片描述、本地文件路径、预览链接和定位本地文件动作。
 
-[功能特性](#-核心特性) • [快速开始](#-快速开始) • [技术文档](#-开发文档) • [API文档](#-api接口说明)
+当前版本已经升级为结构化多信号检索：
 
-</div>
+- 不再只依赖单段 caption
+- 每张图会提取媒介类型、标签、OCR 文本、人物角色、公众人物候选和 `retrieval_text`
+- 检索结果会返回 `match_summary`，用于解释命中原因
+- 文本检索会保留基础召回，并在弱结果时触发保守扩展与单轮反思
+- 前端会显示“检索规划”，用于观察基础意图、扩展轮次与反思轮次
 
----
+## 当前能力
 
-## 📖 简介
+- 文本搜图：自然语言检索本地图库
+- 以图搜图：使用已入库图片路径检索相似图片
+- 上传图片搜图：使用临时上传图片分析结果生成 embedding，再检索相似图片
+- 混合检索：向量检索 + BM25 检索融合
+- 结构化图像理解：外层场景、内层内容、媒介类型、标签、OCR、人物候选
+- 时间过滤：支持“去年”“夏天”“傍晚”等语义过滤
+- 多轮查询理解：基础意图 -> 弱结果扩展 -> 弱结果反思
+- 双阶段重排：先文本 rerank，再视觉 rerank
+- 本地操作：返回路径、预览原图、打开文件所在位置
 
-基于AI的个人照片搜索引擎，支持通过自然语言查询检索本地照片。系统使用**Vision LLM**生成图片描述，通过**向量相似度检索**实现智能搜索，支持场景、人物、活动、时间、情感等多类查询。
+## 检索与归一化
 
-**核心能力**：
-- 🔍 自然语言搜索："去年夏天在海边的照片"
-- 🤖 AI图片理解：自动生成中文描述
-- ⚡ 毫秒级检索：FAISS高效向量搜索
-- 🎯 精准匹配：向量+关键字混合检索
-- 📅 时间智能：支持"去年"、"冬天"等自然表达
+当前混合检索已经做归一化，融合逻辑是正确实现的：
 
-## 🌟 核心特性
+- `utils/vector_store.py`：在 `cosine` 模式下先做 L2 归一化，再使用 `IndexFlatIP`
+- `utils/keyword_store.py`：把 Elasticsearch BM25 分数按每次查询的 `max_score` 归一到 `0-1`
+- `core/searcher.py`：只有在某一路检索信号真实命中时才参与融合，再按可用权重重归一
 
-- **智能描述生成**：使用GPT-4o Vision自动生成图片的中文自然语言描述
-- **向量化检索**：基于FAISS的高效向量相似度搜索
-- **混合检索**：支持向量检索+关键字检索（Elasticsearch）的混合模式，检索更精准
-- **Vision LLM 二次精排 (Rerank)**：对检索候选集进行视觉语义重排序，大幅提升 Top-1 准确率
-- **三层防护纯过滤查询**：针对季节/时间等纯过滤场景，跳过向量检索，实现毫秒级响应并降低成本
-- **多维度查询**：支持场景、人物、活动、时间、情感等多种查询类型
-- **查询优化**：可选的LLM查询格式化，自动提取检索意图
-- **时间检索**：基于EXIF元数据或文件时间，支持"去年"、"冬天"等自然语言时间词
-- **多云支持**：支持阿里百炼、火山引擎等多种Embedding服务，也可使用本地模型
-- **成本优化**：使用Base64编码+图片压缩策略，大幅降低Token消耗
-- **本地化部署**：所有数据存储在本地，隐私安全
-- **完整测试**：包含完善的单元测试，代码质量有保障
+当前向量检索使用 `retrieval_text`，它由高置信 `media_types`、`top_tags`、`outer_scene_summary`、`inner_content_summary`、`ocr_text` 和 `identity_names` 组合而成。
 
-## 🏗️ 技术架构
+这意味着：
 
-```
-用户浏览器
-    ↓
-templates/index.html（前端界面）
-    ↓
-api/routes.py（HTTP API）
-    ↓
-core/indexer.py（索引构建）  core/searcher.py（检索引擎）
-    ↓                        ↓
-utils/vision_llm_service.py（Vision LLM - OpenRouter + GPT-4o）
-utils/rerank_service.py（Vision LLM Rerank - 二次精排）
-utils/embedding_service.py（文本Embedding - 阿里百炼/火山引擎/本地T5）
-utils/vector_store.py（FAISS向量存储）
-utils/keyword_store.py（Elasticsearch关键字索引 - 可选）
-utils/query_formatter.py（LLM查询格式化 - 可选）
-utils/time_parser.py（时间语义解析）
-utils/image_parser.py（图片解析与优化）
-```
+- 向量命中但没有 BM25 命中的图片，不会因为 `keyword_score=0` 被平白压分
+- 同时命中向量和 BM25 的结果，仍然会按 `VECTOR_WEIGHT` / `KEYWORD_WEIGHT` 融合
+- 只有 BM25 命中的结果，也可以独立进入排序结果
 
-### 技术栈
+如果未启用 Elasticsearch，系统会自动退化为纯向量检索，并对时间过滤走内存元数据匹配。
 
-| 层次 | 技术 | 用途 |
-|------|------|------|
-| Web框架 | Flask 3.0.3 | HTTP服务 |
-| Vision LLM | GPT-4o (via OpenRouter) | 图片描述生成 & 二次精排 |
-| 时间解析 | GPT-3.5-turbo (via OpenRouter) | 时间语义理解 |
-| 查询优化 | Moonshot Kimi (可选) | 查询格式化 |
-| 文本嵌入 | 阿里百炼/火山引擎/本地BGE | 中文语义向量 |
-| 向量存储 | FAISS-cpu | 高效相似度检索 |
-| 关键字检索 | Elasticsearch (可选) | BM25关键字匹配 & 季节过滤 |
-| 图像处理 | Pillow 10.3.0 | 图片解析与优化 |
-| 深度学习 | PyTorch 2.0+ | sentence-transformers后端 |
+## 查询理解与检索规划
 
-## 📋 环境要求
+当前文本检索不是单轮黑盒改写，而是保守分层：
 
-- **Python**: 3.8+ (推荐 3.12.4)
-- **操作系统**: Windows / Linux / macOS
-- **GPU**: 可选（PyTorch自动检测CUDA）
+1. 第一轮：保留用户原始意图，提取 `search_text`、`media_terms`、`identity_terms` 与时间提示
+2. 第二轮：只有当第一轮结果偏弱时，才触发少量替代意图扩展
+3. 第三轮：如果第二轮仍偏弱，再基于弱结果做一次反思式调整
 
-## 🚀 快速开始
+这个流程的目标是提高泛化能力，同时不破坏基础召回。高分首轮结果不会被强行改写。
 
-### 快速演示（3分钟）
+前端结果区上方会展示 `search_debug` 对应的“检索规划”面板，包含：
 
-```bash
-# 1. 克隆项目
-git clone https://github.com/yourusername/Photo_Search_Engine.git
-cd Photo_Search_Engine
+- 基础意图
+- 是否触发扩展
+- 是否触发反思
+- 各轮 top score 与结果数量
 
-# 2. 安装依赖
-pip install -r requirements.txt
+## 时间元数据策略
 
-# 3. 配置环境变量（创建.env文件）
-echo "OPENROUTER_API_KEY=sk-or-v1-xxx" > .env
-echo "PHOTO_DIR=C:/Users/YourName/Photos" >> .env
-echo "EMBEDDING_API_KEY=sk-xxx" >> .env
+当前版本只使用 **EXIF 拍摄时间** 生成结构化时间标签：
 
-# 4. 启动服务
-python main.py
+- `year`
+- `month`
+- `day`
+- `season`
+- `time_period`
+- `weekday`
 
-# 5. 打开浏览器访问
-# http://localhost:5000
-```
+`file_time` 不再用于生成这些标签，也不会再用于 ES 时间过滤。这样做的目的是避免没有 EXIF 时间的图片因为文件修改时间被错误打上“夏天”“傍晚”“2025年”等标签。
 
-### 详细安装步骤
+这意味着：
 
-#### 1. 安装依赖
+- 没有 EXIF `datetime` 的图片，不会被错误标记时间信息
+- 这类图片仍然可以参与普通向量检索和以图搜图
+- 但在“去年”“夏天”“傍晚”这类时间过滤查询中，它们不会被时间条件错误命中
+
+如果你修改了时间标签策略、Embedding 模型、Rerank 模型、结构化分析 prompt、检索字段或 Elasticsearch mapping，应该重新构建索引。
+
+## 索引策略
+
+当前索引构建已经支持增量更新：
+
+- 前端提供两个入口：`增量索引` 和 `全量重建`
+- `POST /init_index` 支持通过 JSON 参数 `mode` 选择索引方式
+- `mode=incremental` 或省略 `mode` 时，会优先加载现有 FAISS 索引与元数据
+- 只对新增图片生成结构化分析与 embedding
+- 已存在的图片不会重复分析，也不会重复写入
+- `mode=full` 时会清空现有索引并执行全量重建
+
+这意味着，日常新增照片后应该优先使用“增量索引”，它会从当前状态补齐新图，而不是每次都重扫并重建全部图片。
+
+仍然需要全量重建的场景只有：
+
+- 切换 `EMBEDDING_MODEL`
+- 修改结构化分析字段或 `retrieval_text` 生成逻辑
+- 修改 Elasticsearch mapping
+- 旧索引文件损坏或与当前维度 / metric 不兼容
+
+## 快速开始
+
+### 1. 使用 uv 创建环境
 
 ```bash
-pip install -r requirements.txt
+uv venv .venv --python 3.12
+uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
-**注意**：如果有NVIDIA GPU，建议先安装CUDA版PyTorch：
-```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-```
+### 2. 配置 `.env`
 
-### 2. 配置环境变量
+参考 `.env.example`
 
-在项目根目录创建 `.env` 文件：
+默认模型：
 
 ```bash
-# ==================== 必需配置 ====================
-
-# OpenRouter API密钥（必需 - 用于Vision LLM和时间解析）
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# 照片目录（必需，使用绝对路径）
-PHOTO_DIR=C:/Users/YourName/Photos
-
-# ==================== Embedding服务配置（三选一） ====================
-
-# 方案1：阿里百炼 Dashscope（推荐）
-EMBEDDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-EMBEDDING_MODEL=text-embedding-v4
-
-# 方案2：火山引擎 Doubao
-# VOLCANO_API_KEY=your-volcano-api-key
-# VOLCANO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-# VOLCANO_EMBEDDING_MODEL=doubao-embedding-large-text-240915
-
-# 方案3：本地模型（无需API密钥，自动使用本地T5模型）
-# EMBEDDING_MODEL_NAME=BAAI/bge-small-zh-v1.5
-# EMBEDDING_DIMENSION=512
-
-# ==================== 可选功能配置 ====================
-
-# 查询格式化服务（可选 - 提升查询理解能力）
-# QUERY_FORMAT_API_KEY=your-moonshot-api-key
-# QUERY_FORMAT_BASE_URL=https://api.moonshot.cn/v1
-# QUERY_FORMAT_MODEL=moonshot-v1-8k
-
-# Elasticsearch 配置（可选 - 启用混合检索）
-# ELASTICSEARCH_HOST=localhost
-# ELASTICSEARCH_PORT=9200
-# ELASTICSEARCH_INDEX=photo_keywords
-# ELASTICSEARCH_USERNAME=elastic
-# ELASTICSEARCH_PASSWORD=your-password
-
-# 混合检索权重（仅在启用ES时有效）
-# VECTOR_WEIGHT=0.8
-# KEYWORD_WEIGHT=0.2
-
-# ==================== 基础配置 ====================
-
-# 数据存储目录（可选，默认 ./data）
-DATA_DIR=./data
-
-# 服务器配置（可选）
-SERVER_HOST=localhost
-SERVER_PORT=5000
-SECRET_KEY=your-secret-key-here
-
-# ==================== 图片处理配置 ====================
-
-# 是否使用Base64编码方式（默认 true）
-USE_BASE64=true
-
-# 图片最大边长（像素，默认 1024）
-IMAGE_MAX_SIZE=1024
-
-# 图片压缩质量（1-100，默认 85）
-IMAGE_QUALITY=85
-
-# 图片输出格式（JPEG/WEBP/PNG，默认 WEBP）
-IMAGE_FORMAT=WEBP
-
-# ==================== 高级配置 ====================
-
-# Vision模型（默认 openai/gpt-4o）
-VISION_MODEL_NAME=openai/gpt-4o
-
-# 时间解析模型（默认 openai/gpt-3.5-turbo）
-TIME_PARSE_MODEL_NAME=openai/gpt-3.5-turbo
-
-# API超时和重试
-TIMEOUT=30
-MAX_RETRIES=3
-
-# 批处理大小
-BATCH_SIZE=10
-
-# 检索参数
-TOP_K=10
-VECTOR_METRIC=cosine
+VISION_MODEL=gpt-5.4
+STRUCTURED_ANALYSIS_ENABLED=true
+ENHANCED_ANALYSIS_ENABLED=true
+TAG_MIN_CONFIDENCE=0.65
+IDENTITY_TEXT_MIN_CONFIDENCE=0.70
+IDENTITY_VISUAL_MIN_CONFIDENCE=0.92
+TIME_PARSE_MODEL=gpt-5.1
+EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B
+TEXT_RERANK_MODEL=Qwen/Qwen3-Reranker-8B
 ```
 
-### 3. 获取OpenRouter API密钥
-
-1. 访问 https://openrouter.ai/
-2. 注册/登录账号
-3. 在设置中创建API密钥
-4. 将密钥复制到 `.env` 文件
-
-### 4. 准备照片
-
-将照片放入指定的照片目录（`PHOTO_DIR`）。支持以下格式：
-- JPG / JPEG
-- PNG
-- WEBP
-
-建议准备至少**100张照片**以满足验收标准。
-
-### 5. 启动服务
+### 3. 启动服务
 
 ```bash
-python main.py
+./.venv/bin/python main.py
 ```
 
-服务将在 http://localhost:5000 启动。
-
-### 6. 访问界面
-
-打开浏览器访问 http://localhost:5000
-
-## 💡 使用方法
-
-### 索引构建流程
-
-1. **点击"初始化索引"按钮**
-2. 系统开始扫描照片目录
-3. 对每张图片执行以下操作：
-   - 调用Vision LLM生成中文描述
-   - 提取EXIF元数据（拍摄时间、GPS、相机信息）
-   - 构建搜索文本（描述+时间+季节+文件名）
-   - 生成Embedding向量
-   - 写入向量索引
-   - （可选）写入关键字索引
-4. 保存索引到磁盘
-5. 显示索引统计信息（总数、成功数、失败数、EXIF覆盖率）
-
-**性能参考**：
-- 100张照片：约3-5分钟（取决于网络速度）
-- Vision LLM：~2-5秒/张
-- Embedding：~0.1-0.5秒/张（云端），~0.05秒/张（本地）
-
-### 查询示例
-
-| 查询类型 | 示例查询 |
-|----------|---------|
-| 场景查询 | "山上的照片"、"城市夜景"、"海边" |
-| 人物查询 | "有人物的照片"、"集体合影"、"朋友" |
-| 活动查询 | "聚餐"、"运动"、"旅行" |
-| 时间查询 | "去年的照片"、"冬天的照片"、"去年夏天" |
-| 情感查询 | "欢乐的场景"、"温馨的时刻" |
-| 复合查询 | "去年夏天在海边的照片"、"冬天和朋友聚会的照片" |
-
-### 搜索结果
-
-每个搜索结果显示：
-- 照片缩略图
-- AI生成的自然语言描述
-- 相似度分数（0-100%）
-- 排名位置
-
-**评分说明**：
-- 系统使用余弦相似度（Cosine Similarity）计算匹配度
-- 自动应用动态阈值过滤低质量结果
-- 混合检索模式下，综合向量分数和关键字分数
-- 分数>80%：高度相关
-- 分数60-80%：相关
-- 分数<60%：弱相关（通常被过滤）
-
-## 🎯 技术亮点
-
-### 1. 智能搜索文本构建
-
-系统不是简单地使用Vision LLM的描述，而是构建了**增强型搜索文本**：
-
-```
-结构：核心描述 | 文件名tokens | 年月 | 季节 | 时段
-示例：一群人在阳光明媚的海滩上玩耍 | 文件名: vacation beach | 2023年7月 | 季节: 夏天 | 时段: 白天
-```
-
-**优势**：
-- 融合多维度信息（视觉+元数据+文件名）
-- 移除低价值信息（相机型号、星期）
-- 简化时段分类（3段而非6段）
-- 显著提升检索准确率
-
-### 2. 自适应检索策略
-
-系统根据数据规模和查询特征动态调整：
-
-- **候选集扩展**：有时间过滤时自动扩大候选集（10倍）
-- **数据规模适配**：
-  - 微型数据集（<50）：检索全部
-  - 小数据集（<500）：5-10倍候选
-  - 中型数据集（<5000）：3-5倍候选，最小100
-  - 大型数据集（>5000）：对数缩放，上限500
-
-### 3. 动态阈值算法
-
-不使用固定阈值，而是基于分数分布计算：
-
-```python
-# 分数集中 → 严格阈值
-# 分数分散 → 宽松阈值
-# 使用变异系数（CV）判断分布特征
-```
-
-**效果**：
-- 自动适应不同查询场景
-- 高质量查询返回更多结果
-- 低质量查询自动过滤噪声
-
-### 4. 时间解析优化
-
-两级时间处理策略：
-
-1. **快速预检测**：使用正则表达式过滤无时间词的查询，避免LLM调用
-2. **LLM语义理解**：仅对包含时间词的查询调用GPT-3.5
-
-**成本节省**：约70%的查询无需调用时间解析API
-
-### 5. 图片成本优化
-
-多重优化策略降低Vision LLM Token消耗：
-
-- **智能缩放**：最大边长1024px（不放大小图）
-- **格式转换**：WEBP格式（比JPEG小20-30%）
-- **质量压缩**：85%质量（视觉无损）
-- **Base64编码**：避免localhost访问限制
-
-**效果**：单张图片Token消耗降低60-70%
-
-### 6. Vision LLM 二次精排 (Rerank)
-
-系统引入了基于 Vision LLM 的 Rerank 环节，对向量检索返回的 Top 候选集进行二次精排：
-
-- **多图对比**：将多张候选图片（Base64）与用户查询同时发送给 Vision LLM。
-- **语义重排序**：利用模型强大的跨模态理解能力，按相关性重新排序。
-- **自适应触发**：仅对高质量查询或特定场景触发，平衡效果与成本。
-
-**优势**：显著提升 Top-1 准确率，纠正向量检索可能存在的语义偏差。
-
-### 7. 纯过滤查询三层防护
-
-针对 "夏天的照片"、"2023年的照片" 等纯过滤查询，系统采用**三层防护**策略：
-
-1.  **Prompt 优化**：QueryFormatter 明确区分视觉描述与过滤条件，对纯过滤查询返回空搜索文本。
-2.  **空值防护逻辑**：自动识别并清除 LLM 返回的通用词汇（如 "照片"、"摄影作品"）。
-3.  **Searcher 兜底**：在检索引擎层进行最终判定，若为纯过滤查询则直接调用 Elasticsearch 过滤，跳过向量化步骤。
-
-**效果**：零 Embedding 成本，毫秒级响应，100% 准确匹配。
-
-## 🔌 API接口说明
-
-### GET /
-渲染前端页面
-
-### POST /init_index
-触发索引构建
-
-**请求体**：无
-
-**响应**：
-```json
-{
-  "status": "success | processing | failed",
-  "message": "索引构建成功/进行中/失败",
-  "total_count": 105,
-  "indexed_count": 100,
-  "failed_count": 5,
-  "fallback_ratio": 0.05,
-  "elapsed_time": 45.2
-}
-```
-
-### POST /search_photos
-执行照片搜索
-
-**请求体**：
-```json
-{
-  "query": "去年夏天在海边的照片",
-  "top_k": 10
-}
-```
-
-**响应**：
-```json
-{
-  "status": "success",
-  "results": [
-    {
-      "photo_path": "/photos/vacation_beach_001.jpg",
-      "photo_url": "/photo?path=/photos/vacation_beach_001.jpg",
-      "description": "一群人在阳光明媚的海滩上玩耍",
-      "score": 0.95,
-      "rank": 1,
-      "original_rank": 3,
-      "reranked": true
-    }
-  ],
-  "total_results": 10,
-  "elapsed_time": 0.15
-}
-```
-
-### GET /index_status
-获取索引构建和加载状态
-
-**响应**：
-```json
-{
-  "status": "idle | processing | ready | failed",
-  "message": "索引已就绪",
-  "total_count": 100,
-  "indexed_count": 100,
-  "failed_count": 0,
-  "elapsed_time": 45.2
-}
-```
-
-### GET /photo
-返回图片文件（供前端和Vision LLM使用）
-
-**参数**：
-- `path`: 图片绝对路径
-
-## 📁 项目结构
-
-```
-Photo_Search_Engine/
-├── api/                    # API接口层
-│   ├── __init__.py
-│   └── routes.py          # HTTP路由定义
-├── core/                   # 核心业务模块
-│   ├── __init__.py
-│   ├── indexer.py          # 索引构建器
-│   └── searcher.py         # 检索引擎
-├── templates/              # 前端模板
-│   └── index.html          # 用户界面
-├── tests/                  # 测试代码
-│   ├── __init__.py
-│   ├── test_indexer.py          # 索引构建测试
-│   ├── test_searcher.py         # 检索功能测试
-│   ├── test_embedding_service.py # Embedding服务测试
-│   ├── test_vision_llm_service.py # Vision LLM测试
-│   ├── test_vector_store.py     # 向量存储测试
-│   ├── test_keyword_store.py    # 关键字存储测试
-│   ├── test_query_formatter.py  # 查询格式化测试
-│   ├── test_time_parser.py      # 时间解析测试
-│   ├── test_image_parser.py     # 图片解析测试
-│   ├── test_routes.py           # API路由测试
-│   └── test_main.py             # 主程序测试
-├── utils/                  # 工具模块
-│   ├── __init__.py
-│   ├── embedding_service.py    # 文本嵌入服务（阿里百炼/火山/本地）
-│   ├── vision_llm_service.py    # Vision LLM服务
-│   ├── vector_store.py          # 向量存储（FAISS）
-│   ├── keyword_store.py         # 关键字存储（Elasticsearch）
-│   ├── query_formatter.py       # 查询格式化服务
-│   ├── time_parser.py           # 时间解析
-│   └── image_parser.py          # 图片解析与优化
-├── config.py              # 配置管理
-├── main.py                # 应用入口
-├── requirements.txt       # 依赖清单
-├── demo_development_doc.md  # 开发文档
-└── .env                   # 环境变量（需创建）
-```
-
-## ⚙️ 配置说明
-
-## 📋 环境变量速查表
-
-### 必需配置（Minimum Required）
-
-| 变量名 | 说明 | 示例值 |
-|-------|------|--------|
-| `OPENROUTER_API_KEY` | OpenRouter API密钥 | `sk-or-v1-xxx` |
-| `PHOTO_DIR` | 照片目录（绝对路径） | `C:/Users/YourName/Photos` |
-| `EMBEDDING_API_KEY` 或 本地模型 | Embedding服务密钥 | `sk-xxx` 或留空使用本地 |
-
-### 可选配置（Optional）
-
-| 变量名 | 默认值 | 说明 |
-|-------|--------|------|
-| `DATA_DIR` | `./data` | 数据存储目录 |
-| `SERVER_HOST` | `localhost` | 服务器地址 |
-| `SERVER_PORT` | `5000` | 服务器端口 |
-| `VISION_MODEL_NAME` | `openai/gpt-4o` | Vision LLM模型 |
-| `EMBEDDING_MODEL` | `text-embedding-v4` | Embedding模型 |
-| `TIME_PARSE_MODEL_NAME` | `openai/gpt-3.5-turbo` | 时间解析模型 |
-| `USE_BASE64` | `true` | 使用Base64编码 |
-| `IMAGE_MAX_SIZE` | `1024` | 图片最大边长（像素） |
-| `IMAGE_QUALITY` | `85` | 图片压缩质量（1-100） |
-| `IMAGE_FORMAT` | `WEBP` | 图片输出格式 |
-| `TIMEOUT` | `30` | API超时时间（秒） |
-| `MAX_RETRIES` | `3` | 最大重试次数 |
-| `TOP_K` | `10` | 默认返回结果数 |
-| `VECTOR_METRIC` | `cosine` | 向量度量（cosine/l2） |
-
-### 高级功能（Advanced Features）
-
-| 功能 | 相关变量 | 说明 |
-|------|---------|------|
-| 混合检索 | `ELASTICSEARCH_HOST`<br>`ELASTICSEARCH_PORT`<br>`VECTOR_WEIGHT`<br>`KEYWORD_WEIGHT` | 需要Elasticsearch服务 |
-| 二次精排 (Rerank) | `RERANK_ENABLED`<br>`RERANK_MODEL_NAME`<br>`RERANK_MAX_IMAGES` | 使用 Vision LLM 优化排序 |
-| 查询优化 | `QUERY_FORMAT_API_KEY`<br>`QUERY_FORMAT_MODEL` | 使用LLM优化查询 |
-| 火山引擎 | `VOLCANO_API_KEY`<br>`VOLCANO_EMBEDDING_MODEL` | 使用火山Embedding |
-
-### Vision LLM配置
-
-**默认模型**: `openai/gpt-4o`
-
-**可用模型**：
-- `openai/gpt-4o` - GPT-4 Omni（⭐推荐）
-- `openai/gpt-4-turbo` - 速度更快
-- `openai/gpt-4o-mini` - 成本更低
-- `anthropic/claude-3-sonnet` - 多模态能力
-- `google/gemini-pro-vision` - Google视觉模型
-
-**环境变量**：
-```bash
-VISION_MODEL_NAME=openai/gpt-4o
-```
-
-### Embedding配置
-
-系统支持三种Embedding服务：
-
-**Embedding服务对比**：
-
-| 方案 | 维度 | 成本 | 速度 | 质量 | 适用场景 |
-|------|------|------|------|------|---------|
-| 阿里百炼 | 1024 | ¥0.0007/千tokens | 快 | 高 | 推荐生产环境 |
-| 火山引擎 | 4096 | ¥0.001/千tokens | 快 | 极高 | 大规模照片库 |
-| 本地BGE-small | 512 | 免费 | 极快 | 中 | 个人使用 |
-| 本地BGE-base | 768 | 免费 | 快 | 高 | 平衡方案 |
-| 本地BGE-large | 1024 | 免费 | 中 | 极高 | 追求效果 |
-
-#### 方案1：阿里百炼 Dashscope（⭐推荐）
-
-**优势**：
-- 高质量中文语义理解
-- 1024维向量，平衡性能和效果
-- API调用稳定，延迟低
-- 成本适中
-
-**配置**：
-```bash
-EMBEDDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-EMBEDDING_MODEL=text-embedding-v4
-```
-
-#### 方案2：火山引擎 Doubao
-
-**优势**：
-- 4096维超高维度向量
-- 适合大规模照片库（>10000张）
-- 区分度极高
-
-**配置**：
-```bash
-VOLCANO_API_KEY=your-volcano-api-key
-VOLCANO_EMBEDDING_MODEL=doubao-embedding-large-text-240915
-```
-
-#### 方案3：本地模型（隐私优先）
-
-**优势**：
-- 完全本地运行，零API成本
-- 数据隐私保护
-- 无网络依赖（索引后）
-
-**配置**：
-```bash
-EMBEDDING_MODEL_NAME=BAAI/bge-small-zh-v1.5
-EMBEDDING_DIMENSION=512
-```
-
-**可用模型**：
-- `BAAI/bge-small-zh-v1.5` - 512维，速度快（⭐推荐）
-- `BAAI/bge-base-zh-v1.5` - 768维，平衡性能
-- `BAAI/bge-large-zh-v1.5` - 1024维，效果最佳
-- `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` - 384维，资源受限场景
-
-**注意**：
-- 首次使用会自动从HuggingFace下载模型（约100MB-2GB）
-- 如下载慢，可设置镜像：`HF_ENDPOINT=https://hf-mirror.com`
-- 建议使用GPU加速（自动检测CUDA）
-
-### 图片访问机制
-
-**重要说明**: OpenRouter是云端服务，无法访问本地 `localhost:5000`。因此本系统采用 **Base64编码方式**。
-
-**成本优化策略**：
-1. **自动缩放**：图片自动缩放至 `max_size`（默认1024像素）
-2. **格式压缩**：使用WEBP格式（默认），比JPEG更小
-3. **智能选择**：小于 `max_size` 的图片不放大
-
-## ✅ 验收标准
-
-为确保项目质量，以下验收指标必须达成：
-
-| 指标 | 要求 | 说明 |
-|------|------|------|
-| 索引数量 | ≥100张 | 成功索引的照片数量 |
-| 查询类型覆盖 | 全部 | 场景/人物/活动/时间/情感 |
-| 时间检索 | 正确 | 基于EXIF或文件时间，支持自然语言 |
-| 描述质量 | >90% | 降级描述占比<10% |
-| 检索准确率 | >80% | Top-10结果中相关照片占比 |
-| 响应时间 | <1秒 | 单次查询响应时间（不含索引构建） |
-| EXIF覆盖率 | 显示 | 系统自动统计并显示EXIF时间覆盖率 |
-
-### 额外功能指标
-
-| 功能 | 验收标准 |
-|------|---------|
-| 混合检索 | 当启用ES时，检索准确率提升5-10% |
-| 查询优化 | 自动识别并提取查询意图 |
-| 动态阈值 | 自动过滤低质量结果，无需手动设置 |
-| 多云支持 | 支持至少3种Embedding服务 |
-| 完整测试 | 测试覆盖率>80% |
-
-## 💰 成本预估
-
-### 基础配置（OpenRouter + 阿里百炼）
-
-| 服务 | 单价 | 100张照片成本 |
-|------|------|---------------|
-| 图像描述（GPT-4o） | ~$0.003/张 | ~$0.30 |
-| 时间解析（GPT-3.5） | ~$0.0001/次 | ~$0.01 |
-| 文本嵌入（阿里百炼） | ¥0.0007/千tokens | ~¥0.14 |
-| **总计** | | **~$0.31 + ¥0.14（约2.3元）** |
-
-### 成本优化方案
-
-**方案1：本地Embedding**（推荐个人使用）
-- Vision LLM：$0.30
-- 时间解析：$0.01
-- Embedding：免费（本地）
-- **总计**：~$0.31（约2.2元）
-
-**方案2：火山引擎**（推荐大规模使用）
-- Vision LLM：$0.30
-- 时间解析：$0.01
-- Embedding（火山）：¥0.001/千tokens
-- **总计**：~$0.31 + ¥0.20（约2.5元）
-
-**可选功能成本**：
-- 查询格式化（Moonshot Kimi）：~$0.001/次查询
-- Elasticsearch：免费（自建）或云服务费用
-
-## 🔍 图片优化说明
-
-为降低Token消耗并提高传输效率，系统对图片进行以下优化：
-
-1. **EXIF方向校正**：自动修正图片旋转
-2. **智能缩放**：等比缩放至最大边长
-3. **格式转换**：支持JPEG/WebP/PNG输出
-4. **质量压缩**：可调节压缩质量（1-100）
-
-**示例**：
-```python
-# 优化并编码图片
-image_bytes = resize_and_optimize_image(
-    photo_path,
-    max_size=1024,      # 最大边长
-    quality=85,          # 压缩质量
-    format="WEBP"        # 输出格式
-)
-```
-
-## 🐛 常见问题
-
-### 快速故障排除索引
-
-| 问题 | 可能原因 | 快速解决 |
-|------|---------|---------|
-| 索引构建失败 | API密钥错误 | 检查`.env`文件中的`OPENROUTER_API_KEY` |
-| 搜索无结果 | 索引未构建 | 先点击"初始化索引"按钮 |
-| API超时 | 网络不稳定 | 增加`TIMEOUT=60` |
-| 模型下载慢 | HF访问慢 | 设置`HF_ENDPOINT=https://hf-mirror.com` |
-| ES连接失败 | ES未启动 | 不配置ES环境变量（降级为纯向量检索） |
-| 图片无法显示 | 路径错误 | 使用绝对路径设置`PHOTO_DIR` |
-| Embedding失败 | API配置错误 | 检查API密钥和模型名称 |
-
-### 1. 索引构建失败
-
-**可能原因**：
-- `PHOTO_DIR` 未设置或路径错误
-- `OPENROUTER_API_KEY` 未设置或无效
-- 照片目录中没有支持的图片格式
-- API调用超时
-
-**解决方法**：
-- 检查 `.env` 文件配置
-- 确认照片目录存在且包含图片
-- 检查网络连接和API密钥有效性
-
-### 2. 搜索无结果
-
-**可能原因**：
-- 索引未成功构建
-- 查询内容与图片描述不匹配
-- 时间约束过滤掉了所有结果
-
-**解决方法**：
-- 检查索引状态（访问 /index_status）
-- 尝试更通用的查询词
-- 移除时间约束进行搜索
-
-### 3. API调用超时
-
-**可能原因**：
-- 网络连接不稳定
-- API服务繁忙
-- 图片过大
-
-**解决方法**：
-- 增加 `TIMEOUT` 环境变量值
-- 减小 `IMAGE_MAX_SIZE` 值
-- 增加 `MAX_RETRIES` 重试次数
-
-### 4. Elasticsearch连接失败
-
-**可能原因**：
-- Elasticsearch服务未启动
-- 未安装IK中文分词插件
-- 认证配置错误
-
-**解决方法**：
-- 确认ES服务运行：`curl http://localhost:9200`
-- 安装IK插件：`elasticsearch-plugin install analysis-ik`
-- 检查用户名密码配置
-- **可选**：如不需要混合检索，可不配置ES
-
-### 5. 本地模型下载慢
-
-**可能原因**：
-- HuggingFace镜像访问慢
-- 网络连接不稳定
-
-**解决方法**：
-- 使用镜像站：设置 `HF_ENDPOINT=https://hf-mirror.com`
-- 手动下载模型放到 `~/.cache/huggingface/hub/`
-- 或切换到云端Embedding服务（阿里百炼/火山引擎）
-
-## 🧪 测试
-
-项目包含完整的单元测试覆盖：
+如果 `10001` 端口被占用，可临时切换：
 
 ```bash
-# 运行所有测试
-pytest tests/
-
-# 运行特定测试
-pytest tests/test_indexer.py
-
-# 查看测试覆盖率
-pytest --cov=. --cov-report=html tests/
+SERVER_PORT=10002 ./.venv/bin/python main.py
 ```
 
-测试覆盖范围：
-- ✅ 索引构建流程
-- ✅ 向量检索功能
-- ✅ 混合检索功能
-- ✅ 时间解析与过滤
-- ✅ 查询格式化
-- ✅ Embedding服务（多云+本地）
-- ✅ Vision LLM服务
-- ✅ 图片解析与优化
-- ✅ API路由
+### Windows 本地启动
 
-## 🔧 高级功能
+如果你是在 Windows + WSL 环境下运行，推荐直接使用单一入口脚本。你只需要运行一次脚本，脚本会自动完成以下动作：
 
-### 混合检索（Vector + Keyword）
+- 自动选择前端端口，从 `10001` 开始向后寻找空闲端口，例如 `10001 -> 10002`
+- 以 `-Xms1g -Xmx1g` 启动 Elasticsearch，避免 Windows 上默认自动堆过大导致 JVM 启动失败
+- 启动 WSL 中的 Flask 前端
+- 输出最终可访问的前端地址和 Elasticsearch 地址
+- 把运行日志和状态文件写入 `artifacts/runtime/`
 
-启用Elasticsearch后，系统自动使用混合检索模式：
+运行方式：
 
-1. **向量检索**：基于语义相似度匹配
-2. **关键字检索**：基于BM25算法的文本匹配
-3. **混合评分**：`score = 0.8 * vector_score + 0.2 * keyword_score`
-
-**配置权重**：
-```bash
-VECTOR_WEIGHT=0.8   # 向量检索权重
-KEYWORD_WEIGHT=0.2  # 关键字检索权重
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\start_stack.ps1"
 ```
 
-### 查询优化
+脚本执行完成后，会在终端里打印类似下面的结果：
 
-启用查询格式化服务后，系统自动优化用户查询：
-
-**示例**：
-- 输入："请展示一张公园的照片"
-- 优化后："公园 草地 树木 户外 休闲 | 时段: 白天"
-
-**配置**：
-```bash
-QUERY_FORMAT_API_KEY=your-moonshot-api-key
-QUERY_FORMAT_MODEL=moonshot-v1-8k
+```text
+[DONE] Elasticsearch: http://127.0.0.1:9200
+[DONE] Frontend: http://127.0.0.1:10001
 ```
 
-### 动态阈值过滤
+补充说明：
 
-系统自动根据分数分布计算最优阈值，过滤低质量结果：
-- 分数集中：使用严格阈值
-- 分数分散：使用宽松阈值
-- 自适应候选集大小：根据数据规模和时间过滤自动调整
+- 如果 `10001` 已经被占用，脚本不会报错退出，而是自动改用下一个空闲端口，例如 `10002`
+- 当前唯一主入口脚本是 `artifacts/start_stack.ps1`
+- 如果你想查看当前 `9200`、`10001`、`10002` 的监听和 HTTP 状态，可以额外执行：
 
-## 💡 最佳实践
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\check_services.ps1"
+```
 
-### 选择合适的Embedding服务
+### 4. 构建索引
 
-**场景1：个人使用，隐私优先**
-- 推荐：本地模型（BAAI/bge-small-zh-v1.5）
-- 优势：完全本地，零API成本
-- 劣势：首次需下载模型（~200MB）
+启动后访问：
 
-**场景2：追求效果，预算充足**
-- 推荐：阿里百炼（text-embedding-v4）
-- 优势：高质量中文语义，API稳定
-- 成本：¥0.14/100张照片
+- `http://127.0.0.1:10001/`
 
-**场景3：大规模照片库（>10000张）**
-- 推荐：火山引擎（4096维）
-- 优势：超高维度，区分度更好
-- 成本：¥0.20/100张照片
+前端按钮说明：
 
-### 优化索引质量
+- `增量索引`：日常新增图片后补齐当前索引
+- `全量重建`：模型、索引结构或 mapping 发生变化后重建全部索引
 
-1. **确保照片质量**：模糊、曝光异常的照片会影响Vision LLM描述质量
-2. **保留EXIF信息**：时间检索依赖EXIF，处理照片时避免删除元数据
-3. **合理命名文件**：有意义的文件名会被纳入搜索文本
-4. **批量索引**：一次性索引比多次增量索引更高效
+也可以直接调用接口。
 
-### 提升检索效果
-
-1. **使用自然语言**：系统支持自然表达，无需关键字堆砌
-   - ✅ "去年夏天在海边拍的照片"
-   - ❌ "海边 夏天 2023"
-
-2. **利用时间过滤**：有明确时间需求时，使用时间词汇
-   - "去年的照片"
-   - "冬天的雪景"
-   - "2023年春节"
-
-3. **混合检索模式**：启用Elasticsearch后，关键字匹配更精准
-   - 适合搜索特定物体、人名、地名
-
-4. **查询优化服务**：启用后自动提取检索意图，提升准确率
-
-### 生产环境部署建议
-
-1. **使用HTTPS**：保护API密钥和照片隐私
-2. **启用认证**：添加用户登录系统
-3. **配置反向代理**：使用Nginx提升性能
-4. **定期备份**：备份`data/`目录的索引和元数据
-5. **监控API用量**：避免超额费用
-6. **使用Docker**：简化部署和迁移
-
-## 🤝 贡献指南
-
-欢迎贡献代码和建议！
-
-### 开发环境设置
+增量索引：
 
 ```bash
-# 克隆仓库
-git clone https://github.com/yourusername/Photo_Search_Engine.git
-cd Photo_Search_Engine
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 安装开发依赖
-pip install pytest pytest-cov black flake8 mypy
-
-# 运行测试
-pytest tests/ -v
-
-# 代码格式化
-black .
-
-# 类型检查
-mypy .
+curl -X POST http://127.0.0.1:10001/init_index \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"incremental"}'
 ```
 
-### 提交规范
+全量重建：
 
-- 功能开发：`feat: 添加XXX功能`
-- Bug修复：`fix: 修复XXX问题`
-- 文档更新：`docs: 更新XXX文档`
-- 测试：`test: 添加XXX测试`
+```bash
+curl -X POST http://127.0.0.1:10001/init_index \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"full"}'
+```
 
-## 📝 开发文档
+注意：
 
-详细的开发文档请参考：
-- [demo_development_doc.md](demo_development_doc.md) - 详细设计文档
-- [develop.md](develop.md) - 实验目的与验收标准
-- [SEASON_SEARCH_FIX.md](SEASON_SEARCH_FIX.md) - 季节搜索功能修复与三层防护策略说明
-- [fix.md](fix.md) - 问题修复记录
+- 省略 `mode` 时默认按增量索引处理
+- 日常新增图片时，应优先使用 `增量索引`
+- 切换 embedding 模型后仍然必须执行 `全量重建`
 
-## 🚀 未来规划
+如果你刚更新到当前版本，必须立即重建索引，因为：
 
-### 近期计划（v2.0）
+- 向量输入已从 `description` 切换为 `retrieval_text`
+- 元数据新增了结构化分析字段
+- Elasticsearch mapping 新增了 `retrieval_text`、`media_types`、`identity_names` 等字段
+- 旧索引不会自动迁移
 
-- [ ] Web界面优化（响应式设计、暗黑模式）
-- [ ] 批量导出搜索结果
-- [ ] 照片分组和标签管理
-- [ ] 增量索引（仅处理新增照片）
-- [ ] 多用户支持
+## 主要接口
 
-### 长期规划（v3.0）
+- `POST /init_index`：建立或更新图片索引，支持 `{"mode":"incremental"}` 与 `{"mode":"full"}`
+- `GET /index_status`：查看索引状态
+- `POST /search_photos`：文本搜图
+- `POST /search_by_image`：以图搜图
+- `POST /search_by_uploaded_image`：上传图片搜图
+- `POST /open_photo_location`：定位本地文件
+- `GET /photo?path=...`：预览原图
 
-- [ ] 人脸识别和聚类
-- [ ] 地理位置地图展示
-- [ ] 视频搜索支持
-- [ ] 移动端App
-- [ ] 相似照片推荐
+搜索结果中的每条记录还会返回 `match_summary`，包含：
 
-## 🌟 项目特色
+- `media_types`
+- `top_tags`
+- `identities`
+- `identity_evidence`
+- `ocr_excerpt`
 
-本项目不是简单的"Demo"，而是一个**生产级**的照片搜索引擎：
+文本搜索、以图搜图和上传图片搜图的响应中还会包含 `search_debug`，用于展示检索规划和轮次信息。
 
-✅ **完整的功能实现**
-- 索引构建、向量检索、混合搜索、时间过滤、查询优化
+## 开发与测试
 
-✅ **企业级代码质量**
-- 类型注解、完整测试、错误处理、日志记录
+运行完整测试：
 
-✅ **灵活的架构设计**
-- 多云支持、服务解耦、可插拔组件
+```bash
+./.venv/bin/python -m pytest -q
+```
 
-✅ **优秀的性能优化**
-- 动态阈值、自适应检索、成本优化、响应<1秒
+运行单文件测试：
 
-✅ **详尽的文档**
-- README（1000+行）、开发文档（2000+行）、功能修复与优化记录
+```bash
+./.venv/bin/python -m pytest tests/test_routes.py -q
+```
 
-## 📚 相关资源
+## 项目结构
 
-### 推荐阅读
+```text
+api/                 HTTP 路由
+core/                索引与检索核心逻辑
+templates/           单页前端
+tests/               单元测试与集成边界测试
+utils/               模型服务、向量存储、路径处理等
+config.py            环境变量配置加载
+main.py              应用入口
+```
 
-- [FAISS官方文档](https://github.com/facebookresearch/faiss)
-- [Sentence Transformers文档](https://www.sbert.net/)
-- [OpenRouter API文档](https://openrouter.ai/docs)
-- [阿里百炼文档](https://help.aliyun.com/zh/dashscope/)
+## 说明
 
-### 相关项目
-
-- [Clip Retrieval](https://github.com/rom1504/clip-retrieval) - 基于CLIP的图片检索
-- [LangChain](https://github.com/langchain-ai/langchain) - LLM应用框架
-- [Milvus](https://github.com/milvus-io/milvus) - 向量数据库
-
-## 📄 许可证
-
-MIT License
-
-Copyright (c) 2024 Photo Search Engine
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-## 🙏 致谢
-
-感谢以下开源项目和服务：
-
-- **OpenAI & Anthropic** - Vision LLM技术
-- **Meta AI** - FAISS向量检索引擎
-- **HuggingFace** - Transformers和模型托管
-- **阿里云** - 百炼Embedding服务
-- **火山引擎** - Doubao Embedding服务
-- **Moonshot AI** - Kimi查询优化
-- **Flask** - Web框架
-- **Pillow** - 图像处理库
-
-## 📧 联系方式
-
-- 提交Issue：[GitHub Issues](https://github.com/yourusername/Photo_Search_Engine/issues)
-- 功能建议：[GitHub Discussions](https://github.com/yourusername/Photo_Search_Engine/discussions)
-
----
-
-**享受智能照片搜索体验！** 📷✨
-
-**如果这个项目对你有帮助，请给一个⭐️Star支持！**
+- QueryFormatter 保留启用，但默认与 SU8 复用同一套中转配置
+- Elasticsearch 是可选项；未启动时系统仍可运行
+- 没有 EXIF 时间的图片不会生成时间标签，但不会影响普通文本检索、以图搜图和 rerank
+- 前端索引入口已经拆分为“增量索引”和“全量重建”两个按钮，默认日常使用增量索引
+- Figma MCP 已尝试接入，但当前提供的设计文件对当前登录账号不可访问，因此前端优化基于现有实现继续演进，而不是直接抽取设计 token

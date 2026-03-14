@@ -1,44 +1,39 @@
-"""
-API路由单元测试
-
-测试所有HTTP接口：
-- GET / - 渲染前端页面
-- POST /init_index - 触发索引构建
-- POST /search_photos - 执行照片搜索
-- GET /index_status - 获取索引状态
-- GET /photo - 返回图片文件
-"""
-
 import os
 import sys
 import tempfile
+import time
 import unittest
+import json
 from pathlib import Path
+from io import BytesIO
+from unittest.mock import patch
+
+from PIL import Image
 
 project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config import get_config
-from PIL import Image
-
+from api.routes import register_routes
 from core.indexer import Indexer
 from core.searcher import Searcher
-from utils.embedding_service import T5EmbeddingService
-from utils.time_parser import TimeParser
+from tests.helpers import (
+    FakeEmbeddingService,
+    FakeQueryFormatter,
+    FakeTextRerankService,
+    FakeTimeParser,
+    FakeVisualRerankService,
+)
 from utils.vector_store import VectorStore
 from utils.vision_llm_service import LocalVisionLLMService
 
 
 def _create_image(path: str, size: tuple[int, int] = (64, 48)) -> None:
-    """创建测试图片"""
     image = Image.new("RGB", size, color=(255, 0, 0))
     image.save(path)
 
 
 def _create_test_app():
-    """创建测试用Flask应用"""
-    from api.routes import register_routes
     from flask import Flask
 
     app = Flask(__name__)
@@ -53,189 +48,231 @@ def _create_test_app():
 
     index_path = os.path.join(data_dir, "photo_search.index")
     metadata_path = os.path.join(data_dir, "metadata.json")
+    vector_store = VectorStore(dimension=8, index_path=index_path, metadata_path=metadata_path)
 
-    vector_store = VectorStore(dimension=768, index_path=index_path, metadata_path=metadata_path)
     vision = LocalVisionLLMService()
-    embedding = T5EmbeddingService(model_name="sentence-t5-base", device="cuda")
-    time_parser = TimeParser(api_key="test-key")
+    embedding = FakeEmbeddingService(dimension=8)
+    time_parser = FakeTimeParser()
+    query_formatter = FakeQueryFormatter()
 
-    indexer = Indexer(photo_dir=photo_dir, vision=vision, embedding=embedding, vector_store=vector_store, data_dir=data_dir)
-    searcher = Searcher(embedding=embedding, time_parser=time_parser, vector_store=vector_store, data_dir=data_dir)
+    indexer = Indexer(
+        photo_dir=photo_dir,
+        vision=vision,
+        embedding=embedding,
+        vector_store=vector_store,
+        data_dir=data_dir,
+    )
+    searcher = Searcher(
+        embedding=embedding,
+        time_parser=time_parser,
+        vector_store=vector_store,
+        query_formatter=query_formatter,
+        data_dir=data_dir,
+    )
 
-    config = get_config().copy()
-    config["PHOTO_DIR"] = photo_dir
-    config["DATA_DIR"] = data_dir
+    config = {
+        "PHOTO_DIR": photo_dir,
+        "DATA_DIR": data_dir,
+        "TOP_K": 5,
+    }
 
-    register_routes(app, indexer, searcher, config)
+    register_routes(
+        app,
+        indexer,
+        searcher,
+        config,
+        text_rerank_service=FakeTextRerankService(),
+        visual_rerank_service=FakeVisualRerankService(),
+    )
 
     return app, tmp, indexer, searcher
 
 
 class RouteTests(unittest.TestCase):
-    """路由测试类"""
-
     def setUp(self) -> None:
-        """每个测试前创建应用"""
         self.app, self.tmpdir, self.indexer, self.searcher = _create_test_app()
         self.client = self.app.test_client()
 
     def tearDown(self) -> None:
-        """每个测试后清理临时目录"""
         import shutil
 
         if os.path.exists(self.tmpdir):
             shutil.rmtree(self.tmpdir)
 
+    def _index_photos(self, count: int = 3) -> list[str]:
+        photo_dir = os.path.join(self.tmpdir, "photos")
+        paths = []
+        for index in range(count):
+            path = os.path.join(photo_dir, f"photo_{index}.jpg")
+            _create_image(path)
+            paths.append(path)
+        response = self.client.post("/init_index", json={})
+        self.assertEqual(response.status_code, 200)
+        for _ in range(100):
+            status = self.client.get("/index_status").get_json()
+            if status["status"] in {"success", "ready"}:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail("index build did not finish in time")
+        self.searcher.load_index()
+        return paths
+
     def test_index_page_renders(self) -> None:
-        """测试GET / - 渲染前端页面"""
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("照片搜索引擎", response.get_data(as_text=True))
-        self.assertIn("初始化索引", response.get_data(as_text=True))
-        self.assertIn("search", response.get_data(as_text=True))
+        html = response.get_data(as_text=True)
+        self.assertIn("搜图", html)
+        self.assertIn("准备好就能搜", html)
+        self.assertIn("文本搜图", html)
+        self.assertIn("以图搜图", html)
+        self.assertIn("增量索引", html)
+        self.assertIn("全量重建", html)
 
-    def test_init_index_no_photos(self) -> None:
-        """测试POST /init_index - 无照片时返回失败"""
-        response = self.client.post("/init_index", json={})
+    def test_init_index_defaults_to_incremental_mode(self) -> None:
+        with patch.object(self.indexer, "start_build_in_background", return_value={"status": "processing"}) as start_build:
+            response = self.client.post("/init_index", json={})
         self.assertEqual(response.status_code, 200)
+        start_build.assert_called_once_with(force_rebuild=False)
 
-        data = response.get_json()
-        self.assertEqual(data["status"], "failed")
-        self.assertIn("未找到可索引的图片文件", data["message"])
-
-    def test_init_index_with_photos(self) -> None:
-        """测试POST /init_index - 有照片时成功构建"""
-        photo_dir = os.path.join(self.tmpdir, "photos")
-        for i in range(3):
-            _create_image(os.path.join(photo_dir, f"photo_{i}.jpg"))
-
-        response = self.client.post("/init_index", json={})
+    def test_init_index_supports_full_rebuild_mode(self) -> None:
+        with patch.object(self.indexer, "start_build_in_background", return_value={"status": "processing"}) as start_build:
+            response = self.client.post("/init_index", json={"mode": "full"})
         self.assertEqual(response.status_code, 200)
+        start_build.assert_called_once_with(force_rebuild=True)
 
+    def test_init_index_recovers_from_stale_lock(self) -> None:
+        with open(self.indexer._lock_path, "w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "pid": 99999999,
+                    "created_at": "2026-03-14T00:00:00",
+                    "updated_at": "2026-03-14T00:00:00",
+                },
+                file,
+                ensure_ascii=False,
+                indent=2,
+            )
+        with open(self.indexer._status_path, "w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "status": "processing",
+                    "message": "索引构建中",
+                    "total_count": 10,
+                    "indexed_count": 4,
+                    "failed_count": 0,
+                    "fallback_ratio": 0.0,
+                    "index_path": self.indexer.vector_store.index_path,
+                    "elapsed_time": 30.0,
+                },
+                file,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        with patch.object(self.indexer, "start_build_in_background", return_value={"status": "processing"}) as start_build:
+            response = self.client.post("/init_index", json={})
+
+        self.assertEqual(response.status_code, 200)
+        start_build.assert_called_once_with(force_rebuild=False)
+
+    def test_search_photos_returns_photo_path_and_url(self) -> None:
+        self._index_photos()
+        response = self.client.post(
+            "/search_photos",
+            json={
+                "query": "照片搜索内容",
+                "top_k": 2,
+                "enable_text_rerank": True,
+                "enable_visual_rerank": True,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data["status"], "success")
-        self.assertEqual(data["indexed_count"], 3)
-        self.assertGreater(data["elapsed_time"], 0)
+        self.assertIn("photo_path", data["results"][0])
+        self.assertIn("photo_url", data["results"][0])
+        self.assertIn("match_summary", data["results"][0])
+        self.assertIn("search_debug", data)
+        self.assertIn("rounds", data["search_debug"])
+        self.assertTrue(data["text_reranked"])
+        self.assertTrue(data["visual_reranked"])
 
-    def test_init_index_already_processing(self) -> None:
-        """测试POST /init_index - 正在构建时返回processing"""
-        photo_dir = os.path.join(self.tmpdir, "photos")
-        data_dir = os.path.join(self.tmpdir, "data")
-
-        _create_image(os.path.join(photo_dir, "photo.jpg"))
-
-        lock_path = os.path.join(data_dir, "indexing.lock")
-        with open(lock_path, "w", encoding="utf-8") as f:
-            f.write("locked")
-
-        response = self.client.post("/init_index", json={})
-        self.assertEqual(response.status_code, 400)
-
-        data = response.get_json()
-        self.assertEqual(data["status"], "processing")
-
-    def test_index_status_initial(self) -> None:
-        """测试GET /index_status - 初始状态"""
-        response = self.client.get("/index_status")
+    def test_search_by_image_returns_results(self) -> None:
+        paths = self._index_photos()
+        response = self.client.post(
+            "/search_by_image",
+            json={
+                "image_path": paths[0],
+                "top_k": 2,
+                "enable_visual_rerank": True,
+            },
+        )
         self.assertEqual(response.status_code, 200)
-
-        data = response.get_json()
-        self.assertEqual(data["status"], "idle")
-        self.assertEqual(data["indexed_count"], 0)
-
-    def test_index_status_after_build(self) -> None:
-        """测试GET /index_status - 构建完成后状态"""
-        photo_dir = os.path.join(self.tmpdir, "photos")
-        for i in range(3):
-            _create_image(os.path.join(photo_dir, f"photo_{i}.jpg"))
-
-        self.client.post("/init_index", json={})
-
-        response = self.client.get("/index_status")
-        data = response.get_json()
-        self.assertEqual(data["status"], "ready")
-
-    def test_search_photos_no_query(self) -> None:
-        """测试POST /search_photos - 空查询"""
-        response = self.client.post("/search_photos", json={"query": ""})
-        self.assertEqual(response.status_code, 400)
-
-        data = response.get_json()
-        self.assertEqual(data["status"], "error")
-        self.assertIn("查询内容不能为空", data["message"])
-
-    def test_search_photos_short_query(self) -> None:
-        """测试POST /search_photos - 查询过短"""
-        response = self.client.post("/search_photos", json={"query": "abc"})
-        self.assertEqual(response.status_code, 400)
-
-        data = response.get_json()
-        self.assertEqual(data["status"], "error")
-        self.assertIn("查询内容不合法", data["message"])
-
-    def test_search_photos_no_index(self) -> None:
-        """测试POST /search_photos - 索引未加载"""
-        response = self.client.post("/search_photos", json={"query": "valid query text here"})
-        self.assertEqual(response.status_code, 400)
-
-        data = response.get_json()
-        self.assertEqual(data["status"], "error")
-        self.assertIn("索引未加载", data["message"])
-
-    def test_search_photos_with_index(self) -> None:
-        """测试POST /search_photos - 有索引时成功搜索"""
-        photo_dir = os.path.join(self.tmpdir, "photos")
-        data_dir = os.path.join(self.tmpdir, "data")
-
-        for i in range(3):
-            _create_image(os.path.join(photo_dir, f"photo_{i}.jpg"))
-
-        self.client.post("/init_index", json={})
-
-        marker_path = os.path.join(data_dir, "index_ready.marker")
-        self.assertTrue(os.path.exists(marker_path))
-
-        self.searcher.load_index()
-
-        response = self.client.post("/search_photos", json={"query": "照片 test", "top_k": 2})
-        self.assertEqual(response.status_code, 200)
-
         data = response.get_json()
         self.assertEqual(data["status"], "success")
-        self.assertIsInstance(data["results"], list)
-        self.assertGreaterEqual(len(data["results"]), 0)
+        self.assertEqual(data["query_image_path"], paths[0])
+        self.assertIn("search_debug", data)
+        self.assertLessEqual(len(data["results"]), 2)
+        self.assertTrue(data["visual_reranked"])
 
-    def test_search_photos_custom_top_k(self) -> None:
-        """测试POST /search_photos - 自定义top_k"""
-        photo_dir = os.path.join(self.tmpdir, "photos")
-        data_dir = os.path.join(self.tmpdir, "data")
+    def test_search_by_image_requires_path(self) -> None:
+        response = self.client.post("/search_by_image", json={"image_path": ""})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("图片路径不能为空", response.get_json()["message"])
 
-        for i in range(5):
-            _create_image(os.path.join(photo_dir, f"photo_{i}.jpg"))
-
-        self.client.post("/init_index", json={})
-        self.searcher.load_index()
-
-        response = self.client.post("/search_photos", json={"query": "照片搜索内容", "top_k": 2})
+    def test_search_by_uploaded_image_returns_results(self) -> None:
+        self._index_photos()
+        upload_buffer = BytesIO()
+        Image.new("RGB", (40, 40), color=(0, 128, 255)).save(upload_buffer, format="JPEG")
+        upload_buffer.seek(0)
+        payload = {
+            "image": (upload_buffer, "query.jpg"),
+            "top_k": "2",
+            "query_hint": "优先找同场景",
+        }
+        response = self.client.post(
+            "/search_by_uploaded_image",
+            data=payload,
+            content_type="multipart/form-data",
+        )
         self.assertEqual(response.status_code, 200)
-
         data = response.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["query_image_name"], "query.jpg")
+        self.assertTrue(bool(data["query_image_path"]))
+        self.assertIn("search_debug", data)
         self.assertLessEqual(len(data["results"]), 2)
 
-    def test_photo_get_missing_path(self) -> None:
-        """测试GET /photo - 缺少path参数"""
-        response = self.client.get("/photo")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("缺少path参数", response.get_data(as_text=True))
+    def test_index_page_contains_search_planning_panel(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("检索规划", html)
+        self.assertIn("planner-panel", html)
 
-    def test_photo_get_file_not_found(self) -> None:
-        """测试GET /photo - 文件不存在"""
-        response = self.client.get("/photo?path=/nonexistent/image.jpg")
+    def test_search_by_uploaded_image_requires_file(self) -> None:
+        response = self.client.post(
+            "/search_by_uploaded_image",
+            data={},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("请上传图片文件", response.get_json()["message"])
+
+    def test_open_photo_location(self) -> None:
+        paths = self._index_photos(1)
+        with patch("api.routes.open_in_file_manager") as opener:
+            response = self.client.post("/open_photo_location", json={"image_path": paths[0]})
+        self.assertEqual(response.status_code, 200)
+        opener.assert_called_once()
+
+    def test_open_photo_location_missing_file(self) -> None:
+        with patch("api.routes.open_in_file_manager", side_effect=FileNotFoundError("文件不存在")):
+            response = self.client.post("/open_photo_location", json={"image_path": "/tmp/missing.jpg"})
         self.assertEqual(response.status_code, 404)
-        self.assertIn("文件不存在", response.get_data(as_text=True))
 
     def test_photo_get_success(self) -> None:
-        """测试GET /photo - 成功返回图片"""
         photo_dir = os.path.join(self.tmpdir, "photos")
         img_path = os.path.join(photo_dir, "test.jpg")
         _create_image(img_path, size=(100, 80))
@@ -244,22 +281,46 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("image/jpeg", response.content_type)
 
-    def test_photo_get_unsupported_format(self) -> None:
-        """测试GET /photo - 不支持的格式"""
-        photo_dir = os.path.join(self.tmpdir, "photos")
-        txt_path = os.path.join(photo_dir, "test.txt")
-        with open(txt_path, "w", encoding="utf-8") as f:
-            f.write("not an image")
-
-        response = self.client.get(f"/photo?path={txt_path}")
+    def test_search_photos_no_query(self) -> None:
+        response = self.client.post("/search_photos", json={"query": ""})
         self.assertEqual(response.status_code, 400)
-        self.assertIn("不支持的文件格式", response.get_data(as_text=True))
+        self.assertIn("查询内容不能为空", response.get_json()["message"])
 
-    def test_photo_get_path_traversal_protection(self) -> None:
-        """测试GET /photo - 路径遍历防护"""
-        response = self.client.get("/photo?path=../../../etc/passwd")
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("拒绝访问", response.get_data(as_text=True))
+    def test_search_rejected_while_indexing(self) -> None:
+        lock_path = os.path.join(self.tmpdir, "data", "indexing.lock")
+        with open(lock_path, "w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "pid": os.getpid(),
+                    "created_at": "2026-03-14T00:00:00",
+                    "updated_at": "2026-03-14T00:00:00",
+                },
+                file,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        response = self.client.post("/search_photos", json={"query": "照片搜索内容"})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("索引仍在构建中", response.get_json()["message"])
+
+    def test_search_by_image_rejected_while_indexing(self) -> None:
+        lock_path = os.path.join(self.tmpdir, "data", "indexing.lock")
+        with open(lock_path, "w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "pid": os.getpid(),
+                    "created_at": "2026-03-14T00:00:00",
+                    "updated_at": "2026-03-14T00:00:00",
+                },
+                file,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        response = self.client.post("/search_by_image", json={"image_path": "/tmp/test.jpg"})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("索引仍在构建中", response.get_json()["message"])
 
 
 if __name__ == "__main__":

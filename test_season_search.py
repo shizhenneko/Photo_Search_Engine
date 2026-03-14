@@ -28,7 +28,7 @@ def test_pure_filter_queries():
     config = get_config()
     
     print("[2/4] 初始化服务...")
-    indexer, searcher, rerank_service = initialize_services(config)
+    indexer, searcher, text_rerank_service, visual_rerank_service = initialize_services(config)
     
     print("[3/4] 加载索引...")
     if not searcher.load_index():

@@ -9,10 +9,13 @@ class TestKeywordStore(unittest.TestCase):
         """设置 Mock 客户端。"""
         self.mock_es = Mock()
         self.mock_es.indices.exists.return_value = True
+        self.mock_es.indices.analyze.side_effect = Exception("ik unavailable")
+        self.mock_es.indices.get_mapping.return_value = {}
         self.store = KeywordStore(
             index_name="test_index",
             client=self.mock_es,
         )
+        self.mock_es.reset_mock()
     
     def test_add_document_requires_fields(self) -> None:
         """测试添加文档必须包含必填字段。"""
@@ -97,6 +100,52 @@ class TestKeywordStore(unittest.TestCase):
         
         self.mock_es.indices.delete.assert_called_once_with(index="test_index")
 
+    def test_existing_index_applies_single_node_runtime_settings(self) -> None:
+        """测试已存在索引时会修正副本数。"""
+        self.mock_es.indices.exists.return_value = True
+
+        KeywordStore(index_name="test_index", client=self.mock_es)
+
+        self.mock_es.indices.put_settings.assert_called_with(
+            index="test_index",
+            body={"index": {"number_of_replicas": 0}},
+        )
+
+    def test_existing_fallback_index_is_recreated_when_ik_available(self) -> None:
+        """测试 IK 可用时，旧 fallback 索引会被删除并按 IK 重建。"""
+        self.mock_es.indices.exists.side_effect = [True, False]
+        self.mock_es.indices.analyze.side_effect = None
+        self.mock_es.indices.analyze.return_value = {
+            "tokens": [{"token": "照片"}],
+        }
+        self.mock_es.indices.get_mapping.return_value = {
+            "test_index": {
+                "mappings": {
+                    "properties": {
+                        "description": {
+                            "type": "text",
+                        }
+                    }
+                }
+            }
+        }
+
+        KeywordStore(index_name="test_index", client=self.mock_es)
+
+        self.mock_es.indices.delete.assert_called_once_with(index="test_index")
+        self.mock_es.indices.create.assert_called_once()
+        create_body = self.mock_es.indices.create.call_args.kwargs["body"]
+        self.assertEqual(
+            create_body["mappings"]["properties"]["description"]["analyzer"],
+            "ik_max_word",
+        )
+        self.assertEqual(
+            create_body["mappings"]["properties"]["description"]["search_analyzer"],
+            "ik_smart",
+        )
+        self.assertIn("retrieval_text", create_body["mappings"]["properties"])
+        self.assertIn("media_types", create_body["mappings"]["properties"])
+
 
 class TestKeywordStoreSearchWithFilters(unittest.TestCase):
     """测试带 EXIF 过滤的搜索功能。"""
@@ -105,10 +154,13 @@ class TestKeywordStoreSearchWithFilters(unittest.TestCase):
         """设置 Mock 客户端。"""
         self.mock_es = Mock()
         self.mock_es.indices.exists.return_value = True
+        self.mock_es.indices.analyze.side_effect = Exception("ik unavailable")
+        self.mock_es.indices.get_mapping.return_value = {}
         self.store = KeywordStore(
             index_name="test_index",
             client=self.mock_es,
         )
+        self.mock_es.reset_mock()
 
     def test_search_with_season_filter(self) -> None:
         """测试按季节过滤搜索。"""
@@ -133,6 +185,8 @@ class TestKeywordStoreSearchWithFilters(unittest.TestCase):
         call_args = self.mock_es.search.call_args
         body = call_args.kwargs.get("body") or call_args[1].get("body")
         self.assertIn("bool", body["query"])
+        fields = body["query"]["bool"]["must"][0]["bool"]["should"][0]["multi_match"]["fields"]
+        self.assertIn("retrieval_text^3.0", fields)
 
     def test_search_with_time_period_filter(self) -> None:
         """测试按时段过滤搜索。"""

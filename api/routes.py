@@ -1,28 +1,79 @@
-"""
-API路由模块，提供HTTP接口连接前端和核心业务逻辑。
-
-路由清单：
-- GET / - 渲染前端页面
-- POST /init_index - 触发索引构建
-- POST /search_photos - 执行照片搜索
-- GET /index_status - 获取索引状态
-- GET /photo - 返回图片文件（供前端和Vision LLM使用）
-"""
-
 from __future__ import annotations
 
 import os
+import tempfile
+import time
 from io import BytesIO
 from typing import Any, Dict, TYPE_CHECKING
 from urllib.parse import quote, unquote
 
-from flask import Flask, jsonify, request, send_file, render_template
+from flask import Flask, jsonify, render_template, request, send_file
 from jinja2 import FileSystemLoader
+
+from utils.path_utils import ensure_display_path, normalize_local_path, open_in_file_manager
+from utils.image_parser import is_valid_image
 
 if TYPE_CHECKING:
     from core.indexer import Indexer
     from core.searcher import Searcher
-    from utils.rerank_service import RerankService
+    from utils.embedding_service import TextRerankService
+    from utils.rerank_service import VisualRerankService
+
+
+def _enrich_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched = []
+    for item in results:
+        result = dict(item)
+        photo_path = result.get("photo_path", "")
+        normalized_path = normalize_local_path(photo_path)
+        result["photo_path"] = ensure_display_path(photo_path)
+        result["photo_url"] = f"/photo?path={quote(normalized_path)}" if normalized_path else ""
+        result["file_name"] = os.path.basename(normalized_path) if normalized_path else ""
+        result["match_summary"] = dict(result.get("match_summary") or {})
+        enriched.append(result)
+    return enriched
+
+
+def _apply_rerank_pipeline(
+    *,
+    results: list[dict[str, Any]],
+    rerank_top_k: int,
+    enable_text_rerank: bool,
+    enable_visual_rerank: bool,
+    text_query: str | None,
+    reference_image_path: str | None,
+    text_rerank_service: "TextRerankService | None",
+    visual_rerank_service: "VisualRerankService | None",
+) -> tuple[list[dict[str, Any]], dict[str, bool]]:
+    rerank_state = {
+        "text_reranked": False,
+        "visual_reranked": False,
+    }
+    reranked_results = results
+
+    if enable_text_rerank and text_query and text_rerank_service and text_rerank_service.is_enabled():
+        reranked_results = text_rerank_service.rerank(text_query, reranked_results, rerank_top_k)
+        rerank_state["text_reranked"] = True
+
+    if enable_visual_rerank and visual_rerank_service and visual_rerank_service.is_enabled():
+        try:
+            if reference_image_path:
+                reranked_results = visual_rerank_service.rerank_by_reference_image(
+                    reference_image_path,
+                    reranked_results,
+                    rerank_top_k,
+                )
+            elif text_query:
+                reranked_results = visual_rerank_service.rerank(text_query, reranked_results, rerank_top_k)
+            rerank_state["visual_reranked"] = True
+        except Exception as exc:
+            # 视觉重排是可选增强能力，失败时不应让搜索整体失败。
+            print(f"Warning: visual rerank skipped: {exc}")
+
+    for rank, item in enumerate(reranked_results, start=1):
+        item["rank"] = rank
+
+    return reranked_results, rerank_state
 
 
 def register_routes(
@@ -30,22 +81,10 @@ def register_routes(
     indexer: "Indexer",
     searcher: "Searcher",
     config: Dict[str, Any],
-    rerank_service: "RerankService" = None,
+    text_rerank_service: "TextRerankService" = None,
+    visual_rerank_service: "VisualRerankService" = None,
 ) -> None:
-    """
-    注册所有API路由。
-
-    Args:
-        app: Flask应用实例
-        indexer: 索引构建器实例
-        searcher: 检索器实例
-        config: 配置字典
-        rerank_service: Rerank服务实例（可选）
-    """
-
-    templates_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "templates")
-    )
+    templates_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "templates"))
     if os.path.isdir(templates_dir):
         if isinstance(app.jinja_loader, FileSystemLoader):
             if templates_dir not in app.jinja_loader.searchpath:
@@ -55,272 +94,349 @@ def register_routes(
 
     @app.route("/")
     def index() -> Any:
-        """
-        渲染前端页面。
-
-        Returns:
-            HTML页面
-        """
         return render_template("index.html")
 
     @app.route("/init_index", methods=["POST"])
     def init_index() -> Any:
-        """
-        触发索引构建。
-
-        如果索引正在构建中，返回processing状态。
-        否则启动索引构建流程。
-
-        请求体：无
-
-        响应格式：
-        {
-            "status": "success" | "processing" | "failed",
-            "message": "索引构建成功/进行中/失败",
-            "total_count": int,  # 总图片数量
-            "indexed_count": int,  # 成功索引数量
-            "failed_count": int,  # 失败数量
-            "fallback_ratio": float,  # 降级描述占比
-            "elapsed_time": float  # 耗时（秒）
-        }
-        """
         try:
-            # 检查是否正在构建中
             status = indexer.get_status()
             if status.get("status") == "processing":
                 return jsonify(status), 400
-
-            # 启动索引构建
-            result = indexer.build_index()
-            return jsonify(result)
-        except Exception as e:
-            return (
-                jsonify(
-                    {
-                        "status": "failed",
-                        "message": f"索引构建异常: {e}",
-                        "total_count": 0,
-                        "indexed_count": 0,
-                        "failed_count": 0,
-                        "fallback_ratio": 0.0,
-                        "elapsed_time": 0.0,
-                    }
-                ),
-                500,
-            )
+            data = request.get_json(silent=True) or {}
+            mode = str(data.get("mode") or "incremental").strip().lower()
+            force_rebuild = mode == "full"
+            return jsonify(indexer.start_build_in_background(force_rebuild=force_rebuild))
+        except Exception as exc:
+            return jsonify(
+                {
+                    "status": "failed",
+                    "message": f"索引构建异常: {exc}",
+                    "total_count": 0,
+                    "indexed_count": 0,
+                    "failed_count": 0,
+                    "fallback_ratio": 0.0,
+                    "elapsed_time": 0.0,
+                }
+            ), 500
 
     @app.route("/search_photos", methods=["POST"])
     def search_photos() -> Any:
-        """
-        执行照片搜索（支持可选的Rerank精排）。
-
-        请求体：
-        {
-            "query": str,           # 查询文本
-            "top_k": int,           # 返回结果数量（可选，默认10，最大50）
-            "enable_rerank": bool,  # 是否启用Rerank精排（可选，默认false）
-            "rerank_top_k": int     # Rerank后保留数量（可选，默认5）
-        }
-
-        响应格式：
-        {
-            "status": "success" | "error",
-            "results": [...],
-            "total_results": int,
-            "elapsed_time": float,
-            "reranked": bool        # 是否经过Rerank
-        }
-        """
-        import time
-
         start_time = time.time()
-
         try:
-            # 解析请求参数
+            current_status = indexer.get_status()
+            if current_status.get("status") == "processing":
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": "索引仍在构建中，请稍后再搜索",
+                        "results": [],
+                        "total_results": 0,
+                        "elapsed_time": round(time.time() - start_time, 4),
+                        "text_reranked": False,
+                        "visual_reranked": False,
+                    }
+                ), 409
+
             data = request.get_json()
             if data is None:
-                return (
-                    jsonify({"status": "error", "message": "请求体必须为JSON格式"}),
-                    400,
-                )
+                return jsonify({"status": "error", "message": "请求体必须为JSON格式"}), 400
 
-            query = data.get("query", "").strip()
-            top_k = min(data.get("top_k", config.get("TOP_K", 10)), 50)
-            enable_rerank = data.get("enable_rerank", False)
-            rerank_top_k = data.get("rerank_top_k", 5)
-            # rerank_top_k 不能超过 top_k
-            rerank_top_k = min(max(1, rerank_top_k), top_k)
-
-            # 参数校验
+            query = (data.get("query") or "").strip()
             if not query:
-                return (
-                    jsonify({"status": "error", "message": "查询内容不能为空"}),
-                    400,
-                )
+                return jsonify({"status": "error", "message": "查询内容不能为空"}), 400
 
-            # 1. 获取格式化后的 search_text（用于 rerank）
-            search_text = query  # 默认使用原始 query
-            if enable_rerank and searcher.query_formatter and searcher.query_formatter.is_enabled():
-                try:
-                    formatted = searcher.query_formatter.format_query(query)
-                    search_text = formatted.get("search_text", query)
-                    print(f"[RERANK] Formatted search_text: {search_text}")
-                except Exception as e:
-                    print(f"[RERANK] QueryFormatter failed, using original query: {e}")
+            top_k = min(int(data.get("top_k", config.get("TOP_K", 12))), 50)
+            rerank_top_k = min(max(1, int(data.get("rerank_top_k", top_k))), top_k)
+            enable_text_rerank = bool(data.get("enable_text_rerank", False))
+            enable_visual_rerank = bool(data.get("enable_visual_rerank", False))
 
-            # 2. 执行搜索
             results = searcher.search(query, top_k)
+            results, rerank_state = _apply_rerank_pipeline(
+                results=results,
+                rerank_top_k=rerank_top_k,
+                enable_text_rerank=enable_text_rerank,
+                enable_visual_rerank=enable_visual_rerank,
+                text_query=query,
+                reference_image_path=None,
+                text_rerank_service=text_rerank_service,
+                visual_rerank_service=visual_rerank_service,
+            )
 
-            # 3. 如果启用 rerank 且有结果且 rerank_service 可用
-            reranked = False
-            if enable_rerank and rerank_service and rerank_service.is_enabled() and results:
+            enriched_results = _enrich_results(results)
+            return jsonify(
+                {
+                    "status": "success",
+                    "results": enriched_results,
+                    "total_results": len(enriched_results),
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "search_debug": searcher.get_last_search_debug(),
+                    **rerank_state,
+                }
+            )
+        except ValueError as exc:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": str(exc),
+                    "results": [],
+                    "total_results": 0,
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "text_reranked": False,
+                    "visual_reranked": False,
+                }
+            ), 400
+        except Exception as exc:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": f"搜索异常: {exc}",
+                    "results": [],
+                    "total_results": 0,
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "text_reranked": False,
+                    "visual_reranked": False,
+                }
+            ), 500
+
+    @app.route("/search_by_image", methods=["POST"])
+    def search_by_image() -> Any:
+        start_time = time.time()
+        try:
+            current_status = indexer.get_status()
+            if current_status.get("status") == "processing":
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": "索引仍在构建中，请稍后再搜索",
+                        "results": [],
+                        "total_results": 0,
+                        "elapsed_time": round(time.time() - start_time, 4),
+                        "text_reranked": False,
+                        "visual_reranked": False,
+                    }
+                ), 409
+
+            data = request.get_json()
+            if data is None:
+                return jsonify({"status": "error", "message": "请求体必须为JSON格式"}), 400
+
+            image_path = normalize_local_path((data.get("image_path") or "").strip())
+            if not image_path:
+                return jsonify({"status": "error", "message": "图片路径不能为空"}), 400
+
+            top_k = min(int(data.get("top_k", config.get("TOP_K", 12))), 50)
+            rerank_top_k = min(max(1, int(data.get("rerank_top_k", top_k))), top_k)
+            enable_text_rerank = bool(data.get("enable_text_rerank", False))
+            enable_visual_rerank = bool(data.get("enable_visual_rerank", False))
+            query_hint = (data.get("query_hint") or "").strip() or None
+
+            results = searcher.search_by_image_path(image_path, top_k)
+            results, rerank_state = _apply_rerank_pipeline(
+                results=results,
+                rerank_top_k=rerank_top_k,
+                enable_text_rerank=enable_text_rerank,
+                enable_visual_rerank=enable_visual_rerank,
+                text_query=query_hint,
+                reference_image_path=image_path,
+                text_rerank_service=text_rerank_service,
+                visual_rerank_service=visual_rerank_service,
+            )
+
+            enriched_results = _enrich_results(results)
+            return jsonify(
+                {
+                    "status": "success",
+                    "query_image_path": ensure_display_path(image_path),
+                    "results": enriched_results,
+                    "total_results": len(enriched_results),
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "search_debug": searcher.get_last_search_debug(),
+                    **rerank_state,
+                }
+            )
+        except ValueError as exc:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": str(exc),
+                    "results": [],
+                    "total_results": 0,
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "text_reranked": False,
+                    "visual_reranked": False,
+                }
+            ), 400
+        except Exception as exc:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": f"以图搜图异常: {exc}",
+                    "results": [],
+                    "total_results": 0,
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "text_reranked": False,
+                    "visual_reranked": False,
+                }
+            ), 500
+
+    @app.route("/search_by_uploaded_image", methods=["POST"])
+    def search_by_uploaded_image() -> Any:
+        start_time = time.time()
+        temp_path = ""
+        try:
+            current_status = indexer.get_status()
+            if current_status.get("status") == "processing":
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": "索引仍在构建中，请稍后再搜索",
+                        "results": [],
+                        "total_results": 0,
+                        "elapsed_time": round(time.time() - start_time, 4),
+                        "text_reranked": False,
+                        "visual_reranked": False,
+                    }
+                ), 409
+
+            uploaded = request.files.get("image")
+            if uploaded is None or not uploaded.filename:
+                return jsonify({"status": "error", "message": "请上传图片文件"}), 400
+
+            suffix = os.path.splitext(uploaded.filename)[1] or ".jpg"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+                uploaded.save(temp_file)
+                temp_path = temp_file.name
+
+            if not is_valid_image(temp_path):
+                raise ValueError("上传的文件不是有效图片")
+
+            top_k = min(int(request.form.get("top_k", config.get("TOP_K", 12))), 50)
+            rerank_top_k = min(max(1, int(request.form.get("rerank_top_k", top_k))), top_k)
+            enable_text_rerank = str(request.form.get("enable_text_rerank", "")).lower() in {"true", "1", "on"}
+            enable_visual_rerank = str(request.form.get("enable_visual_rerank", "")).lower() in {"true", "1", "on"}
+            query_hint = (request.form.get("query_hint") or "").strip() or None
+
+            analysis = indexer.generate_analysis(temp_path)
+            results = searcher.search_by_uploaded_image(temp_path, analysis=analysis, top_k=top_k)
+            results, rerank_state = _apply_rerank_pipeline(
+                results=results,
+                rerank_top_k=rerank_top_k,
+                enable_text_rerank=enable_text_rerank,
+                enable_visual_rerank=enable_visual_rerank,
+                text_query=query_hint,
+                reference_image_path=temp_path,
+                text_rerank_service=text_rerank_service,
+                visual_rerank_service=visual_rerank_service,
+            )
+
+            enriched_results = _enrich_results(results)
+            return jsonify(
+                {
+                    "status": "success",
+                    "query_image_path": ensure_display_path(temp_path),
+                    "query_image_name": uploaded.filename,
+                    "results": enriched_results,
+                    "total_results": len(enriched_results),
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "search_debug": searcher.get_last_search_debug(),
+                    **rerank_state,
+                }
+            )
+        except ValueError as exc:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": str(exc),
+                    "results": [],
+                    "total_results": 0,
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "text_reranked": False,
+                    "visual_reranked": False,
+                }
+            ), 400
+        except Exception as exc:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": f"上传图片检索异常: {exc}",
+                    "results": [],
+                    "total_results": 0,
+                    "elapsed_time": round(time.time() - start_time, 4),
+                    "text_reranked": False,
+                    "visual_reranked": False,
+                }
+            ), 500
+        finally:
+            if temp_path and os.path.exists(temp_path):
                 try:
-                    print(f"[RERANK] Starting rerank with search_text: {search_text}, candidates: {len(results)}")
-                    results = rerank_service.rerank(search_text, results, rerank_top_k)
-                    reranked = True
-                    print(f"[RERANK] Rerank completed, results: {len(results)}")
-                except Exception as e:
-                    print(f"[RERANK] Rerank failed, using original results: {e}")
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
-            # 4. 构建响应（添加 photo_url）
-            photo_url_base = "/photo?path="
-            enriched_results = []
-            for item in results:
-                photo_path = item.get("photo_path", "")
-                encoded_path = quote(photo_path)
-                item["photo_url"] = f"{photo_url_base}{encoded_path}"
-                enriched_results.append(item)
+    @app.route("/open_photo_location", methods=["POST"])
+    def open_photo_location() -> Any:
+        try:
+            data = request.get_json()
+            if data is None:
+                return jsonify({"status": "error", "message": "请求体必须为JSON格式"}), 400
 
-            elapsed_time = time.time() - start_time
+            image_path = (data.get("image_path") or "").strip()
+            if not image_path:
+                return jsonify({"status": "error", "message": "图片路径不能为空"}), 400
 
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "results": enriched_results,
-                        "total_results": len(enriched_results),
-                        "elapsed_time": round(elapsed_time, 4),
-                        "reranked": reranked,
-                    }
-                ),
-                200,
-            )
-        except ValueError as e:
-            elapsed_time = time.time() - start_time
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": str(e),
-                        "results": [],
-                        "total_results": 0,
-                        "elapsed_time": round(elapsed_time, 4),
-                        "reranked": False,
-                    }
-                ),
-                400,
-            )
-        except Exception as e:
-            elapsed_time = time.time() - start_time
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": f"搜索异常: {e}",
-                        "results": [],
-                        "total_results": 0,
-                        "elapsed_time": round(elapsed_time, 4),
-                        "reranked": False,
-                    }
-                ),
-                500,
-            )
+            open_in_file_manager(image_path)
+            return jsonify({"status": "success", "message": "已尝试打开文件所在位置"})
+        except FileNotFoundError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"status": "error", "message": f"打开文件位置失败: {exc}"}), 500
 
     @app.route("/index_status", methods=["GET"])
     def index_status() -> Any:
-        """
-        获取索引构建和加载状态。
-
-        响应格式：
-        {
-            "status": "idle" | "processing" | "ready" | "failed",
-            "message": str,
-            "total_count": int,
-            "indexed_count": int,
-            "failed_count": int,
-            "elapsed_time": float
-        }
-        """
         try:
-            status = indexer.get_status()
-            return jsonify(status)
-        except Exception as e:
-            return (
-                jsonify(
-                    {
-                        "status": "failed",
-                        "message": f"获取状态失败: {e}",
-                        "total_count": 0,
-                        "indexed_count": 0,
-                        "failed_count": 0,
-                        "elapsed_time": 0.0,
-                    }
-                ),
-                500,
-            )
+            return jsonify(indexer.get_status())
+        except Exception as exc:
+            return jsonify(
+                {
+                    "status": "failed",
+                    "message": f"获取状态失败: {exc}",
+                    "total_count": 0,
+                    "indexed_count": 0,
+                    "failed_count": 0,
+                    "elapsed_time": 0.0,
+                }
+            ), 500
 
     @app.route("/photo")
     def get_photo() -> Any:
-        """
-        返回图片文件，供前端使用。
-
-        参数：
-        - path: 图片绝对路径
-
-        注意：
-        1. 本地演示用接口，仅供个人使用
-        2. 路径校验（必须是绝对路径且存在）
-        3. 路径遍历防护（防止访问系统敏感文件）
-        """
         try:
-            # 获取路径参数
             path = request.args.get("path", "")
             if not path:
                 return "缺少path参数", 400
 
-            # 解码与路径规范化
             decoded_path = unquote(path)
-            normalized_path = os.path.abspath(decoded_path)
+            normalized_path = normalize_local_path(decoded_path)
 
-            # 安全检查：防止路径遍历攻击
             if ".." in os.path.normpath(decoded_path).split(os.sep):
                 return "拒绝访问：非法路径", 403
-
-            # 路径必须为绝对路径
             if not os.path.isabs(normalized_path):
                 return "路径必须为绝对路径", 400
-
-            # 检查文件是否存在
             if not os.path.isfile(normalized_path):
                 return f"文件不存在: {decoded_path}", 404
 
-            # 检查是否为支持的图片格式
             _, ext = os.path.splitext(normalized_path)
             supported_formats = {".jpg", ".jpeg", ".png", ".webp"}
             if ext.lower() not in supported_formats:
                 return "不支持的文件格式", 400
 
-            # 读取文件后返回，避免Windows下文件句柄占用
-            with open(normalized_path, "rb") as f:
-                content = f.read()
+            with open(normalized_path, "rb") as file:
+                content = file.read()
 
-            ext_lower = ext.lower()
-            if ext_lower in {".jpg", ".jpeg"}:
+            mime_type = "image/webp"
+            if ext.lower() in {".jpg", ".jpeg"}:
                 mime_type = "image/jpeg"
-            elif ext_lower == ".png":
+            elif ext.lower() == ".png":
                 mime_type = "image/png"
-            else:
-                mime_type = "image/webp"
 
             return send_file(
                 BytesIO(content),
@@ -328,15 +444,13 @@ def register_routes(
                 as_attachment=False,
                 download_name=os.path.basename(normalized_path),
             )
-        except Exception as e:
-            return f"获取图片失败: {e}", 500
+        except Exception as exc:
+            return f"获取图片失败: {exc}", 500
 
     @app.errorhandler(404)
     def not_found(error: Any) -> Any:
-        """404错误处理"""
         return jsonify({"status": "error", "message": "接口不存在"}), 404
 
     @app.errorhandler(500)
     def internal_error(error: Any) -> Any:
-        """500错误处理"""
         return jsonify({"status": "error", "message": "服务器内部错误"}), 500

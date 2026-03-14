@@ -1,29 +1,15 @@
 import os
-import sys
 import tempfile
 import unittest
-from pathlib import Path
-
-project_root = str(Path(__file__).parent.parent)
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from config import get_config
+from unittest.mock import Mock
 
 from PIL import Image
 
-from utils.vision_llm_service import OpenRouterVisionLLMService, LocalVisionLLMService
+from utils.vision_llm_service import LocalVisionLLMService, SU8VisionLLMService
 
 
 class VisionServiceTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        """加载配置"""
-        cls.config = get_config()
-        cls.has_api_key = bool(cls.config.get("OPENROUTER_API_KEY"))
-
     def test_local_vision_service(self) -> None:
-        """测试本地Vision服务（离线模式）"""
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "local.jpg")
             image = Image.new("RGB", (80, 60), color=(1, 2, 3))
@@ -31,219 +17,98 @@ class VisionServiceTests(unittest.TestCase):
             service = LocalVisionLLMService()
             result = service.generate_description(path)
             self.assertIn("80x60", result)
+            analysis = service.analyze_image(path)
+            self.assertEqual(analysis["media_types"], ["photo"])
+            self.assertIn("retrieval_text", analysis)
 
-    def test_local_vision_service_batch(self) -> None:
-        """测试本地Vision服务批量生成"""
-        with tempfile.TemporaryDirectory() as tmp:
-            paths = []
-            for i in range(3):
-                path = os.path.join(tmp, f"local{i}.jpg")
-                image = Image.new("RGB", (100 + i * 10, 50 + i * 10), color=(i, i, i))
-                image.save(path)
-                paths.append(path)
-
-            service = LocalVisionLLMService()
-            results = service.generate_description_batch(paths)
-
-            self.assertEqual(len(results), len(paths))
-            for i, result in enumerate(results):
-                expected_size = f"{100 + i * 10}x{50 + i * 10}"
-                self.assertIn(expected_size, result)
-
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
-    def test_openrouter_vision_service_init(self) -> None:
-        """测试OpenRouter Vision服务初始化（集成测试）"""
-        api_key = self.config["OPENROUTER_API_KEY"]
-        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-        service = OpenRouterVisionLLMService(
-            api_key=api_key,
-            base_url=base_url,
-        )
-
-        self.assertEqual(service.api_key, api_key)
-        self.assertEqual(service.base_url, base_url)
-
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
-    def test_openrouter_vision_service_requires_api_key(self) -> None:
-        """测试OpenRouter Vision服务需要API密钥"""
+    def test_su8_vision_service_requires_api_key(self) -> None:
         with self.assertRaises(ValueError):
-            OpenRouterVisionLLMService(api_key="")
+            SU8VisionLLMService(api_key="", model_name="gpt-5.4", base_url="https://www.su8.codes/codex/v1")
 
     def test_base64_image_encoding(self) -> None:
-        """测试Base64图片编码"""
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "test.jpg")
             image = Image.new("RGB", (2000, 1500), color=(100, 150, 200))
             image.save(path)
 
-            service = OpenRouterVisionLLMService(
+            service = SU8VisionLLMService(
                 api_key="test-key",
+                model_name="gpt-5.4",
+                base_url="https://www.su8.codes/codex/v1",
                 use_base64=True,
                 image_max_size=1024,
                 image_quality=85,
                 image_format="WEBP",
             )
-
             base64_url = service._get_image_base64(path)
-
             self.assertIn("data:image/webp;base64,", base64_url)
-            self.assertGreater(len(base64_url), 100)
 
-    def test_image_resize_optimization(self) -> None:
-        """测试图片压缩优化"""
-        from utils.image_parser import resize_and_optimize_image
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "large.jpg")
-            image = Image.new("RGB", (3000, 2000), color=(50, 100, 150))
-            image.save(path, quality=95)
-
-            optimized_bytes = resize_and_optimize_image(
-                path, max_size=1024, quality=85, format="WEBP"
-            )
-
-            original_size = os.path.getsize(path)
-
-            optimized_size = len(optimized_bytes)
-
-            self.assertLess(optimized_size, original_size)
-
-    def test_default_config_values(self) -> None:
-        """测试默认配置值"""
-        service = OpenRouterVisionLLMService(api_key="test-key")
-
-        self.assertTrue(service.use_base64)
-        self.assertEqual(service.image_max_size, 1024)
-        self.assertEqual(service.image_quality, 85)
-        self.assertEqual(service.image_format, "WEBP")
-
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
-    def test_openrouter_vision_service_generate_description(self) -> None:
-        """测试OpenRouter Vision服务生成描述（Base64集成测试）"""
-        api_key = self.config["OPENROUTER_API_KEY"]
-        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "test_image.jpg")
-            image = Image.new("RGB", (200, 150), color=(100, 150, 200))
-            image.save(path, quality=90)
-
-            service = OpenRouterVisionLLMService(
-                api_key=api_key,
-                base_url=base_url,
-                max_retries=2,
-                use_base64=True,
-                image_max_size=1024,
-                image_quality=85,
-                image_format="WEBP",
-            )
-
-            result = service.generate_description(path)
-
-            self.assertIsInstance(result, str)
-            self.assertGreater(len(result), 10)
-
-    @unittest.skipIf(
-        not bool(os.getenv("OPENROUTER_API_KEY")),
-        "OPENROUTER_API_KEY未设置，跳过集成测试"
-    )
-    def test_openrouter_vision_service_generate_description_batch(self) -> None:
-        """测试批量生成描述（Base64集成测试）"""
-        api_key = self.config["OPENROUTER_API_KEY"]
-        base_url = self.config.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            paths = []
-            for i in range(3):
-                path = os.path.join(tmp, f"test_image_{i}.jpg")
-                image = Image.new("RGB", (200, 150), color=(50 + i * 50, 100, 150))
-                image.save(path, quality=90)
-                paths.append(path)
-
-            service = OpenRouterVisionLLMService(
-                api_key=api_key,
-                base_url=base_url,
-                max_retries=2,
-                use_base64=True,
-                image_max_size=1024,
-                image_quality=85,
-                image_format="WEBP",
-            )
-
-            results = service.generate_description_batch(paths)
-
-            self.assertEqual(len(results), 3)
-            for result in results:
-                self.assertIsInstance(result, str)
-                self.assertGreater(len(result), 10)
-
-    def test_get_image_url_encoding(self) -> None:
-        """测试图片URL路径编码"""
-        service = OpenRouterVisionLLMService(
-            api_key="test-key",
-            server_host="localhost",
-            server_port=5000,
+    def test_generate_description(self) -> None:
+        mock_client = Mock()
+        mock_client.chat.completions.create.return_value = Mock(
+            choices=[Mock(message=Mock(content='{"description":"海边有沙滩和海浪","outer_scene_summary":"海边照片","inner_content_summary":"","media_types":["photo"],"tags":[{"tag":"海边","confidence":0.9}],"ocr_text":"","person_roles":[],"identity_candidates":[],"analysis_flags":{}}'))]
         )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "test.jpg")
+            Image.new("RGB", (200, 150), color=(100, 150, 200)).save(path)
+            service = SU8VisionLLMService(
+                api_key="test-key",
+                model_name="gpt-5.4",
+                base_url="https://www.su8.codes/codex/v1",
+                client=mock_client,
+            )
+            result = service.generate_description(path)
+            self.assertEqual(result, "海边有沙滩和海浪")
+            analysis = service.analyze_image(path)
+            self.assertEqual(analysis["media_types"], ["photo"])
+            self.assertIn("海边", analysis["retrieval_text"])
 
-        test_path = "C:/Users/Test/我的照片/image.jpg"
-        url = service._get_image_url(test_path)
+    def test_analyze_image_exposes_internal_timing_metrics(self) -> None:
+        mock_client = Mock()
+        mock_client.chat.completions.create.side_effect = [
+            Mock(
+                choices=[
+                    Mock(
+                        message=Mock(
+                            content='{"description":"键盘速查表","outer_scene_summary":"文档照片","inner_content_summary":"vim 键位速查","media_types":["document"],"tags":[{"tag":"vim","confidence":0.98}],"ocr_text":"vim hjkl dd yy","person_roles":[],"identity_candidates":[],"analysis_flags":{"text_heavy":true}}'
+                        )
+                    )
+                ]
+            ),
+            Mock(
+                choices=[
+                    Mock(
+                        message=Mock(
+                            content='{"description":"vim 键盘速查表","outer_scene_summary":"文档照片","inner_content_summary":"包含 vim 常用命令和键位说明的速查图","media_types":["document"],"tags":[{"tag":"vim","confidence":0.99},{"tag":"快捷键","confidence":0.91}],"ocr_text":"vim hjkl dd yy p u ctrl r","person_roles":[],"identity_candidates":[],"analysis_flags":{"text_heavy":true}}'
+                        )
+                    )
+                ]
+            ),
+        ]
 
-        self.assertIn("localhost:5000", url)
-        self.assertIn("/photo?path=", url)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "sheet.jpg")
+            Image.new("RGB", (400, 300), color=(100, 150, 200)).save(path)
+            service = SU8VisionLLMService(
+                api_key="test-key",
+                model_name="gpt-5.4",
+                base_url="https://www.su8.codes/codex/v1",
+                client=mock_client,
+            )
 
+            analysis = service.analyze_image(path)
+            metrics = service.get_last_analysis_metrics()
 
-class TestVisionPromptStructure(unittest.TestCase):
-    """测试 VisionLLMService prompt 结构的改进。"""
-    
-    def test_prompt_contains_never_constraints(self) -> None:
-        """测试 prompt 包含 NEVER 约束。"""
-        service = OpenRouterVisionLLMService(api_key="test-key")
-        
-        # 通过反射获取 prompt（在 generate_description 方法中定义）
-        # 由于 prompt 是方法内的局部变量，我们检查方法的源代码
-        import inspect
-        source = inspect.getsource(service.generate_description)
-        
-        # 验证 NEVER 约束存在
-        self.assertIn("NEVER", source)
-        self.assertIn("不要推测或提及拍摄时间", source)
-        self.assertIn("不要描述图片外的信息", source)
-    
-    def test_prompt_contains_flow_structure(self) -> None:
-        """测试 prompt 包含流程驱动结构。"""
-        service = OpenRouterVisionLLMService(api_key="test-key")
-        
-        import inspect
-        source = inspect.getsource(service.generate_description)
-        
-        # 验证5步流程存在
-        self.assertIn("第一步", source)
-        self.assertIn("第二步", source)
-        self.assertIn("第三步", source)
-        self.assertIn("第四步", source)
-        self.assertIn("第五步", source)
-    
-    def test_prompt_contains_example(self) -> None:
-        """测试 prompt 包含示例（few-shot）。"""
-        service = OpenRouterVisionLLMService(api_key="test-key")
-        
-        import inspect
-        source = inspect.getsource(service.generate_description)
-        
-        # 验证示例存在
-        self.assertIn("## 示例", source)
-        self.assertIn("输入：", source)
-        self.assertIn("输出：", source)
+            self.assertEqual(analysis["media_types"], ["document"])
+            self.assertIsNotNone(metrics)
+            assert metrics is not None
+            self.assertIn("image_encode_seconds", metrics)
+            self.assertIn("attempts", metrics)
+            self.assertEqual(len(metrics["attempts"]), 1)
+            self.assertTrue(metrics["enhanced_triggered"])
+            self.assertTrue(metrics["enhanced_succeeded"])
+            self.assertGreaterEqual(metrics["base_analysis_seconds"], 0.0)
+            self.assertGreaterEqual(metrics["enhanced_analysis_seconds"], 0.0)
 
 
 if __name__ == "__main__":

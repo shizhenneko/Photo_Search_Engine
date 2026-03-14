@@ -52,6 +52,91 @@ class KeywordStore:
                 self.es_client = Elasticsearch(url)
         
         self._ensure_index()
+
+    def _description_mapping_uses_ik(self) -> bool:
+        try:
+            mapping = self.es_client.indices.get_mapping(index=self.index_name)
+            properties = (
+                mapping.get(self.index_name, {})
+                .get("mappings", {})
+                .get("properties", {})
+            )
+            description = properties.get("description", {})
+            return (
+                description.get("analyzer") == "ik_max_word"
+                and description.get("search_analyzer") == "ik_smart"
+            )
+        except Exception:
+            return False
+
+    def _has_ik_analyzer(self) -> bool:
+        try:
+            response = self.es_client.indices.analyze(
+                body={
+                    "analyzer": "ik_smart",
+                    "text": "照片搜索测试",
+                }
+            )
+            return bool(response.get("tokens"))
+        except Exception:
+            return False
+
+    def _apply_runtime_settings(self) -> None:
+        """
+        自愈单机 Elasticsearch 的索引副本配置。
+
+        本项目默认以单机本地开发为主，副本数必须保持为 0，
+        否则索引会因为未分配副本长期处于 yellow/red，进而影响
+        关键字检索与重建流程。
+        """
+        try:
+            self.es_client.indices.put_settings(
+                index=self.index_name,
+                body={
+                    "index": {
+                        "number_of_replicas": 0,
+                    }
+                },
+            )
+        except Exception:
+            # 运行时自愈失败不应阻塞主流程，后续搜索会自动降级。
+            pass
+
+    @staticmethod
+    def _build_text_query(query: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not query or not query.strip():
+            return None
+        text = query.strip()
+        return {
+            "bool": {
+                "should": [
+                    {
+                        "multi_match": {
+                            "query": text,
+                            "fields": [
+                                "retrieval_text^3.0",
+                                "description^2.0",
+                                "inner_content_summary^1.8",
+                                "outer_scene_summary^1.2",
+                                "ocr_text^1.5",
+                                "file_name^0.8",
+                            ],
+                            "type": "best_fields",
+                            "minimum_should_match": "60%",
+                        }
+                    },
+                    {
+                        "match_phrase": {
+                            "retrieval_text": {
+                                "query": text,
+                                "boost": 1.4,
+                            }
+                        }
+                    },
+                ],
+                "minimum_should_match": 1,
+            }
+        }
     
     def _ensure_index(self) -> None:
         """
@@ -60,7 +145,9 @@ class KeywordStore:
         索引 Mapping 配置：
         - photo_path: keyword（精确匹配）
         - description: text（中文分词，BM25）
+        - outer_scene_summary / inner_content_summary / retrieval_text / ocr_text: text
         - file_name: text（文件名模糊匹配）
+        - media_types / tags / identity_names / identity_evidence: keyword
         - EXIF 独立字段（用于精确过滤）：
           - year: integer
           - month: integer
@@ -72,17 +159,31 @@ class KeywordStore:
           - camera: keyword
           - datetime: date
         """
+        if self.es_client.indices.exists(index=self.index_name):
+            if self._has_ik_analyzer() and not self._description_mapping_uses_ik():
+                self.es_client.indices.delete(index=self.index_name)
+            else:
+                self._apply_runtime_settings()
+                return
+
         if not self.es_client.indices.exists(index=self.index_name):
+            use_ik = self._has_ik_analyzer()
             mapping = {
                 "mappings": {
                     "properties": {
                         "photo_path": {"type": "keyword"},
                         "description": {
                             "type": "text",
-                            "analyzer": "ik_max_word",  # 中文分词器
-                            "search_analyzer": "ik_smart",
                         },
+                        "outer_scene_summary": {"type": "text"},
+                        "inner_content_summary": {"type": "text"},
+                        "retrieval_text": {"type": "text"},
+                        "ocr_text": {"type": "text"},
                         "file_name": {"type": "text"},
+                        "media_types": {"type": "keyword"},
+                        "tags": {"type": "keyword"},
+                        "identity_names": {"type": "keyword"},
+                        "identity_evidence": {"type": "keyword"},
                         # EXIF 独立字段（新增，用于精确过滤）
                         "year": {"type": "integer"},
                         "month": {"type": "integer"},
@@ -106,25 +207,11 @@ class KeywordStore:
                     }
                 },
             }
-            # 注意: ik_max_word 需要 ES 安装 IK 分词器，如果没有安装可能会报错。
-            # 为了兼容性，如果没有 IK，ES 会报错。这里假设用户已配置好环境或后续处理。
-            # 如果是本地简单测试，可以用 standard analyzer 作为 fallback，但为了中文效果保留 ik。
-            try:
-                self.es_client.indices.create(index=self.index_name, body=mapping)
-            except Exception:
-                # Fallback to standard analyzer if ik fails (optional robustness)
-                fallback_mapping = self._get_fallback_mapping(mapping)
-                if not self.es_client.indices.exists(index=self.index_name):
-                    self.es_client.indices.create(index=self.index_name, body=fallback_mapping)
-
-    def _get_fallback_mapping(self, mapping: Dict[str, Any]) -> Dict[str, Any]:
-        """获取不使用 IK 分词器的 fallback mapping。"""
-        import copy
-        fallback = copy.deepcopy(mapping)
-        desc_props = fallback["mappings"]["properties"]["description"]
-        desc_props.pop("analyzer", None)
-        desc_props.pop("search_analyzer", None)
-        return fallback
+            if use_ik:
+                mapping["mappings"]["properties"]["description"]["analyzer"] = "ik_max_word"
+                mapping["mappings"]["properties"]["description"]["search_analyzer"] = "ik_smart"
+            self.es_client.indices.create(index=self.index_name, body=mapping)
+            self._apply_runtime_settings()
     
     def add_document(self, doc_id: str, document: Dict[str, Any]) -> None:
         """
@@ -163,15 +250,13 @@ class KeywordStore:
                 - photo_path: str
                 - score: float（BM25 分数，已归一化到 0-1）
         """
+        query_clause = self._build_text_query(query)
+        if query_clause is None:
+            return []
         body = {
-            "query": {
-                "multi_match": {
-                    "query": query,
-                    "fields": ["description^3", "file_name"],
-                    "type": "best_fields",
-                }
-            },
+            "query": query_clause,
             "size": top_k,
+            "min_score": 0.12,
         }
         
         try:
@@ -230,14 +315,9 @@ class KeywordStore:
         filter_clauses = []
 
         # 文本查询（如果有）
-        if query and query.strip():
-            must_clauses.append({
-                "multi_match": {
-                    "query": query,
-                    "fields": ["description^3", "file_name"],
-                    "type": "best_fields",
-                }
-            })
+        text_query = self._build_text_query(query)
+        if text_query is not None:
+            must_clauses.append(text_query)
 
         # 精确匹配过滤条件
         exact_fields = ["year", "month", "day", "hour", "season", "time_period", "weekday", "camera"]
@@ -285,6 +365,8 @@ class KeywordStore:
             }
 
         try:
+            if must_clauses:
+                body["min_score"] = 0.12
             response = self.es_client.search(index=self.index_name, body=body)
             hits = response["hits"]["hits"]
 

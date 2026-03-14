@@ -1,39 +1,26 @@
-"""
-Rerank服务模块，使用Vision LLM对候选图片进行二次精排。
-
-通过将多张候选图片与用户查询一起发送给Vision LLM，
-让模型根据语义匹配度对图片进行重新排序。
-"""
-
 from __future__ import annotations
 
 import base64
 import json
 import re
 import time
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
 from utils.image_parser import resize_and_optimize_image
-
-if TYPE_CHECKING:
-    from utils.vision_llm_service import VisionLLMService
+from utils.path_utils import normalize_local_path
 
 
-class RerankService:
-    """
-    Vision LLM Rerank服务。
-
-    对候选图片进行二次精排，使用Vision LLM根据用户查询
-    对图片进行语义匹配度排序。
-    """
+class VisualRerankService:
+    """使用视觉模型对候选图片进行二次精排。"""
 
     def __init__(
         self,
         api_key: str,
         model_name: str,
         base_url: str,
+        reasoning_effort: str = "medium",
         timeout: int = 60,
         max_retries: int = 3,
         image_max_size: int = 512,
@@ -42,143 +29,118 @@ class RerankService:
         max_images: int = 10,
         client: Optional[OpenAI] = None,
     ) -> None:
-        """
-        初始化Rerank服务。
-
-        Args:
-            api_key: OpenRouter/OpenAI API密钥
-            model_name: Vision模型名称
-            base_url: API基础URL
-            timeout: 请求超时时间（秒）
-            max_retries: 最大重试次数
-            image_max_size: 图片最大边长（像素），默认512
-            image_quality: 图片压缩质量（1-100），默认75
-            image_format: 图片输出格式，默认WEBP
-            max_images: 最大处理图片数量，默认10
-            client: 可选的OpenAI客户端实例
-        """
         if not api_key:
-            raise ValueError("API密钥未设置")
+            raise ValueError("SU8_API_KEY 未设置")
         if not model_name:
-            raise ValueError("模型名称未设置")
-        if not base_url:
-            raise ValueError("API基础URL未设置")
-
+            raise ValueError("VISUAL_RERANK_MODEL 未设置")
         self.api_key = api_key
         self.model_name = model_name
         self.base_url = base_url
+        self.reasoning_effort = reasoning_effort
         self.timeout = timeout
-        self.max_retries = max_retries
+        self.max_retries = max(1, max_retries)
         self.image_max_size = max(256, min(2048, image_max_size))
         self.image_quality = max(1, min(100, image_quality))
-        self.image_format = image_format.upper() if image_format.upper() in ["JPEG", "WEBP", "PNG"] else "WEBP"
+        self.image_format = image_format.upper() if image_format.upper() in {"JPEG", "PNG", "WEBP"} else "WEBP"
         self.max_images = max(1, min(20, max_images))
         self.client = client or OpenAI(api_key=api_key, base_url=base_url)
 
     def _get_image_base64(self, image_path: str) -> str:
-        """
-        读取并优化图片，返回Base64编码的data URL。
+        image_bytes = resize_and_optimize_image(
+            image_path,
+            max_size=self.image_max_size,
+            quality=self.image_quality,
+            format=self.image_format,
+        )
+        mime_type = {
+            "JPEG": "image/jpeg",
+            "PNG": "image/png",
+            "WEBP": "image/webp",
+        }.get(self.image_format, "image/webp")
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
+        return f"data:{mime_type};base64,{encoded}"
 
-        Args:
-            image_path: 图片文件路径
+    def _build_prompt(self, query: str, num_images: int) -> str:
+        return f"""用户在检索与查询最相关的照片："{query}"
 
-        Returns:
-            str: data:image/...;base64,... 格式的URL
+你将看到 {num_images} 张候选图片，编号从 1 到 {num_images}。
+请按与查询的视觉相关性从高到低排序。
 
-        Raises:
-            ValueError: 图片编码失败
-        """
-        try:
-            image_bytes = resize_and_optimize_image(
-                image_path,
-                max_size=self.image_max_size,
-                quality=self.image_quality,
-                format=self.image_format,
-            )
-            base64_str = base64.b64encode(image_bytes).decode("utf-8")
+只返回 JSON：
+{{"ranking": [1, 3, 2]}}"""
 
-            mime_type = {
-                "JPEG": "image/jpeg",
-                "PNG": "image/png",
-                "WEBP": "image/webp",
-            }.get(self.image_format, "image/jpeg")
+    def _build_reference_prompt(self, num_images: int) -> str:
+        return f"""第一张图片是查询图。
 
-            return f"data:{mime_type};base64,{base64_str}"
-        except Exception as e:
-            raise ValueError(f"图片编码失败: {image_path}, 错误: {e}")
+后面会依次给出 {num_images} 张候选图片，编号从 1 到 {num_images}。
+请按与查询图在主体、场景、构图和视觉风格上的相似度从高到低排序。
 
-    def _build_rerank_prompt(self, query: str, num_images: int) -> str:
-        """
-        构建Rerank的提示词。
-
-        Args:
-            query: 用户搜索查询
-            num_images: 候选图片数量
-
-        Returns:
-            str: 提示词文本
-        """
-        return f"""用户正在搜索照片："{query}"
-
-你将看到 {num_images} 张候选图片（编号 1 到 {num_images}）。
-请根据每张图片与用户搜索意图的匹配程度，从最相关到最不相关排序。
-
-要求：
-1. 仔细分析每张图片的内容
-2. 理解用户搜索意图的核心需求
-3. 按相关性从高到低排序所有图片
-
-只返回JSON格式，不要有其他文字：
-{{"ranking": [3, 1, 5, 2, 4]}}
-
-注意：ranking数组中的数字是图片编号，按相关性降序排列。"""
+只返回 JSON：
+{{"ranking": [2, 1, 3]}}"""
 
     def _parse_ranking_response(self, response_text: str, num_images: int) -> List[int]:
-        """
-        解析LLM返回的排序结果。
-
-        Args:
-            response_text: LLM的响应文本
-            num_images: 候选图片数量
-
-        Returns:
-            List[int]: 排序后的图片编号列表（0-indexed）
-
-        Raises:
-            ValueError: 解析失败
-        """
-        # 尝试直接解析JSON
+        cleaned = response_text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"```(?:json)?\s*", "", cleaned).rstrip("`").strip()
         try:
-            # 清理可能的markdown代码块标记
-            cleaned = response_text.strip()
-            if cleaned.startswith("```"):
-                # 移除markdown代码块
-                cleaned = re.sub(r"```(?:json)?\s*", "", cleaned)
-                cleaned = cleaned.rstrip("`").strip()
-
             data = json.loads(cleaned)
-            if isinstance(data, dict) and "ranking" in data:
-                ranking = data["ranking"]
-                if isinstance(ranking, list):
-                    # 验证排序结果
-                    ranking = [int(x) for x in ranking]
-                    # 确保所有编号都有效（1-indexed）
-                    valid_ranking = [x for x in ranking if 1 <= x <= num_images]
-                    if valid_ranking:
-                        # 转换为0-indexed
-                        return [x - 1 for x in valid_ranking]
-        except (json.JSONDecodeError, ValueError, TypeError):
+            ranking = data.get("ranking", [])
+            indexes = [int(item) - 1 for item in ranking if 1 <= int(item) <= num_images]
+            if indexes:
+                return indexes
+        except Exception:
             pass
 
-        # 尝试从文本中提取数字列表
-        numbers = re.findall(r"\d+", response_text)
-        if numbers:
-            ranking = [int(x) for x in numbers]
-            valid_ranking = [x for x in ranking if 1 <= x <= num_images]
-            if valid_ranking:
-                return [x - 1 for x in valid_ranking]
+        numbers = re.findall(r"\d+", cleaned)
+        indexes = [int(item) - 1 for item in numbers if 1 <= int(item) <= num_images]
+        if indexes:
+            return indexes
+        raise ValueError("无法解析视觉 rerank 响应")
 
-        raise ValueError(f"无法解析排序结果: {response_text[:200]}")
+    def _filter_candidates(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        filtered: List[Dict[str, Any]] = []
+        for candidate in candidates:
+            photo_path = candidate.get("photo_path")
+            normalized_path = normalize_local_path(photo_path) if photo_path else ""
+            if not normalized_path or not normalized_path.strip():
+                continue
+            if not normalized_path.startswith("/"):
+                normalized_path = normalize_local_path(normalized_path)
+            try:
+                with open(normalized_path, "rb"):
+                    pass
+            except Exception:
+                continue
+            normalized_candidate = dict(candidate)
+            normalized_candidate["photo_path"] = normalized_path
+            filtered.append(normalized_candidate)
+        return filtered
+
+    def _create_completion(self, content: List[Dict[str, Any]]):
+        message_payload = [{"role": "user", "content": content}]
+        try:
+            return self.client.chat.completions.create(
+                model=self.model_name,
+                messages=message_payload,
+                timeout=self.timeout,
+                extra_body={"reasoning_effort": self.reasoning_effort},
+            )
+        except Exception:
+            # 某些 OpenAI 兼容网关不接受多模态 content list，
+            # 需要退化为标准 JSON 字符串消息体。
+            fallback_content = json.dumps(content, ensure_ascii=False)
+            try:
+                return self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": fallback_content}],
+                    timeout=self.timeout,
+                )
+            except Exception:
+                return self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=message_payload,
+                    timeout=self.timeout,
+                )
 
     def rerank(
         self,
@@ -186,136 +148,116 @@ class RerankService:
         candidates: List[Dict[str, Any]],
         rerank_top_k: int,
     ) -> List[Dict[str, Any]]:
-        """
-        对候选图片进行Vision LLM重排序。
-
-        Args:
-            query: 用户搜索查询
-            candidates: 候选图片列表，每个元素包含photo_path等字段
-            rerank_top_k: 重排后保留的图片数量
-
-        Returns:
-            List[Dict[str, Any]]: 重排序后的图片列表
-        """
         if not candidates:
             return []
-
         if not query or not query.strip():
             return candidates[:rerank_top_k]
 
-        # 限制处理的图片数量
-        candidates_to_process = candidates[: self.max_images]
+        candidates_to_process = self._filter_candidates(candidates)[: self.max_images]
         num_images = len(candidates_to_process)
-
         if num_images <= 1:
             return candidates[:rerank_top_k]
 
-        # 构建多图消息
-        try:
-            content: List[Dict[str, Any]] = []
+        content: List[Dict[str, Any]] = [{"type": "text", "text": self._build_prompt(query, num_images)}]
+        for index, candidate in enumerate(candidates_to_process, start=1):
+            photo_path = candidate.get("photo_path")
+            if not photo_path:
+                continue
+            content.append({"type": "text", "text": f"候选图片 {index}"})
+            content.append({"type": "image_url", "image_url": {"url": self._get_image_base64(photo_path)}})
 
-            # 添加文本提示
-            prompt = self._build_rerank_prompt(query, num_images)
-            content.append({"type": "text", "text": prompt})
+        last_error: Optional[Exception] = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self._create_completion(content)
+                ranking = self._parse_ranking_response(
+                    response.choices[0].message.content or "",
+                    num_images,
+                )
+                reranked = []
+                used = set()
+                for rank, candidate_index in enumerate(ranking, start=1):
+                    if candidate_index in used or candidate_index >= len(candidates_to_process):
+                        continue
+                    used.add(candidate_index)
+                    item = dict(candidates_to_process[candidate_index])
+                    item["rank"] = rank
+                    reranked.append(item)
+                for item in candidates_to_process:
+                    if len(reranked) >= rerank_top_k:
+                        break
+                    if item not in reranked:
+                        reranked.append(dict(item))
+                return reranked[:rerank_top_k]
+            except Exception as exc:
+                last_error = exc
+                if attempt == self.max_retries - 1:
+                    break
+                time.sleep(1)
 
-            # 添加每张图片（带编号说明）
-            for idx, candidate in enumerate(candidates_to_process, start=1):
-                photo_path = candidate.get("photo_path", "")
-                if not photo_path:
-                    continue
+        if last_error is not None:
+            raise ValueError(f"视觉 rerank 失败: {last_error}") from last_error
+        raise ValueError("视觉 rerank 失败")
 
-                try:
-                    image_url = self._get_image_base64(photo_path)
-                    # 添加图片编号说明
-                    content.append({
-                        "type": "text",
-                        "text": f"图片 {idx}:"
-                    })
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": image_url}
-                    })
-                except Exception as e:
-                    print(f"[RERANK] 图片编码失败: {photo_path}, 错误: {e}")
-                    # 如果图片编码失败，添加占位说明
-                    content.append({
-                        "type": "text",
-                        "text": f"图片 {idx}: [图片加载失败]"
-                    })
+    def rerank_by_reference_image(
+        self,
+        reference_image_path: str,
+        candidates: List[Dict[str, Any]],
+        rerank_top_k: int,
+    ) -> List[Dict[str, Any]]:
+        if not candidates:
+            return []
 
-            messages = [{"role": "user", "content": content}]
-
-            # 调用Vision LLM
-            for attempt in range(self.max_retries):
-                try:
-                    print(f"[RERANK] Vision LLM调用 (第{attempt + 1}/{self.max_retries}次), "
-                          f"模型: {self.model_name}, 图片数: {num_images}")
-
-                    response = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=messages,
-                        temperature=0.1,  # 低温度以获得更确定性的结果
-                        timeout=self.timeout,
-                    )
-
-                    response_text = response.choices[0].message.content.strip()
-                    print(f"[RERANK] LLM响应: {response_text[:200]}")
-
-                    # 解析排序结果
-                    ranking = self._parse_ranking_response(response_text, num_images)
-                    print(f"[RERANK] 解析后的排序: {ranking}")
-
-                    # 根据排序重新组织结果
-                    reranked_results = []
-                    seen_indices = set()
-
-                    for rank, idx in enumerate(ranking, start=1):
-                        if idx < len(candidates_to_process) and idx not in seen_indices:
-                            result = candidates_to_process[idx].copy()
-                            result["original_rank"] = result.get("rank", idx + 1)
-                            result["rank"] = rank
-                            result["reranked"] = True
-                            reranked_results.append(result)
-                            seen_indices.add(idx)
-
-                    # 如果解析结果不完整，补充未被包含的图片
-                    for idx, candidate in enumerate(candidates_to_process):
-                        if idx not in seen_indices:
-                            result = candidate.copy()
-                            result["original_rank"] = result.get("rank", idx + 1)
-                            result["rank"] = len(reranked_results) + 1
-                            result["reranked"] = True
-                            reranked_results.append(result)
-
-                    # 返回指定数量的结果
-                    final_results = reranked_results[:rerank_top_k]
-
-                    # 重新分配rank
-                    for rank, item in enumerate(final_results, start=1):
-                        item["rank"] = rank
-
-                    print(f"[RERANK] 重排完成，返回 {len(final_results)} 个结果")
-                    return final_results
-
-                except Exception as e:
-                    print(f"[RERANK] LLM调用失败 (第{attempt + 1}/{self.max_retries}次): {e}")
-                    if attempt < self.max_retries - 1:
-                        time.sleep(1)
-                    continue
-
-            # 所有重试都失败，降级返回原始结果
-            print("[RERANK] 所有重试都失败，返回原始排序结果")
+        reference_image_path = normalize_local_path(reference_image_path)
+        candidates_to_process = self._filter_candidates(candidates)[: self.max_images]
+        num_images = len(candidates_to_process)
+        if num_images <= 1:
             return candidates[:rerank_top_k]
 
-        except Exception as e:
-            print(f"[RERANK] Rerank过程异常: {e}，返回原始排序结果")
-            return candidates[:rerank_top_k]
+        content: List[Dict[str, Any]] = [
+            {"type": "text", "text": self._build_reference_prompt(num_images)},
+            {"type": "text", "text": "查询图片"},
+            {"type": "image_url", "image_url": {"url": self._get_image_base64(reference_image_path)}},
+        ]
+        for index, candidate in enumerate(candidates_to_process, start=1):
+            photo_path = candidate.get("photo_path")
+            if not photo_path:
+                continue
+            content.append({"type": "text", "text": f"候选图片 {index}"})
+            content.append({"type": "image_url", "image_url": {"url": self._get_image_base64(photo_path)}})
+
+        last_error: Optional[Exception] = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self._create_completion(content)
+                ranking = self._parse_ranking_response(
+                    response.choices[0].message.content or "",
+                    num_images,
+                )
+                reranked = []
+                used = set()
+                for rank, candidate_index in enumerate(ranking, start=1):
+                    if candidate_index in used or candidate_index >= len(candidates_to_process):
+                        continue
+                    used.add(candidate_index)
+                    item = dict(candidates_to_process[candidate_index])
+                    item["rank"] = rank
+                    reranked.append(item)
+                for item in candidates_to_process:
+                    if len(reranked) >= rerank_top_k:
+                        break
+                    if item not in reranked:
+                        reranked.append(dict(item))
+                return reranked[:rerank_top_k]
+            except Exception as exc:
+                last_error = exc
+                if attempt == self.max_retries - 1:
+                    break
+                time.sleep(1)
+
+        if last_error is not None:
+            raise ValueError(f"视觉 rerank 失败: {last_error}") from last_error
+        raise ValueError("视觉 rerank 失败")
 
     def is_enabled(self) -> bool:
-        """
-        检查服务是否可用。
-
-        Returns:
-            bool: 服务是否可用
-        """
-        return bool(self.api_key)
+        return bool(self.api_key and self.model_name)

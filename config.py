@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 try:
     from dotenv import load_dotenv
-except ImportError:  # pragma: no cover - optional dependency at runtime
+except ImportError:  # pragma: no cover - optional at runtime
     load_dotenv = None
 
 _CONFIG_CACHE: Optional[Dict[str, Any]] = None
@@ -13,7 +13,7 @@ _CONFIG_CACHE: Optional[Dict[str, Any]] = None
 
 def _get_int(name: str, default: int) -> int:
     value = os.getenv(name)
-    if value is None or value == "":
+    if value in (None, ""):
         return default
     try:
         return int(value)
@@ -21,96 +21,100 @@ def _get_int(name: str, default: int) -> int:
         raise ValueError(f"{name} 必须是整数") from exc
 
 
-def load_config() -> Dict[str, Any]:
-    """
-    加载配置（从环境变量读取）。
+def _get_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value in (None, ""):
+        return default
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} 必须是数字") from exc
 
-    Returns:
-        Dict[str, Any]: 配置字典
-    """
+
+def _get_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value in (None, ""):
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def load_config() -> Dict[str, Any]:
+    """从环境变量加载运行配置。"""
     if load_dotenv is not None:
         load_dotenv()
 
     data_dir = os.getenv("DATA_DIR", "./data")
-    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-    openai_api_key = os.getenv("OPENAI_API_KEY") or openrouter_api_key
+    su8_api_key = os.getenv("SU8_API_KEY") or os.getenv("OPENAI_API_KEY")
+    su8_base_url = os.getenv("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
+
+    query_format_api_key = os.getenv("QUERY_FORMAT_API_KEY") or su8_api_key
+    query_format_base_url = os.getenv("QUERY_FORMAT_BASE_URL", su8_base_url)
 
     config: Dict[str, Any] = {
         "PHOTO_DIR": os.getenv("PHOTO_DIR"),
         "DATA_DIR": data_dir,
-        "OPENROUTER_API_KEY": openrouter_api_key,
-        "OPENAI_API_KEY": openai_api_key,
-        "OPENROUTER_BASE_URL": os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-        "VISION_MODEL_NAME": os.getenv("VISION_MODEL_NAME", "openai/gpt-4o"),
-        "EMBEDDING_MODEL_NAME": os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-zh-v1.5"),
-        "EMBEDDING_DIMENSION": _get_int("EMBEDDING_DIMENSION", 4096),
-
-        # 阿里百炼 Embedding 配置
+        "INDEX_PATH": os.getenv("INDEX_PATH", os.path.join(data_dir, "photo_search.index")),
+        "METADATA_PATH": os.getenv("METADATA_PATH", os.path.join(data_dir, "metadata.json")),
+        "VECTOR_METRIC": os.getenv("VECTOR_METRIC", "cosine"),
+        "VECTOR_WEIGHT": _get_float("VECTOR_WEIGHT", 0.8),
+        "KEYWORD_WEIGHT": _get_float("KEYWORD_WEIGHT", 0.2),
+        "TOP_K": _get_int("TOP_K", 12),
+        "BATCH_SIZE": _get_int("BATCH_SIZE", 8),
+        "MAX_RETRIES": _get_int("MAX_RETRIES", 3),
+        "TIMEOUT": _get_int("TIMEOUT", 45),
+        "SERVER_HOST": os.getenv("SERVER_HOST", "127.0.0.1"),
+        "SERVER_PORT": _get_int("SERVER_PORT", 10001),
+        "SECRET_KEY": os.getenv("SECRET_KEY", "dev-secret-key"),
+        "USE_BASE64": _get_bool("USE_BASE64", True),
+        "IMAGE_MAX_SIZE": _get_int("IMAGE_MAX_SIZE", 1024),
+        "IMAGE_QUALITY": _get_int("IMAGE_QUALITY", 85),
+        "IMAGE_FORMAT": os.getenv("IMAGE_FORMAT", "WEBP").upper(),
+        "SU8_API_KEY": su8_api_key,
+        "SU8_BASE_URL": su8_base_url,
+        "VISION_MODEL": os.getenv("VISION_MODEL", "gpt-5.4"),
+        "VISION_REASONING_EFFORT": os.getenv("VISION_REASONING_EFFORT", "medium"),
+        "STRUCTURED_ANALYSIS_ENABLED": _get_bool("STRUCTURED_ANALYSIS_ENABLED", True),
+        "ENHANCED_ANALYSIS_ENABLED": _get_bool("ENHANCED_ANALYSIS_ENABLED", True),
+        "TAG_MIN_CONFIDENCE": _get_float("TAG_MIN_CONFIDENCE", 0.65),
+        "IDENTITY_TEXT_MIN_CONFIDENCE": _get_float("IDENTITY_TEXT_MIN_CONFIDENCE", 0.7),
+        "IDENTITY_VISUAL_MIN_CONFIDENCE": _get_float("IDENTITY_VISUAL_MIN_CONFIDENCE", 0.92),
+        "TIME_PARSE_MODEL": os.getenv("TIME_PARSE_MODEL", "gpt-5.1"),
+        "TIME_PARSE_REASONING_EFFORT": os.getenv("TIME_PARSE_REASONING_EFFORT", "low"),
+        "QUERY_FORMAT_ENABLED": _get_bool("QUERY_FORMAT_ENABLED", True),
+        "QUERY_FORMAT_API_KEY": query_format_api_key,
+        "QUERY_FORMAT_BASE_URL": query_format_base_url,
+        "QUERY_FORMAT_MODEL": os.getenv("QUERY_FORMAT_MODEL", "gpt-5.1"),
+        "QUERY_FORMAT_REASONING_EFFORT": os.getenv("QUERY_FORMAT_REASONING_EFFORT", "low"),
+        "QUERY_EXPANSION_ENABLED": _get_bool("QUERY_EXPANSION_ENABLED", True),
+        "QUERY_EXPANSION_MAX_ALTERNATIVES": _get_int("QUERY_EXPANSION_MAX_ALTERNATIVES", 2),
         "EMBEDDING_API_KEY": os.getenv("EMBEDDING_API_KEY"),
-        "EMBEDDING_BASE_URL": os.getenv("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-        "EMBEDDING_MODEL": os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
-
-        "TIME_PARSE_MODEL_NAME": os.getenv("TIME_PARSE_MODEL_NAME", "openai/gpt-3.5-turbo"),
-        "SERVER_HOST": os.getenv("SERVER_HOST", "localhost"),
-
-        # 火山引擎 Embedding 配置
-        "VOLCANO_API_KEY": os.getenv("VOLCANO_API_KEY"),
-        "VOLCANO_BASE_URL": os.getenv("VOLCANO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
-        "VOLCANO_EMBEDDING_MODEL": os.getenv("VOLCANO_EMBEDDING_MODEL", "doubao-embedding-large-text-240915"),
-
-        # Elasticsearch 配置
+        "EMBEDDING_BASE_URL": os.getenv("EMBEDDING_BASE_URL", "https://router.tumuer.me/v1"),
+        "EMBEDDING_MODEL": os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B"),
+        "EMBEDDING_DIMENSION": _get_int("EMBEDDING_DIMENSION", 4096),
+        "TEXT_RERANK_API_KEY": os.getenv("TEXT_RERANK_API_KEY") or os.getenv("EMBEDDING_API_KEY"),
+        "TEXT_RERANK_BASE_URL": os.getenv("TEXT_RERANK_BASE_URL", "https://router.tumuer.me/v1"),
+        "TEXT_RERANK_MODEL": os.getenv("TEXT_RERANK_MODEL", "Qwen/Qwen3-Reranker-8B"),
+        "TEXT_RERANK_TIMEOUT": _get_int("TEXT_RERANK_TIMEOUT", 45),
+        "VISUAL_RERANK_ENABLED": _get_bool("VISUAL_RERANK_ENABLED", True),
+        "VISUAL_RERANK_MODEL": os.getenv("VISUAL_RERANK_MODEL", os.getenv("VISION_MODEL", "gpt-5.4")),
+        "VISUAL_RERANK_REASONING_EFFORT": os.getenv("VISUAL_RERANK_REASONING_EFFORT", "medium"),
+        "VISUAL_RERANK_TIMEOUT": _get_int("VISUAL_RERANK_TIMEOUT", 60),
+        "RERANK_IMAGE_MAX_SIZE": _get_int("RERANK_IMAGE_MAX_SIZE", 512),
+        "RERANK_IMAGE_QUALITY": _get_int("RERANK_IMAGE_QUALITY", 75),
+        "RERANK_IMAGE_FORMAT": os.getenv("RERANK_IMAGE_FORMAT", "WEBP").upper(),
+        "RERANK_MAX_IMAGES": _get_int("RERANK_MAX_IMAGES", 12),
         "ELASTICSEARCH_HOST": os.getenv("ELASTICSEARCH_HOST", "localhost"),
         "ELASTICSEARCH_PORT": _get_int("ELASTICSEARCH_PORT", 9200),
         "ELASTICSEARCH_INDEX": os.getenv("ELASTICSEARCH_INDEX", "photo_keywords"),
         "ELASTICSEARCH_USERNAME": os.getenv("ELASTICSEARCH_USERNAME"),
         "ELASTICSEARCH_PASSWORD": os.getenv("ELASTICSEARCH_PASSWORD"),
-
-        # 混合检索权重
-        "VECTOR_WEIGHT": float(os.getenv("VECTOR_WEIGHT", 0.8)),
-        "KEYWORD_WEIGHT": float(os.getenv("KEYWORD_WEIGHT", 0.2)),
-
-        # 查询格式化 LLM 配置
-        "QUERY_FORMAT_API_KEY": os.getenv("QUERY_FORMAT_API_KEY"),
-        "QUERY_FORMAT_BASE_URL": os.getenv("QUERY_FORMAT_BASE_URL"),
-        "QUERY_FORMAT_MODEL": os.getenv("QUERY_FORMAT_MODEL"),
-
-        "SERVER_PORT": _get_int("SERVER_PORT", 5000),
-        "BATCH_SIZE": _get_int("BATCH_SIZE", 10),
-        "MAX_RETRIES": _get_int("MAX_RETRIES", 3),
-        "TIMEOUT": _get_int("TIMEOUT", 30),
-        "TOP_K": _get_int("TOP_K", 10),
-        "INDEX_PATH": os.getenv("INDEX_PATH", os.path.join(data_dir, "photo_search.index")),
-        "METADATA_PATH": os.getenv("METADATA_PATH", os.path.join(data_dir, "metadata.json")),
-        "VECTOR_METRIC": os.getenv("VECTOR_METRIC", "cosine"),  # 确保默认使用余弦相似度，适合中文语义检索
-        "SECRET_KEY": os.getenv("SECRET_KEY", "dev-secret-key"),
-        "USE_BASE64": os.getenv("USE_BASE64", "true").lower() in ("true", "1", "yes"),
-        "IMAGE_MAX_SIZE": _get_int("IMAGE_MAX_SIZE", 1024),
-        "IMAGE_QUALITY": _get_int("IMAGE_QUALITY", 85),
-        "IMAGE_FORMAT": os.getenv("IMAGE_FORMAT", "WEBP").upper(),
-
-        # Rerank 配置
-        "RERANK_ENABLED": os.getenv("RERANK_ENABLED", "true").lower() in ("true", "1", "yes"),
-        "RERANK_MODEL_NAME": os.getenv("RERANK_MODEL_NAME"),  # 默认使用VISION_MODEL_NAME
-        "RERANK_IMAGE_MAX_SIZE": _get_int("RERANK_IMAGE_MAX_SIZE", 512),
-        "RERANK_IMAGE_QUALITY": _get_int("RERANK_IMAGE_QUALITY", 75),
-        "RERANK_MAX_IMAGES": _get_int("RERANK_MAX_IMAGES", 10),
-        "RERANK_TIMEOUT": _get_int("RERANK_TIMEOUT", 60),
     }
-
-    # RERANK_MODEL_NAME 默认使用 VISION_MODEL_NAME
-    if not config["RERANK_MODEL_NAME"]:
-        config["RERANK_MODEL_NAME"] = config["VISION_MODEL_NAME"]
 
     return config
 
 
 def get_config() -> Dict[str, Any]:
-    """
-    获取配置单例。
-
-    Returns:
-        Dict[str, Any]: 配置字典
-    """
+    """获取缓存后的配置。"""
     global _CONFIG_CACHE
     if _CONFIG_CACHE is None:
         _CONFIG_CACHE = load_config()

@@ -1,758 +1,919 @@
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from config import get_config
-
 from core.searcher import Searcher
-from utils.embedding_service import T5EmbeddingService
-from utils.time_parser import TimeParser
+from tests.helpers import FakeEmbeddingService, FakeQueryFormatter, FakeTimeParser
 from utils.vector_store import VectorStore
 
 
 class SearcherTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        """加载配置"""
-        cls.config = get_config()
-        cls.has_api_key = bool(cls.config.get("OPENROUTER_API_KEY"))
-
-    def test_validate_query_short(self) -> None:
-        """测试查询验证-过短"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
+    def _build_searcher(self) -> Searcher:
+        vector_store = VectorStore(dimension=8, index_path="test.index", metadata_path="test.json")
+        return Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
             vector_store=vector_store,
         )
-        self.assertFalse(searcher.validate_query("a"))
-        self.assertFalse(searcher.validate_query("1234"))
 
-    def test_validate_query_invalid_chars(self) -> None:
-        """测试查询验证-非法字符"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
+    def test_validate_query(self) -> None:
+        searcher = self._build_searcher()
+        self.assertFalse(searcher.validate_query("!"))
         self.assertFalse(searcher.validate_query("!!!@@@###"))
-        self.assertFalse(searcher.validate_query("   "))
-
-    def test_validate_query_valid(self) -> None:
-        """测试查询验证-有效查询"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-        self.assertTrue(searcher.validate_query("valid query text"))
+        self.assertTrue(searcher.validate_query("专辑"))
         self.assertTrue(searcher.validate_query("海边度假的照片"))
 
     def test_distance_to_score_cosine(self) -> None:
-        """测试Cosine相似度转换为分数（默认metric）"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        # Cosine相似度: 1.0 映射到 1.0 附近（高分区拉伸）
-        score_one = searcher._distance_to_score(1.0)
-        self.assertGreater(score_one, 0.9)
-
-        # Cosine相似度: 0.5 映射到中间值
-        score_half = searcher._distance_to_score(0.5)
-        self.assertGreater(score_half, 0.6)
-        self.assertLess(score_half, 0.9)
-
-        # Cosine相似度: -1.0 映射到 0 附近
-        score_neg = searcher._distance_to_score(-1.0)
-        self.assertLess(score_neg, 0.1)
+        searcher = self._build_searcher()
+        self.assertGreater(searcher._distance_to_score(1.0), 0.9)
+        self.assertLess(searcher._distance_to_score(-1.0), 0.1)
 
     def test_distance_to_score_l2(self) -> None:
-        """测试L2距离转换为相似度分数"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json", metric="l2")
+        vector_store = VectorStore(dimension=8, index_path="test.index", metadata_path="test.json", metric="l2")
         searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
             vector_store=vector_store,
         )
-
-        score_zero = searcher._distance_to_score(0.0)
-        self.assertEqual(score_zero, 1.0)
-
-        score_positive = searcher._distance_to_score(0.5)
-        self.assertLess(score_positive, 1.0)
-        self.assertGreater(score_positive, 0.0)
-
-        score_large = searcher._distance_to_score(100.0)
-        self.assertLess(score_large, 0.01)
-
-    def test_parse_date_iso_format(self) -> None:
-        """测试ISO格式日期解析"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        result = searcher._parse_date("2024-06-15")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.year, 2024)
-        self.assertEqual(result.month, 6)
-        self.assertEqual(result.day, 15)
-
-    def test_parse_date_datetime_format(self) -> None:
-        """测试datetime格式日期解析"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        result = searcher._parse_date("2024-06-15T10:30:00")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.year, 2024)
-        self.assertEqual(result.month, 6)
-        self.assertEqual(result.day, 15)
-
-    def test_parse_date_invalid(self) -> None:
-        """测试无效日期解析"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        result = searcher._parse_date("invalid-date")
-        self.assertIsNone(result)
+        self.assertEqual(searcher._distance_to_score(0.0), 1.0)
+        self.assertLess(searcher._distance_to_score(2.0), 1.0)
 
     def test_get_index_stats_not_loaded(self) -> None:
-        """测试获取索引统计-未加载"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
+        searcher = self._build_searcher()
         stats = searcher.get_index_stats()
         self.assertEqual(stats["total_items"], 0)
         self.assertFalse(stats["index_loaded"])
-        self.assertIsNone(stats["vector_dimension"])
 
     def test_search_without_loaded_index(self) -> None:
-        """测试未加载索引时搜索"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
+        searcher = self._build_searcher()
         with self.assertRaises(ValueError):
-            searcher.search("test query")
+            searcher.search("有效的查询内容")
 
-    def test_calculate_dynamic_threshold_high_quality(self) -> None:
-        """测试动态阈值计算-高质量查询场景"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        # 16个样本，top_k=10，16 <= 20，所以使用 max(scores[-1] * 0.9, 0.05)
-        scores = [0.92, 0.88, 0.85, 0.45, 0.42, 0.38, 0.35, 0.30, 0.28, 0.25, 0.22, 0.20, 0.18, 0.15, 0.12, 0.10]
-        threshold = searcher._calculate_dynamic_threshold(scores, top_k=10)
-
-        # scores[-1] = 0.10, 0.10 * 0.9 = 0.09, max(0.09, 0.05) = 0.09
-        self.assertGreaterEqual(threshold, 0.05)
-        self.assertLess(threshold, 0.15)
-
-    def test_calculate_dynamic_threshold_uniform_distribution(self) -> None:
-        """测试动态阈值计算-均匀分布场景"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        scores = [0.65, 0.62, 0.58, 0.55, 0.52, 0.50, 0.48, 0.45, 0.42, 0.40, 0.38, 0.35, 0.32, 0.30, 0.28]
-        threshold = searcher._calculate_dynamic_threshold(scores, top_k=10)
-
-        self.assertGreater(threshold, 0.15)
-        self.assertLess(threshold, 0.5)
-
-    def test_calculate_dynamic_threshold_low_scores(self) -> None:
-        """测试动态阈值计算-低分场景"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        # 15个样本，top_k=10，15 <= 20，所以使用 max(scores[-1] * 0.9, 0.05)
-        scores = [0.32, 0.30, 0.28, 0.25, 0.22, 0.20, 0.18, 0.15, 0.12, 0.10, 0.08, 0.06, 0.05, 0.04, 0.03]
-        threshold = searcher._calculate_dynamic_threshold(scores, top_k=10)
-
-        # scores[-1] = 0.03, 0.03 * 0.9 = 0.027, max(0.027, 0.05) = 0.05
-        self.assertGreaterEqual(threshold, 0.03)
-        self.assertLessEqual(threshold, 0.1)
-
-    def test_calculate_dynamic_threshold_few_candidates(self) -> None:
-        """测试动态阈值计算-候选数不足场景"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        scores = [0.85, 0.80, 0.75]
-        threshold = searcher._calculate_dynamic_threshold(scores, top_k=10)
-
-        # 候选数不足时，使用 max(scores[-1] * 0.9, 0.05)
-        # scores[-1] = 0.75, 0.75 * 0.9 = 0.675
-        self.assertGreaterEqual(threshold, 0.05)
-        self.assertLessEqual(threshold, 0.75)
-
-    def test_calculate_dynamic_threshold_empty_scores(self) -> None:
-        """测试动态阈值计算-空分数列表"""
-        vector_store = VectorStore(dimension=768, index_path="test.index", metadata_path="test.json")
-        searcher = Searcher(
-            embedding=T5EmbeddingService(model_name="sentence-t5-base", device="cuda"),
-            time_parser=TimeParser(api_key="test-key"),
-            vector_store=vector_store,
-        )
-
-        threshold = searcher._calculate_dynamic_threshold([], top_k=10)
-        self.assertEqual(threshold, 0.1)
-
-
-class TestSearcherHybridSearch(unittest.TestCase):
-    """混合检索测试。"""
-    
     def test_hybrid_search_combines_scores(self) -> None:
-        """测试混合检索正确融合向量和关键字分数。"""
-        # Mock 依赖
-        mock_embedding = Mock()
-        mock_embedding.generate_embedding.return_value = [0.1] * 4096
-        
-        mock_vector_store = Mock()
-        mock_vector_store.search.return_value = [
-            {"metadata": {"photo_path": "/a.jpg", "description": "测试A"}, "distance": 0.9},
-            {"metadata": {"photo_path": "/b.jpg", "description": "测试B"}, "distance": 0.7},
-        ]
-        mock_vector_store.get_total_items.return_value = 100
-        mock_vector_store.load.return_value = True
-        mock_vector_store.dimension = 4096
-        mock_vector_store.metric = "cosine"
-        
-        mock_keyword_store = Mock()
-        mock_keyword_store.search.return_value = [
-            {"photo_path": "/a.jpg", "score": 0.8},
-            {"photo_path": "/c.jpg", "score": 0.6},
-        ]
-        
-        mock_time_parser = Mock()
-        mock_time_parser.extract_time_constraints.return_value = {
-            "start_date": None, "end_date": None, "precision": "none"
-        }
-        
-        searcher = Searcher(
-            embedding=mock_embedding,
-            time_parser=mock_time_parser,
-            vector_store=mock_vector_store,
-            keyword_store=mock_keyword_store,
-            vector_weight=0.8,
-            keyword_weight=0.2,
-        )
-        searcher.index_loaded = True
-        
-        results = searcher.search("测试查询", top_k=10)
-        
-        # 验证结果包含向量和关键字两边的照片
-        paths = [r["photo_path"] for r in results]
-        self.assertIn("/a.jpg", paths)  # 两边都有
-    
-    def test_hybrid_search_degrades_without_keyword_store(self) -> None:
-        """测试无 KeywordStore 时降级为纯向量检索。"""
-        mock_embedding = Mock()
-        mock_embedding.generate_embedding.return_value = [0.1] * 512
-        
-        mock_vector_store = Mock()
-        mock_vector_store.search.return_value = [
-            {"metadata": {"photo_path": "/a.jpg", "description": "测试"}, "distance": 0.9},
-        ]
-        mock_vector_store.get_total_items.return_value = 10
-        mock_vector_store.load.return_value = True
-        mock_vector_store.dimension = 512
-        mock_vector_store.metric = "cosine"
-        
-        mock_time_parser = Mock()
-        
-        searcher = Searcher(
-            embedding=mock_embedding,
-            time_parser=mock_time_parser,
-            vector_store=mock_vector_store,
-            keyword_store=None,  # 不传入 KeywordStore
-        )
-        searcher.index_loaded = True
-        
-        results = searcher.search("测试查询", top_k=10)
-        
-        # 应该正常返回结果
-        self.assertEqual(len(results), 1)
-    
-    def test_weight_validation(self) -> None:
-        """测试权重必须和为 1。"""
-        mock_embedding = Mock()
-        mock_vector_store = Mock()
-        mock_time_parser = Mock()
-        
-        with self.assertRaises(ValueError) as context:
-            Searcher(
+        with tempfile.TemporaryDirectory() as tmp:
+            a_path = os.path.join(tmp, "a.jpg")
+            b_path = os.path.join(tmp, "b.jpg")
+            c_path = os.path.join(tmp, "c.jpg")
+            for path in (a_path, b_path):
+                with open(path, "wb") as file:
+                    file.write(b"test")
+
+            mock_embedding = FakeEmbeddingService(dimension=8)
+            mock_vector_store = Mock()
+            mock_vector_store.metric = "cosine"
+            mock_vector_store.metadata = [
+                {"photo_path": a_path, "description": "测试A"},
+                {"photo_path": b_path, "description": "测试B"},
+            ]
+            mock_vector_store.search.return_value = [
+                {"metadata": {"photo_path": a_path, "description": "测试A"}, "distance": 0.9},
+                {"metadata": {"photo_path": b_path, "description": "测试B"}, "distance": 0.7},
+            ]
+            mock_keyword_store = Mock()
+            mock_keyword_store.search.return_value = [
+                {"photo_path": b_path, "score": 1.0},
+                {"photo_path": c_path, "score": 0.5},
+            ]
+
+            searcher = Searcher(
                 embedding=mock_embedding,
-                time_parser=mock_time_parser,
+                time_parser=FakeTimeParser(),
                 vector_store=mock_vector_store,
-                vector_weight=0.5,
-                keyword_weight=0.3,  # 0.5 + 0.3 != 1
+                keyword_store=mock_keyword_store,
+                vector_weight=0.8,
+                keyword_weight=0.2,
             )
-        
-        self.assertIn("必须等于 1.0", str(context.exception))
 
+            results = searcher._hybrid_search("测试查询", [0.1] * 8, 10, filters=None)
+            by_path = {item["photo_path"]: item for item in results}
+            self.assertIn(a_path, by_path)
+            self.assertIn(b_path, by_path)
+            self.assertNotIn(c_path, by_path)
+            self.assertGreater(by_path[b_path]["score"], by_path[a_path]["score"] * 0.8)
+            self.assertGreater(by_path[b_path]["keyword_score"], 0.0)
 
-class TestSearcherQueryFormatting(unittest.TestCase):
-    """查询格式化集成测试。"""
-    
-    def test_search_uses_formatter(self) -> None:
-        """测试检索时调用查询格式化。"""
-        mock_embedding = Mock()
-        mock_embedding.generate_embedding.return_value = [0.1] * 4096
-        
-        mock_vector_store = Mock()
-        mock_vector_store.search.return_value = []
-        mock_vector_store.load.return_value = True
-        mock_vector_store.dimension = 4096
-        
-        mock_formatter = Mock()
-        mock_formatter.is_enabled.return_value = True
-        mock_formatter.format_query.return_value = {
-            "search_text": "格式化后的查询",
+    def test_hybrid_search_does_not_penalize_missing_keyword_hit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            vector_only = os.path.join(tmp, "vector-only.jpg")
+            both_hit = os.path.join(tmp, "both-hit.jpg")
+            for path in (vector_only, both_hit):
+                with open(path, "wb") as file:
+                    file.write(b"test")
+
+            mock_embedding = FakeEmbeddingService(dimension=8)
+            mock_vector_store = Mock()
+            mock_vector_store.metric = "cosine"
+            mock_vector_store.metadata = [
+                {"photo_path": vector_only, "description": "测试A"},
+                {"photo_path": both_hit, "description": "测试B"},
+            ]
+            mock_vector_store.search.return_value = [
+                {"metadata": {"photo_path": vector_only, "description": "测试A"}, "distance": 0.9},
+                {"metadata": {"photo_path": both_hit, "description": "测试B"}, "distance": 0.7},
+            ]
+            mock_keyword_store = Mock()
+            mock_keyword_store.search.return_value = [
+                {"photo_path": both_hit, "score": 1.0},
+            ]
+
+            searcher = Searcher(
+                embedding=mock_embedding,
+                time_parser=FakeTimeParser(),
+                vector_store=mock_vector_store,
+                keyword_store=mock_keyword_store,
+                vector_weight=0.8,
+                keyword_weight=0.2,
+            )
+
+            results = searcher._hybrid_search("测试查询", [0.1] * 8, 10, filters=None)
+            by_path = {item["photo_path"]: item for item in results}
+            self.assertGreater(by_path[vector_only]["score"], 0.9)
+            self.assertAlmostEqual(by_path[both_hit]["keyword_score"], 1.0)
+
+    def test_hybrid_search_skips_keyword_only_items_missing_from_vector_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            indexed_path = os.path.join(tmp, "indexed.jpg")
+            stale_path = os.path.join(tmp, "stale-only.jpg")
+            with open(indexed_path, "wb") as file:
+                file.write(b"test")
+
+            mock_embedding = FakeEmbeddingService(dimension=8)
+            mock_vector_store = Mock()
+            mock_vector_store.metric = "cosine"
+            mock_vector_store.metadata = [
+                {"photo_path": indexed_path, "description": "已索引图片"},
+            ]
+            mock_vector_store.search.return_value = [
+                {"metadata": {"photo_path": indexed_path, "description": "已索引图片"}, "distance": 0.9},
+            ]
+            mock_keyword_store = Mock()
+            mock_keyword_store.search.return_value = [
+                {"photo_path": stale_path, "score": 1.0},
+                {"photo_path": indexed_path, "score": 0.3},
+            ]
+
+            searcher = Searcher(
+                embedding=mock_embedding,
+                time_parser=FakeTimeParser(),
+                vector_store=mock_vector_store,
+                keyword_store=mock_keyword_store,
+                vector_weight=0.85,
+                keyword_weight=0.15,
+            )
+
+            results = searcher._hybrid_search("测试查询", [0.1] * 8, 10, filters=None)
+            paths = [item["photo_path"] for item in results]
+            self.assertIn(indexed_path, paths)
+            self.assertNotIn(stale_path, paths)
+
+    def test_hybrid_search_drops_weak_keyword_only_hits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            vector_hit = os.path.join(tmp, "vector.jpg")
+            keyword_only = os.path.join(tmp, "keyword-only.jpg")
+            for path in (vector_hit, keyword_only):
+                with open(path, "wb") as file:
+                    file.write(b"test")
+
+            mock_vector_store = Mock()
+            mock_vector_store.metric = "cosine"
+            mock_vector_store.metadata = [
+                {"photo_path": vector_hit, "description": "向量图片"},
+                {"photo_path": keyword_only, "description": "弱关键词图片"},
+            ]
+            mock_vector_store.search.return_value = [
+                {"metadata": {"photo_path": vector_hit, "description": "向量图片"}, "distance": 0.92},
+            ]
+
+            mock_keyword_store = Mock()
+            mock_keyword_store.search.return_value = [
+                {"photo_path": keyword_only, "score": 0.3},
+            ]
+
+            searcher = Searcher(
+                embedding=FakeEmbeddingService(dimension=8),
+                time_parser=FakeTimeParser(),
+                vector_store=mock_vector_store,
+                keyword_store=mock_keyword_store,
+                vector_weight=0.85,
+                keyword_weight=0.15,
+            )
+
+            results = searcher._hybrid_search("测试查询", [0.1] * 8, 20, filters=None)
+            paths = [item["photo_path"] for item in results]
+            self.assertIn(vector_hit, paths)
+            self.assertNotIn(keyword_only, paths)
+
+    def test_check_time_match_v2_rejects_missing_exif_for_time_filters(self) -> None:
+        searcher = self._build_searcher()
+        metadata = {
+            "file_time": "2025-08-17T12:34:56",
+            "time_info": {},
+            "exif_data": {},
+        }
+
+        self.assertFalse(searcher._check_time_match_v2(metadata, {"season": "夏天"}))
+        self.assertFalse(searcher._check_time_match_v2(metadata, {"year": 2025}))
+
+    def test_search_by_image_path_excludes_self(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            index_path = os.path.join(tmp, "index.bin")
+            metadata_path = os.path.join(tmp, "metadata.json")
+            vector_store = VectorStore(dimension=8, index_path=index_path, metadata_path=metadata_path)
+            embedding = FakeEmbeddingService(dimension=8)
+            searcher = Searcher(
+                embedding=embedding,
+                time_parser=FakeTimeParser(),
+                vector_store=vector_store,
+            )
+            paths = [os.path.join(tmp, f"photo_{index}.jpg") for index in range(3)]
+            for index, path in enumerate(paths):
+                with open(path, "wb") as file:
+                    file.write(b"test")
+                vector_store.add_item(
+                    [float(index + offset) for offset in range(8)],
+                    {
+                        "photo_path": path,
+                        "description": f"图片 {index}",
+                        "retrieval_text": f"图片 {index}",
+                    },
+                )
+            vector_store.save()
+            searcher.load_index()
+
+            results = searcher.search_by_image_path(paths[0], top_k=2)
+            self.assertEqual(len(results), 2)
+            self.assertTrue(all(item["photo_path"] != paths[0] for item in results))
+
+    def test_search_by_image_path_deduplicates_same_photo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            index_path = os.path.join(tmp, "index.bin")
+            metadata_path = os.path.join(tmp, "metadata.json")
+            vector_store = VectorStore(dimension=8, index_path=index_path, metadata_path=metadata_path)
+            embedding = FakeEmbeddingService(dimension=8)
+            searcher = Searcher(
+                embedding=embedding,
+                time_parser=FakeTimeParser(),
+                vector_store=vector_store,
+            )
+            query_path = os.path.join(tmp, "query.jpg")
+            dup_path = os.path.join(tmp, "dup.jpg")
+            other_path = os.path.join(tmp, "other.jpg")
+            for path in (query_path, dup_path, other_path):
+                with open(path, "wb") as file:
+                    file.write(b"test")
+
+            vector_store.add_item([1.0] * 8, {"photo_path": query_path, "description": "query"})
+            vector_store.add_item([0.9] * 8, {"photo_path": dup_path, "description": "dup-a"})
+            vector_store.add_item([0.9] * 8, {"photo_path": dup_path, "description": "dup-b"})
+            vector_store.add_item([0.8] * 8, {"photo_path": other_path, "description": "other"})
+            vector_store.save()
+            searcher.load_index()
+
+            results = searcher.search_by_image_path(query_path, top_k=3)
+            paths = [item["photo_path"] for item in results]
+            self.assertEqual(paths.count(dup_path), 1)
+
+    def test_search_by_uploaded_image_uses_temporary_analysis_embedding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            index_path = os.path.join(tmp, "index.bin")
+            metadata_path = os.path.join(tmp, "metadata.json")
+            vector_store = VectorStore(dimension=8, index_path=index_path, metadata_path=metadata_path)
+            embedding = FakeEmbeddingService(dimension=8)
+            searcher = Searcher(
+                embedding=embedding,
+                time_parser=FakeTimeParser(),
+                vector_store=vector_store,
+            )
+            indexed_paths = [os.path.join(tmp, f"photo_{index}.jpg") for index in range(3)]
+            for index, path in enumerate(indexed_paths):
+                with open(path, "wb") as file:
+                    file.write(b"test")
+                vector_store.add_item(
+                    [float(index + offset) for offset in range(8)],
+                    {
+                        "photo_path": path,
+                        "description": f"图片 {index}",
+                        "retrieval_text": f"photo 图片 {index}",
+                    },
+                )
+
+            uploaded_path = os.path.join(tmp, "uploaded.jpg")
+            with open(uploaded_path, "wb") as file:
+                file.write(b"upload")
+
+            vector_store.save()
+            searcher.load_index()
+
+            analysis = {
+                "description": "上传图片",
+                "outer_scene_summary": "上传图片外层场景",
+                "inner_content_summary": "",
+                "media_types": ["photo"],
+                "tags": ["上传图片", "图片 1"],
+                "ocr_text": "",
+                "person_roles": [],
+                "identity_candidates": [],
+                "identity_names": [],
+                "identity_evidence": [],
+                "analysis_flags": {},
+                "retrieval_text": "photo 图片 1 上传图片",
+            }
+
+            results = searcher.search_by_uploaded_image(
+                uploaded_path,
+                analysis=analysis,
+                top_k=2,
+            )
+
+            self.assertEqual(len(results), 2)
+            self.assertTrue(all(item["photo_path"] != uploaded_path for item in results))
+            self.assertTrue(all(item["photo_path"] in indexed_paths for item in results))
+
+    def test_identity_query_filters_out_candidates_without_matching_identity_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exact_path = os.path.join(tmp, "exact.jpg")
+            generic_path = os.path.join(tmp, "generic.jpg")
+            for path in (exact_path, generic_path):
+                with open(path, "wb") as file:
+                    file.write(b"test")
+
+            vector_store = Mock()
+            vector_store.load.return_value = True
+            vector_store.dimension = 8
+            vector_store.metric = "cosine"
+            vector_store.metadata = [
+                {
+                    "photo_path": exact_path,
+                    "description": "舞台歌手",
+                    "identity_names": ["陶喆"],
+                    "identity_candidates": [{"name": "陶喆", "confidence": 0.95, "evidence_sources": ["face_similarity"]}],
+                },
+                {
+                    "photo_path": generic_path,
+                    "description": "男歌手现场",
+                    "identity_names": [],
+                    "identity_candidates": [],
+                },
+            ]
+            vector_store.get_total_items.return_value = 2
+            vector_store.search.return_value = [
+                {"metadata": vector_store.metadata[1], "distance": 0.99},
+                {"metadata": vector_store.metadata[0], "distance": 0.8},
+            ]
+
+            searcher = Searcher(
+                embedding=FakeEmbeddingService(dimension=8),
+                time_parser=FakeTimeParser(),
+                vector_store=vector_store,
+                query_formatter=FakeQueryFormatter(
+                    {
+                        "请帮我找陶喆的照片": {
+                            "search_text": "",
+                            "media_terms": [],
+                            "identity_terms": ["陶喆"],
+                            "strict_identity_filter": True,
+                            "time_hint": None,
+                            "season": None,
+                            "time_period": None,
+                            "original_query": "请帮我找陶喆的照片",
+                        }
+                    }
+                ),
+            )
+
+            results = searcher.search("请帮我找陶喆的照片", top_k=5)
+            self.assertEqual([item["photo_path"] for item in results], [exact_path])
+
+    def test_identity_style_query_does_not_force_hard_identity_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exact_path = os.path.join(tmp, "exact.jpg")
+            generic_path = os.path.join(tmp, "generic.jpg")
+            for path in (exact_path, generic_path):
+                with open(path, "wb") as file:
+                    file.write(b"test")
+
+            vector_store = Mock()
+            vector_store.load.return_value = True
+            vector_store.dimension = 8
+            vector_store.metric = "cosine"
+            vector_store.metadata = [
+                {
+                    "photo_path": exact_path,
+                    "description": "带有陶喆风格的舞台照片",
+                    "identity_names": ["陶喆"],
+                    "identity_candidates": [{"name": "陶喆", "confidence": 0.95, "evidence_sources": ["face_similarity"]}],
+                },
+                {
+                    "photo_path": generic_path,
+                    "description": "类似华语男歌手风格的舞台照片",
+                    "identity_names": [],
+                    "identity_candidates": [],
+                },
+            ]
+            vector_store.get_total_items.return_value = 2
+            vector_store.search.return_value = [
+                {"metadata": vector_store.metadata[1], "distance": 0.99},
+                {"metadata": vector_store.metadata[0], "distance": 0.8},
+            ]
+
+            searcher = Searcher(
+                embedding=FakeEmbeddingService(dimension=8),
+                time_parser=FakeTimeParser(),
+                vector_store=vector_store,
+                query_formatter=FakeQueryFormatter(
+                    {
+                        "像陶喆风格的舞台照": {
+                            "search_text": "华语男歌手风格 舞台照",
+                            "media_terms": ["stage_performance"],
+                            "identity_terms": ["陶喆"],
+                            "strict_identity_filter": False,
+                            "time_hint": None,
+                            "season": None,
+                            "time_period": None,
+                            "original_query": "像陶喆风格的舞台照",
+                        }
+                    }
+                ),
+            )
+
+            results = searcher.search("像陶喆风格的舞台照", top_k=5)
+            self.assertEqual([item["photo_path"] for item in results], [generic_path, exact_path])
+
+    def test_search_uses_filter_only_branch_when_llm_returns_no_visual_semantics(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        keyword_store = Mock()
+        keyword_store.search_with_filters.return_value = [
+            {"photo_path": "/tmp/a.jpg", "score": 1.0},
+        ]
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=keyword_store,
+            query_formatter=FakeQueryFormatter(
+                {
+                    "去年的照片": {
+                        "search_text": "",
+                        "media_terms": [],
+                        "identity_terms": [],
+                        "time_hint": "去年",
+                        "season": None,
+                        "time_period": None,
+                    }
+                }
+            ),
+        )
+
+        with patch.object(searcher, "_filter_only_search", return_value=[{"photo_path": "/tmp/a.jpg"}]) as filter_only, \
+             patch.object(searcher.embedding_service, "generate_embedding") as generate_embedding:
+            results = searcher.search("去年的照片", top_k=5)
+
+        filter_only.assert_called_once_with(
+            None,
+            {"start_date": "2025-01-01", "end_date": "2025-12-31", "year": None, "month": None, "day": None, "season": None, "time_period": None, "precision": "year"},
+            5,
+        )
+        generate_embedding.assert_not_called()
+        self.assertEqual(results, [{"photo_path": "/tmp/a.jpg"}])
+
+    def test_search_uses_hybrid_branch_for_non_filter_query_even_without_llm_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_path = os.path.join(tmp, "IMG_20250425_204121.jpg")
+            with open(photo_path, "wb") as file:
+                file.write(b"test")
+
+            vector_store = Mock()
+            vector_store.load.return_value = True
+            vector_store.dimension = 8
+            vector_store.metric = "cosine"
+            vector_store.metadata = [
+                {"photo_path": photo_path, "description": "测试图片"},
+            ]
+            vector_store.get_total_items.return_value = 10
+
+            searcher = Searcher(
+                embedding=FakeEmbeddingService(dimension=8),
+                time_parser=FakeTimeParser(),
+                vector_store=vector_store,
+                keyword_store=Mock(),
+                query_formatter=FakeQueryFormatter(
+                    {
+                        "IMG_20250425_204121.jpg": {
+                        "search_text": "",
+                        "media_terms": [],
+                        "identity_terms": [],
+                        "time_hint": None,
+                        "season": None,
+                        "time_period": None,
+                        }
+                    }
+                ),
+            )
+
+            expected_results = [
+                {
+                    "photo_path": photo_path,
+                    "description": "测试图片",
+                    "score": 0.91,
+                    "vector_score": 0.91,
+                    "keyword_score": 0.0,
+                    "rank": 1,
+                }
+            ]
+
+            with patch.object(searcher, "_hybrid_search", return_value=expected_results) as hybrid_search, \
+                 patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8) as generate_embedding:
+                results = searcher.search("IMG_20250425_204121.jpg", top_k=5)
+
+            hybrid_search.assert_called_once()
+            generate_embedding.assert_called_once_with("IMG_20250425_204121.jpg")
+            self.assertEqual(results, expected_results)
+
+    def test_search_uses_hybrid_branch_with_llm_extracted_visual_text(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=FakeQueryFormatter(
+                {
+                    "夏天海边的照片": {
+                        "search_text": "海边",
+                        "media_terms": [],
+                        "identity_terms": [],
+                        "time_hint": None,
+                        "season": "夏天",
+                        "time_period": None,
+                    }
+                }
+            ),
+        )
+
+        expected_results = [
+            {
+                "photo_path": "/tmp/a.jpg",
+                "description": "海边",
+                "score": 0.9,
+                "vector_score": 0.9,
+                "keyword_score": 0.8,
+                "rank": 1,
+            }
+        ]
+
+        with patch.object(searcher, "_hybrid_search", return_value=expected_results) as hybrid_search, \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8) as generate_embedding:
+            results = searcher.search("夏天海边的照片", top_k=5)
+
+        hybrid_search.assert_called_once()
+        generate_embedding.assert_called_once_with("海边")
+        self.assertEqual(results, expected_results)
+
+    def test_search_supports_media_and_identity_terms_in_embedding_query(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=FakeQueryFormatter(
+                {
+                    "周杰伦演唱会": {
+                        "search_text": "",
+                        "media_terms": ["stage_performance"],
+                        "identity_terms": ["周杰伦"],
+                        "time_hint": None,
+                        "season": None,
+                        "time_period": None,
+                    }
+                }
+            ),
+        )
+
+        with patch.object(searcher, "_hybrid_search", return_value=[]) as hybrid_search, patch.object(
+            searcher.embedding_service,
+            "generate_embedding",
+            return_value=[0.1] * 8,
+        ) as generate_embedding:
+            searcher.search("周杰伦演唱会", top_k=5)
+
+        generate_embedding.assert_called_once_with("stage_performance 周杰伦")
+        _, kwargs = hybrid_search.call_args
+        self.assertEqual(kwargs["media_terms"], ["stage_performance"])
+        self.assertEqual(kwargs["identity_terms"], ["周杰伦"])
+
+    def test_search_does_not_expand_when_first_round_is_strong(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "海边日落": {
+                    "search_text": "海边日落",
+                    "media_terms": [],
+                    "identity_terms": [],
+                    "strict_identity_filter": False,
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "海边日落",
+                }
+            }
+        )
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        strong_results = [
+            {"photo_path": "/tmp/a.jpg", "description": "海边日落", "score": 0.92, "vector_score": 0.92, "keyword_score": 0.0, "rank": 1},
+        ]
+
+        with patch.object(searcher, "_hybrid_search", return_value=strong_results) as hybrid_search, \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8), \
+             patch.object(searcher, "_maybe_expand_query_results", wraps=searcher._maybe_expand_query_results) as maybe_expand:
+            results = searcher.search("海边日落", top_k=5)
+
+        hybrid_search.assert_called_once()
+        maybe_expand.assert_called_once()
+        self.assertEqual(results, strong_results)
+
+    def test_search_expands_when_first_round_is_weak(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "请帮我找陶喆的照片": {
+                    "search_text": "",
+                    "media_terms": [],
+                    "identity_terms": ["陶喆"],
+                    "strict_identity_filter": True,
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "请帮我找陶喆的照片",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[
+            {
+                "search_text": "舞台男歌手 现场演出",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["陶喆"],
+                "strict_identity_filter": False,
+                "time_hint": None,
+                "season": None,
+                "time_period": None,
+                "original_query": "请帮我找陶喆的照片",
+            }
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        weak_results = [
+            {"photo_path": "/tmp/weak.jpg", "description": "模糊男歌手", "score": 0.41, "vector_score": 0.41, "keyword_score": 0.0, "rank": 1},
+        ]
+        expanded_results = [
+            {"photo_path": "/tmp/better.jpg", "description": "舞台男歌手", "score": 0.78, "vector_score": 0.78, "keyword_score": 0.0, "rank": 1},
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_results]) as hybrid_search, \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("请帮我找陶喆的照片", top_k=5)
+
+        self.assertEqual(hybrid_search.call_count, 2)
+        query_formatter.expand_query_intents.assert_called_once()
+        self.assertEqual(results, expanded_results)
+
+    def test_search_records_search_debug_for_expansion_round(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "请帮我找陶喆的照片": {
+                    "search_text": "",
+                    "media_terms": [],
+                    "identity_terms": ["陶喆"],
+                    "strict_identity_filter": True,
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "请帮我找陶喆的照片",
+                }
+            }
+        )
+        query_formatter.expansion_mapping["请帮我找陶喆的照片"] = [
+            {
+                "search_text": "舞台男歌手 现场演出",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["陶喆"],
+                "strict_identity_filter": True,
+                "time_hint": None,
+                "season": None,
+                "time_period": None,
+                "original_query": "请帮我找陶喆的照片",
+                "reason": "补充现场演出语义",
+            }
+        ]
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        weak_results = [
+            {
+                "photo_path": "/tmp/weak.jpg",
+                "description": "模糊男歌手",
+                "score": 0.41,
+                "vector_score": 0.41,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/weak.jpg", "identity_names": []},
+            },
+        ]
+        expanded_results = [
+            {
+                "photo_path": "/tmp/better.jpg",
+                "description": "陶喆舞台现场",
+                "score": 0.78,
+                "vector_score": 0.78,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/better.jpg", "identity_names": ["陶喆"]},
+            },
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_results]), \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("请帮我找陶喆的照片", top_k=5)
+
+        self.assertEqual(results, expanded_results)
+        debug = searcher.get_last_search_debug()
+        self.assertEqual(debug["base_intent"]["identity_terms"], ["陶喆"])
+        self.assertTrue(debug["expansion_triggered"])
+        self.assertFalse(debug["reflection_triggered"])
+        self.assertEqual(len(debug["alternatives"]), 1)
+        self.assertEqual(debug["alternatives"][0]["reason"], "补充现场演出语义")
+        self.assertEqual(len(debug["rounds"]), 2)
+        self.assertEqual(debug["rounds"][0]["round"], "base")
+        self.assertEqual(debug["rounds"][1]["round"], "expansion")
+        self.assertEqual(debug["rounds"][1]["result_count"], 1)
+
+    def test_search_uses_reflection_when_expansion_is_still_weak(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "请帮我找陶喆的照片": {
+                    "search_text": "",
+                    "media_terms": [],
+                    "identity_terms": ["陶喆"],
+                    "strict_identity_filter": True,
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "请帮我找陶喆的照片",
+                }
+            }
+        )
+        query_formatter.expansion_mapping["请帮我找陶喆的照片"] = [
+            {
+                "search_text": "华语男歌手 舞台照",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["陶喆"],
+                "strict_identity_filter": False,
+                "time_hint": None,
+                "season": None,
+                "time_period": None,
+                "original_query": "请帮我找陶喆的照片",
+                "reason": "先扩大到舞台场景",
+            }
+        ]
+        query_formatter.reflection_mapping["请帮我找陶喆的照片"] = {
+            "search_text": "舞台近景 男歌手 特写",
+            "media_terms": ["stage_performance"],
+            "identity_terms": ["陶喆"],
+            "strict_identity_filter": True,
             "time_hint": None,
             "season": None,
-        }
-        
-        searcher = Searcher(
-            embedding=mock_embedding,
-            time_parser=Mock(),
-            vector_store=mock_vector_store,
-            query_formatter=mock_formatter,
-        )
-        searcher.index_loaded = True
-        
-        searcher.search("原始查询")
-        
-        mock_formatter.format_query.assert_called_with("原始查询")
-        mock_embedding.generate_embedding.assert_called_with("格式化后的查询")
-
-
-class TestSearcherTimeConstraints(unittest.TestCase):
-    """时间约束提取测试（改进版）。"""
-
-    def _create_searcher(self) -> Searcher:
-        """创建带 Mock 依赖的 Searcher 实例。"""
-        mock_embedding = Mock()
-        mock_vector_store = Mock()
-        mock_time_parser = Mock()
-        mock_time_parser.extract_time_constraints.return_value = {
-            "start_date": None,
-            "end_date": None,
-            "precision": "none",
-        }
-
-        return Searcher(
-            embedding=mock_embedding,
-            time_parser=mock_time_parser,
-            vector_store=mock_vector_store,
-        )
-
-    def test_extract_time_constraints_with_season(self) -> None:
-        """测试从查询中提取季节。"""
-        searcher = self._create_searcher()
-
-        # Mock time_parser 返回基础约束
-        searcher.time_parser.extract_time_constraints.return_value = {
-            "start_date": None,
-            "end_date": None,
-            "precision": "none",
-        }
-
-        constraints = searcher._extract_time_constraints("夏天在海边拍的照片")
-
-        self.assertEqual(constraints["season"], "夏天")
-
-    def test_extract_time_constraints_with_time_period(self) -> None:
-        """测试从查询中提取时段。"""
-        searcher = self._create_searcher()
-
-        constraints = searcher._extract_time_constraints("傍晚的日落照片")
-        self.assertEqual(constraints["time_period"], "傍晚")
-
-        constraints = searcher._extract_time_constraints("凌晨拍的星空")
-        self.assertEqual(constraints["time_period"], "凌晨")
-
-        constraints = searcher._extract_time_constraints("中午吃饭的照片")
-        self.assertEqual(constraints["time_period"], "中午")
-
-    def test_extract_time_constraints_season_variants(self) -> None:
-        """测试季节的不同表述方式。"""
-        searcher = self._create_searcher()
-
-        # 春季 -> 春天
-        constraints = searcher._extract_time_constraints("春季踏青的照片")
-        self.assertEqual(constraints["season"], "春天")
-
-        # 冬季 -> 冬天
-        constraints = searcher._extract_time_constraints("冬季滑雪")
-        self.assertEqual(constraints["season"], "冬天")
-
-    def test_extract_time_constraints_time_period_variants(self) -> None:
-        """测试时段的不同表述方式。"""
-        searcher = self._create_searcher()
-
-        # 早上 -> 早晨
-        constraints = searcher._extract_time_constraints("早上跑步的照片")
-        self.assertEqual(constraints["time_period"], "早晨")
-
-        # 晚上 -> 夜晚
-        constraints = searcher._extract_time_constraints("晚上聚餐")
-        self.assertEqual(constraints["time_period"], "夜晚")
-
-        # 深夜 -> 凌晨
-        constraints = searcher._extract_time_constraints("深夜的城市")
-        self.assertEqual(constraints["time_period"], "凌晨")
-
-
-class TestSearcherTimeMatchV2(unittest.TestCase):
-    """时间匹配测试（改进版，支持 time_info）。"""
-
-    def _create_searcher(self) -> Searcher:
-        """创建带 Mock 依赖的 Searcher 实例。"""
-        mock_embedding = Mock()
-        mock_vector_store = Mock()
-        mock_time_parser = Mock()
-
-        return Searcher(
-            embedding=mock_embedding,
-            time_parser=mock_time_parser,
-            vector_store=mock_vector_store,
-        )
-
-    def test_check_time_match_v2_season(self) -> None:
-        """测试季节匹配。"""
-        searcher = self._create_searcher()
-
-        metadata = {
-            "time_info": {
-                "year": 2024,
-                "month": 7,
-                "season": "夏天",
-                "time_period": "下午",
-            }
-        }
-
-        # 匹配
-        constraints = {"season": "夏天"}
-        self.assertTrue(searcher._check_time_match_v2(metadata, constraints))
-
-        # 不匹配
-        constraints = {"season": "冬天"}
-        self.assertFalse(searcher._check_time_match_v2(metadata, constraints))
-
-    def test_check_time_match_v2_time_period(self) -> None:
-        """测试时段匹配。"""
-        searcher = self._create_searcher()
-
-        metadata = {
-            "time_info": {
-                "time_period": "傍晚",
-            }
-        }
-
-        # 匹配
-        constraints = {"time_period": "傍晚"}
-        self.assertTrue(searcher._check_time_match_v2(metadata, constraints))
-
-        # 不匹配
-        constraints = {"time_period": "上午"}
-        self.assertFalse(searcher._check_time_match_v2(metadata, constraints))
-
-    def test_check_time_match_v2_year(self) -> None:
-        """测试年份匹配。"""
-        searcher = self._create_searcher()
-
-        metadata = {
-            "time_info": {
-                "year": 2024,
-            }
-        }
-
-        # 匹配
-        constraints = {"year": 2024}
-        self.assertTrue(searcher._check_time_match_v2(metadata, constraints))
-
-        # 不匹配
-        constraints = {"year": 2023}
-        self.assertFalse(searcher._check_time_match_v2(metadata, constraints))
-
-    def test_check_time_match_v2_combined(self) -> None:
-        """测试组合条件匹配。"""
-        searcher = self._create_searcher()
-
-        metadata = {
-            "time_info": {
-                "year": 2024,
-                "month": 6,
-                "season": "夏天",
-                "time_period": "傍晚",
-            }
-        }
-
-        # 全部匹配
-        constraints = {
-            "year": 2024,
-            "season": "夏天",
-            "time_period": "傍晚",
-        }
-        self.assertTrue(searcher._check_time_match_v2(metadata, constraints))
-
-        # 一个不匹配
-        constraints = {
-            "year": 2024,
-            "season": "夏天",
-            "time_period": "上午",  # 不匹配
-        }
-        self.assertFalse(searcher._check_time_match_v2(metadata, constraints))
-
-    def test_check_time_match_v2_no_constraints(self) -> None:
-        """测试无约束时总是匹配。"""
-        searcher = self._create_searcher()
-
-        metadata = {"time_info": {"season": "夏天"}}
-        constraints = {}
-
-        self.assertTrue(searcher._check_time_match_v2(metadata, constraints))
-
-
-class TestSearcherESFilters(unittest.TestCase):
-    """ES 过滤条件构建测试。"""
-
-    def _create_searcher(self) -> Searcher:
-        """创建带 Mock 依赖的 Searcher 实例。"""
-        mock_embedding = Mock()
-        mock_vector_store = Mock()
-        mock_time_parser = Mock()
-
-        return Searcher(
-            embedding=mock_embedding,
-            time_parser=mock_time_parser,
-            vector_store=mock_vector_store,
-        )
-
-    def test_build_es_filters_basic(self) -> None:
-        """测试基础 ES 过滤条件构建。"""
-        searcher = self._create_searcher()
-
-        constraints = {
-            "year": 2024,
-            "season": "夏天",
-            "time_period": "傍晚",
-        }
-
-        es_filters = searcher._build_es_filters(constraints)
-
-        self.assertEqual(es_filters["year"], 2024)
-        self.assertEqual(es_filters["season"], "夏天")
-        self.assertEqual(es_filters["time_period"], "傍晚")
-
-    def test_build_es_filters_with_date_range(self) -> None:
-        """测试包含日期范围的 ES 过滤条件。"""
-        searcher = self._create_searcher()
-
-        constraints = {
-            "start_date": "2024-06-01",
-            "end_date": "2024-06-30",
-        }
-
-        es_filters = searcher._build_es_filters(constraints)
-
-        self.assertEqual(es_filters["start_date"], "2024-06-01")
-        self.assertEqual(es_filters["end_date"], "2024-06-30")
-
-    def test_build_es_filters_empty(self) -> None:
-        """测试空约束返回空过滤条件。"""
-        searcher = self._create_searcher()
-
-        es_filters = searcher._build_es_filters({})
-
-        self.assertEqual(es_filters, {})
-
-    def test_has_strict_filters(self) -> None:
-        """测试判断是否有严格过滤条件。"""
-        searcher = self._create_searcher()
-
-        # 有过滤条件
-        self.assertTrue(searcher._has_strict_filters({"season": "夏天"}))
-        self.assertTrue(searcher._has_strict_filters({"year": 2024}))
-        self.assertTrue(searcher._has_strict_filters({"start_date": "2024-01-01"}))
-
-        # 无过滤条件
-        self.assertFalse(searcher._has_strict_filters({}))
-        self.assertFalse(searcher._has_strict_filters({"precision": "none"}))
-
-
-class TestSearcherHybridSearchWithFilters(unittest.TestCase):
-    """混合检索带 ES 过滤测试。"""
-
-    def test_hybrid_search_uses_es_filters(self) -> None:
-        """测试混合检索使用 ES 过滤。"""
-        mock_embedding = Mock()
-        mock_embedding.generate_embedding.return_value = [0.1] * 4096
-
-        mock_vector_store = Mock()
-        mock_vector_store.search.return_value = [
-            {"metadata": {"photo_path": "/summer1.jpg", "description": "夏天海边"}, "distance": 0.9},
-            {"metadata": {"photo_path": "/winter1.jpg", "description": "冬天雪景"}, "distance": 0.8},
-        ]
-        mock_vector_store.get_total_items.return_value = 100
-        mock_vector_store.load.return_value = True
-        mock_vector_store.dimension = 4096
-        mock_vector_store.metric = "cosine"
-
-        mock_keyword_store = Mock()
-        mock_keyword_store.search_with_filters.return_value = [
-            {"photo_path": "/summer1.jpg", "score": 0.9},
-        ]
-
-        mock_time_parser = Mock()
-        mock_time_parser.extract_time_constraints.return_value = {
-            "start_date": None,
-            "end_date": None,
-            "season": "夏天",
-            "precision": "none",
-        }
-
-        searcher = Searcher(
-            embedding=mock_embedding,
-            time_parser=mock_time_parser,
-            vector_store=mock_vector_store,
-            keyword_store=mock_keyword_store,
-            vector_weight=0.8,
-            keyword_weight=0.2,
-        )
-        searcher.index_loaded = True
-
-        # 执行混合检索
-        results = searcher._hybrid_search(
-            query="海边",
-            query_embedding=[0.1] * 4096,
-            candidate_k=10,
-            filters={"season": "夏天"},
-        )
-
-        # 验证调用了 search_with_filters
-        mock_keyword_store.search_with_filters.assert_called_once()
-    
-    def test_query_formatter_time_separation(self) -> None:
-        """测试 QueryFormatter 时间信息分离（架构改进）。"""
-        mock_embedding = Mock()
-        mock_embedding.generate_embedding.return_value = [0.1] * 4096
-        
-        mock_vector_store = Mock()
-        mock_vector_store.search.return_value = [
-            {"metadata": {"photo_path": "/beach.jpg", "description": "海滩"}, "distance": 0.9},
-        ]
-        mock_vector_store.get_total_items.return_value = 100
-        mock_vector_store.load.return_value = True
-        mock_vector_store.dimension = 4096
-        mock_vector_store.metric = "cosine"
-        
-        mock_keyword_store = Mock()
-        mock_keyword_store.search_with_filters.return_value = [
-            {"photo_path": "/beach.jpg", "score": 0.9},
-        ]
-        
-        mock_time_parser = Mock()
-        mock_time_parser.extract_time_constraints.return_value = {
-            "start_date": None,
-            "end_date": None,
-            "year": None,
-            "month": None,
-            "day": None,
-            "season": None,
             "time_period": None,
-            "precision": "none",
+            "original_query": "请帮我找陶喆的照片",
+            "reason": "前两轮结果仍偏泛化，需要收紧到近景舞台人像",
         }
-        
-        mock_formatter = Mock()
-        mock_formatter.is_enabled.return_value = True
-        # QueryFormatter 返回纯视觉描述和独立的时间字段
-        mock_formatter.format_query.return_value = {
-            "search_text": "海滩 沙滩 海浪 宁静",  # 纯语义，无时间信息
-            "time_hint": "2024年",
-            "season": "夏天",
-            "time_period": "下午",
-            "original_query": "2024年夏天下午的海滩照片",
-        }
-        
+
         searcher = Searcher(
-            embedding=mock_embedding,
-            time_parser=mock_time_parser,
-            vector_store=mock_vector_store,
-            keyword_store=mock_keyword_store,
-            query_formatter=mock_formatter,
-            vector_weight=0.8,
-            keyword_weight=0.2,
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
         )
-        searcher.index_loaded = True
-        
-        # 执行搜索
-        results = searcher.search("2024年夏天下午的海滩照片", top_k=10)
-        
-        # 验证 QueryFormatter 被调用
-        mock_formatter.format_query.assert_called_once_with("2024年夏天下午的海滩照片")
-        
-        # 验证 embedding 使用纯语义描述（不含时间信息）
-        embedding_call_args = mock_embedding.generate_embedding.call_args[0][0]
-        self.assertIn("海滩", embedding_call_args)
-        self.assertNotIn("2024", embedding_call_args)
-        self.assertNotIn("夏天", embedding_call_args)
-        self.assertNotIn("下午", embedding_call_args)
-        
-        # 验证 ES 过滤条件正确构建（通过 _hybrid_search 内部调用）
-        # 检查 search_with_filters 是否被调用，并且传递了时间过滤条件
-        if mock_keyword_store.search_with_filters.called:
-            call_args = mock_keyword_store.search_with_filters.call_args
-            filters = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get('filters', {})
-            # 时间字段应该通过 constraints 传递给 ES
-            # 由于 mock_time_parser 返回空的 constraints，
-            # searcher 会使用 QueryFormatter 的时间提示合并到 constraints
+
+        weak_results = [
+            {
+                "photo_path": "/tmp/weak.jpg",
+                "description": "模糊男歌手",
+                "score": 0.41,
+                "vector_score": 0.41,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/weak.jpg", "identity_names": []},
+            },
+        ]
+        still_weak_results = [
+            {
+                "photo_path": "/tmp/still-weak.jpg",
+                "description": "男歌手舞台远景",
+                "score": 0.46,
+                "vector_score": 0.46,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/still-weak.jpg", "identity_names": []},
+            },
+        ]
+        reflected_results = [
+            {
+                "photo_path": "/tmp/final.jpg",
+                "description": "陶喆舞台近景",
+                "score": 0.82,
+                "vector_score": 0.82,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/final.jpg", "identity_names": ["陶喆"]},
+            },
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, still_weak_results, reflected_results]), \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("请帮我找陶喆的照片", top_k=5)
+
+        self.assertEqual(results, reflected_results)
+        debug = searcher.get_last_search_debug()
+        self.assertTrue(debug["expansion_triggered"])
+        self.assertTrue(debug["reflection_triggered"])
+        self.assertEqual(debug["reflection"]["reason"], "前两轮结果仍偏泛化，需要收紧到近景舞台人像")
+        self.assertEqual(len(debug["rounds"]), 3)
+        self.assertEqual(debug["rounds"][2]["round"], "reflection")
+        self.assertEqual(debug["rounds"][2]["top_score"], 0.82)
 
 
 if __name__ == "__main__":

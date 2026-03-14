@@ -1,182 +1,80 @@
 # 测试指南
 
-## 测试类型
+本仓库当前以 `pytest` 为主，推荐统一使用 `uv` 环境执行。
 
-本项目包含两种类型的测试：
+## 测试范围
 
-### 1. 单元测试（Unit Tests）
-- **无需API密钥**
-- 测试代码逻辑和功能
-- 使用mock模拟外部依赖
-- 快速、稳定、无成本
+- 纯单元测试：检索逻辑、路径处理、向量归一化、路由行为
+- 轻量集成测试：使用 fake service 验证 rerank、以图搜图、索引流程
+- 增量索引测试：验证新增图片只补索引、不重复处理旧图片
+- 真实 API 验证：不纳入默认 pytest，需要启动服务后手动调用 HTTP 接口
 
-### 2. 集成测试（Integration Tests）
-- **需要有效的 `OPENROUTER_API_KEY`**
-- 调用真实的OpenRouter API
-- 测试完整的系统行为
-- 需要网络连接和API费用
-
-## 快速开始
-
-### 1. 单元测试（推荐）
-```bash
-# 运行所有单元测试（自动跳过需要API密钥的测试）
-python run_tests.py
-
-# 或使用pytest
-pytest tests/ -v
-
-# 或使用unittest
-python -m unittest discover tests -v
-```
-
-### 2. 集成测试（需要API密钥）
-```bash
-# 确保在.env中设置了API密钥
-echo "OPENROUTER_API_KEY=sk-or-v1-..." > .env
-
-# 运行所有测试（包括集成测试）
-python run_tests.py --integration
-
-# 或直接使用pytest
-OPENROUTER_API_KEY=sk-or-v1-... pytest tests/ -v
-```
+默认测试不会调用真实 SU8 或 Tumuer API，因此不会消耗线上额度。
 
 ## 运行方式
 
-### 使用便捷脚本（推荐）
+先准备环境：
+
 ```bash
-# 单元测试
-python run_tests.py
-
-# 集成测试
-python run_tests.py --integration
-
-# 详细输出
-python run_tests.py --verbose
-
-# 生成覆盖率报告
-python run_tests.py --coverage
+uv venv .venv --python 3.12
+uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
-### 使用 pytest
+运行全量测试：
+
 ```bash
-# 基础运行
-pytest tests/
-
-# 详细输出
-pytest tests/ -v
-
-# 单个测试文件
-pytest tests/test_embedding_service.py -v
-
-# 单个测试方法
-pytest tests/test_embedding_service.py::EmbeddingServiceTests::test_config_loading -v
-
-# 生成覆盖率
-pytest tests/ --cov=. --cov-report=html
+./.venv/bin/python -m pytest -q
 ```
 
-### 使用 unittest
+运行指定文件：
+
 ```bash
-# 基础运行
-python -m unittest discover tests
-
-# 详细输出
-python -m unittest discover tests -v
-
-# 单个测试文件
-python -m unittest tests.test_embedding_service
-
-# 单个测试方法
-python -m unittest tests.test_embedding_service.EmbeddingServiceTests.test_config_loading
+./.venv/bin/python -m pytest tests/test_routes.py -q
+./.venv/bin/python -m pytest tests/test_searcher.py -q
 ```
 
-## 测试文件说明
+## 重点测试文件
 
-| 文件 | 测试内容 | 集成测试 |
-|-------|-----------|-----------|
-| `test_embedding_service.py` | T5/OpenAI嵌入服务 | ✅ OpenAI |
-| `test_image_parser.py` | 图片解析、EXIF、降级描述 | ❌ |
-| `test_vector_store.py` | FAISS向量存储 | ❌ |
-| `test_vision_llm_service.py` | Vision服务生成描述 | ✅ OpenRouter |
-| `test_time_parser.py` | LLM时间解析 | ✅ OpenRouter |
-| `test_searcher.py` | 搜索查询、时间过滤 | ❌ |
-| `test_indexer.py` | 索引构建、验收检查 | ❌（使用LocalVision）|
+- `tests/test_routes.py`：接口返回结构、结果中的 `photo_path` / `photo_url`
+- `tests/test_searcher.py`：混合检索、纯过滤查询、以图搜图、时间过滤边界
+- `tests/test_query_formatter.py`：查询理解、扩展轮次、反思轮次
+- `tests/test_embedding_service.py`：Tumuer embedding 与文本 rerank 服务
+- `tests/test_time_parser.py`：SU8 时间解析
+- `tests/test_vector_store.py`：FAISS 存储与归一化行为
+- `tests/test_indexer.py`：索引阶段时间标签生成策略与增量索引行为
+- `tests/test_path_utils.py`：Windows/WSL 路径兼容
 
-## 测试覆盖范围
+## 手动验收建议
 
-根据 `demo_development_doc.md` 验收要求：
+真实验收建议按顺序执行：
 
-### utils/ 模块
-- ✅ `embedding_service.py` - T5/OpenAI嵌入生成
-- ✅ `image_parser.py` - 图片验证、EXIF解析、降级描述
-- ✅ `vector_store.py` - FAISS存储、搜索、持久化
-- ✅ `vision_llm_service.py` - Vision服务（本地+OpenRouter）
-- ✅ `time_parser.py` - LLM时间解析
+1. 启动应用
+2. 调用 `POST /init_index` 的增量模式，验证新增图片补索引
+3. 调用 `POST /init_index` 的全量模式，验证重建流程
+4. 测试 `POST /search_photos`
+5. 测试 `POST /search_by_image`
+6. 测试 `POST /search_by_uploaded_image`
+7. 分别开启文本 rerank 与视觉 rerank
+8. 验证检索规划面板是否和后端 `search_debug` 一致
+9. 验证 `/photo` 预览与 `/open_photo_location` 本地定位
 
-### core/ 模块
-- ✅ `indexer.py` - 索引构建、批处理、验收门槛（100张）
-- ✅ `searcher.py` - 搜索、查询验证、时间过滤
+推荐的索引接口调用方式：
 
-## 环境要求
-
-### 单元测试
 ```bash
-pip install pytest pytest-cov torch sentence-transformers pillow piexif
+curl -X POST http://127.0.0.1:10001/init_index \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"incremental"}'
+
+curl -X POST http://127.0.0.1:10001/init_index \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"full"}'
 ```
 
-### 集成测试
-```bash
-pip install pytest pytest-cov torch sentence-transformers pillow piexif openai
-export OPENROUTER_API_KEY=sk-or-v1-...
-...
-```
+## 注意事项
 
-### 集成测试
-```bash
-pip install pytest pytest-cov sentence-transformers pillow piexif openai
-export OPENROUTER_API_KEY=sk-or-v1-...
-```
-
-## 常见问题
-
-### Q: 测试被跳过？
-**A**: 需要 `OPENROUTER_API_KEY` 环境变量
-```bash
-export OPENROUTER_API_KEY=sk-or-v1-xxx
-python run_tests.py --integration
-```
-
-### Q: `sentence-transformers` 模型下载慢？
-**A**: 首次使用会自动下载模型（~1-2GB），可手动设置缓存：
-```bash
-export TRANSFORMERS_CACHE=/path/to/cache
-```
-
-### Q: 集成测试消耗API费用？
-**A**: 是的，每次调用会产生费用。建议在开发中使用单元测试，在验收前运行集成测试。
-
-### Q: 如何只运行特定测试？
-**A**: 使用pytest的选择器：
-```bash
-pytest tests/test_image_parser.py -v
-pytest tests/test_image_parser.py::ImageParserTests::test_is_valid_image_true -v
-```
-
-## CI/CD 集成
-
-GitHub Actions 示例：
-```yaml
-name: Tests
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install dependencies
-        run: pip install -r requirements.txt torch pytest pytest-cov
-      - name: Run unit tests
-        run: pytest tests/ -v
-```
+- `POST /init_index` 省略 `mode` 时默认按增量索引处理
+- 切换 `EMBEDDING_MODEL` 后必须全量重建索引；日常新增图片则应走增量索引
+- 如果 Elasticsearch 未启动，部分关键词过滤会退化为内存过滤，但测试仍应通过
+- 当前时间标签只来自 EXIF `datetime`，无 EXIF 图片不会生成季节/时段标签
+- 混合检索不会因为缺少 BM25 命中而惩罚纯向量命中的结果
+- 如果本机 `10001` 被占用，可用 `SERVER_PORT=10002` 启动服务进行手动验收

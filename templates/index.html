@@ -3,286 +3,475 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>照片搜索引擎</title>
+    <title>搜图</title>
     <style>
+        :root {
+            --bg: #f2eee6;
+            --surface: rgba(255, 252, 247, 0.88);
+            --surface-strong: #fffaf2;
+            --text: #1a2230;
+            --muted: #5a6472;
+            --line: rgba(26, 34, 48, 0.09);
+            --accent: #d96b2b;
+            --accent-deep: #8f3f1d;
+            --accent-soft: rgba(217, 107, 43, 0.12);
+            --sea: #265c63;
+            --success: #2d8a56;
+            --danger: #b3472c;
+            --shadow: 0 18px 50px rgba(41, 34, 24, 0.12);
+            --radius-xl: 28px;
+            --radius-lg: 20px;
+            --radius-md: 14px;
+        }
+
         * {
-            margin: 0;
-            padding: 0;
             box-sizing: border-box;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: #f5f7fa;
-            color: #333;
-            line-height: 1.6;
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(217, 107, 43, 0.18), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(38, 92, 99, 0.18), transparent 24%),
+                linear-gradient(180deg, #f7f2ea 0%, #efe7dc 100%);
         }
 
-        .container {
+        .shell {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 34px 22px 60px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1.22fr) minmax(320px, 0.78fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .panel {
+            background: var(--surface);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow);
+        }
+
+        .hero-copy {
+            padding: 32px 34px 30px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-copy::after {
+            content: "";
+            position: absolute;
+            inset: auto -40px -60px auto;
+            width: 220px;
+            height: 220px;
+            background: radial-gradient(circle, rgba(217, 107, 43, 0.16), transparent 66%);
+        }
+
+        .hero-head {
+            position: relative;
+            z-index: 1;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            padding: 6px 11px;
+            border-radius: 999px;
+            border: 1px solid rgba(26, 34, 48, 0.08);
+            background: rgba(255, 255, 255, 0.58);
+            color: var(--sea);
+            font-size: 0.64rem;
+            letter-spacing: 0.14em;
+            font-weight: 700;
+            text-transform: uppercase;
         }
 
         h1 {
-            text-align: center;
-            color: #2c3e50;
-            margin-bottom: 10px;
-            font-size: 2rem;
-        }
-
-        .subtitle {
-            text-align: center;
-            color: #7f8c8d;
-            margin-bottom: 30px;
-            font-size: 0.9rem;
-        }
-
-        /* 索引区域 */
-        .index-section {
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin-bottom: 25px;
-        }
-
-        .index-header {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 8px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            font-weight: 500;
-        }
-
-        .btn-primary:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .index-status {
-            flex: 1;
-            min-width: 200px;
-            padding: 12px 20px;
-            border-radius: 8px;
-            background: #f8f9fa;
-            border-left: 4px solid #3498db;
-        }
-
-        .index-status.ready {
-            border-left-color: #2ecc71;
-            background: #d4edda;
-        }
-
-        .index-status.failed {
-            border-left-color: #e74c3c;
-            background: #f8d7da;
-        }
-
-        .index-status.processing {
-            border-left-color: #f39c12;
-            background: #fff3cd;
-        }
-
-        .progress-info {
-            font-size: 0.85rem;
-            color: #666;
-            margin-top: 8px;
-        }
-
-        /* 搜索区域 */
-        .search-section {
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin-bottom: 25px;
-        }
-
-        .search-input-wrapper {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .search-input {
-            flex: 1;
-            min-width: 250px;
-            padding: 12px 20px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: border-color 0.3s;
-        }
-
-        .search-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .search-input:disabled {
-            background: #f5f5f5;
-            cursor: not-allowed;
-        }
-
-        .topk-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .topk-wrapper label {
-            font-size: 0.9rem;
-            color: #666;
+            margin: 14px 0 10px;
+            font-size: clamp(1.52rem, 2.05vw, 2.42rem);
+            line-height: 1.08;
+            letter-spacing: -0.04em;
+            font-weight: 780;
+            max-width: none;
             white-space: nowrap;
         }
 
-        .topk-input {
-            width: 70px;
-            padding: 10px 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 1rem;
-            text-align: center;
-            transition: border-color 0.3s;
+        .lead {
+            max-width: 460px;
+            color: var(--muted);
+            font-size: 0.92rem;
+            line-height: 1.66;
+            margin: 0 0 18px;
         }
 
-        .topk-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .topk-input:disabled {
-            background: #f5f5f5;
-            cursor: not-allowed;
-        }
-
-        .search-hint {
-            font-size: 0.8rem;
-            color: #7f8c8d;
-            margin-top: 10px;
-        }
-
-        .search-hint span {
-            display: inline-block;
-            background: #ecf0f1;
-            padding: 2px 8px;
-            border-radius: 4px;
-            margin-right: 8px;
-            margin-bottom: 4px;
-        }
-
-        /* 结果区域 */
-        .results-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .results-header h2 {
-            font-size: 1.3rem;
-            color: #2c3e50;
-        }
-
-        .results-stats {
-            font-size: 0.9rem;
-            color: #7f8c8d;
-        }
-
-        .results-grid {
+        .hero-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 25px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
         }
 
-        .photo-card {
-            background: white;
-            border-radius: 12px;
+        .metric {
+            min-height: 90px;
+            padding: 15px 16px 14px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.64);
+            border: 1px solid rgba(26, 34, 48, 0.07);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
             overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            transition: transform 0.3s, box-shadow 0.3s;
         }
 
-        .photo-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-        }
-
-        .photo-image {
+        .metric::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto auto 0;
             width: 100%;
-            height: 200px;
-            object-fit: cover;
-            background: #f0f0f0;
+            height: 3px;
+            background: linear-gradient(90deg, rgba(38, 92, 99, 0.4), rgba(217, 107, 43, 0.35));
         }
 
-        .photo-info {
-            padding: 15px;
+        .metric strong {
+            display: block;
+            font-size: 0.88rem;
+            line-height: 1.22;
+            margin-bottom: 6px;
+            letter-spacing: -0.02em;
         }
 
-        .photo-rank {
-            display: inline-block;
-            background: #667eea;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.75rem;
+        .metric span {
+            color: var(--muted);
+            font-size: 0.76rem;
+            line-height: 1.42;
+        }
+
+        .status-card {
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            gap: 14px;
+            background:
+                linear-gradient(180deg, rgba(38, 92, 99, 0.1), rgba(255, 250, 242, 0.86)),
+                var(--surface);
+        }
+
+        .status-card h2,
+        .search-card h2,
+        .results-head h2 {
+            margin: 0;
+            font-size: 1.14rem;
+            letter-spacing: -0.025em;
+        }
+
+        .status-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .status-eyebrow {
+            border-color: rgba(38, 92, 99, 0.12);
+            background: rgba(38, 92, 99, 0.08);
+        }
+
+        .status-kicker {
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+
+        .status-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .status-lead {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.58;
+        }
+
+        .status-box {
+            padding: 16px 18px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.76);
+            border: 1px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .status-box[data-state="ready"] {
+            border-color: rgba(45, 138, 86, 0.2);
+            background: rgba(45, 138, 86, 0.08);
+        }
+
+        .status-box[data-state="processing"] {
+            border-color: rgba(217, 107, 43, 0.22);
+            background: rgba(217, 107, 43, 0.08);
+        }
+
+        .status-box[data-state="failed"] {
+            border-color: rgba(179, 71, 44, 0.22);
+            background: rgba(179, 71, 44, 0.08);
+        }
+
+        .status-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .status-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--muted);
             margin-bottom: 8px;
         }
 
-        .photo-description {
-            font-size: 0.9rem;
-            color: #2c3e50;
-            margin-bottom: 10px;
+        .status-main {
+            font-size: 1.22rem;
+            line-height: 1.16;
+            font-weight: 760;
+            letter-spacing: -0.02em;
+        }
+
+        .status-pill {
+            padding: 7px 10px;
+            border-radius: 999px;
+            font-size: 0.74rem;
+            font-weight: 700;
+            line-height: 1;
+            background: rgba(26, 34, 48, 0.08);
+            color: var(--text);
+        }
+
+        .status-pill[data-state="ready"] {
+            background: rgba(45, 138, 86, 0.14);
+            color: var(--success);
+        }
+
+        .status-pill[data-state="processing"] {
+            background: rgba(217, 107, 43, 0.14);
+            color: var(--accent-deep);
+        }
+
+        .status-pill[data-state="failed"] {
+            background: rgba(179, 71, 44, 0.14);
+            color: var(--danger);
+        }
+
+        .status-meta {
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.58;
+        }
+
+        .status-actions {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 10px;
+            margin-top: auto;
+        }
+
+        .status-footnote {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.78rem;
             line-height: 1.5;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
         }
 
-        .photo-score {
-            font-size: 0.8rem;
-            color: #7f8c8d;
+        .btn,
+        button {
+            border: none;
+            cursor: pointer;
+            font: inherit;
         }
 
-        .score-bar {
-            height: 4px;
-            background: #ecf0f1;
-            border-radius: 2px;
-            margin-top: 8px;
-            overflow: hidden;
+        .btn-primary,
+        .btn-secondary,
+        .btn-ghost {
+            border-radius: 999px;
+            padding: 12px 18px;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
         }
 
-        .score-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            transition: width 0.5s ease;
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #f39954);
+            color: white;
+            box-shadow: 0 12px 24px rgba(217, 107, 43, 0.24);
         }
 
-        /* 消息提示 */
-        .message {
-            padding: 12px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+        .btn-secondary {
+            background: linear-gradient(135deg, var(--sea), #4b8b93);
+            color: white;
+            box-shadow: 0 12px 24px rgba(38, 92, 99, 0.18);
+        }
+
+        .btn-ghost {
+            background: rgba(255, 255, 255, 0.84);
+            border: 1px solid var(--line);
+            color: var(--text);
+        }
+
+        .btn-primary:hover,
+        .btn-secondary:hover,
+        .btn-ghost:hover {
+            transform: translateY(-1px);
+        }
+
+        .search-card {
+            padding: 24px;
+            margin-bottom: 18px;
+        }
+
+        .tabs {
+            display: inline-flex;
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.78);
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            margin-bottom: 14px;
+        }
+
+        .tab {
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: transparent;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, var(--sea), #4b8b93);
+            color: white;
+        }
+
+        .search-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+            gap: 16px;
+        }
+
+        .mode-pane {
             display: none;
+        }
+
+        .mode-pane.active {
+            display: block;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .field label {
+            font-size: 0.9rem;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .input,
+        .textarea,
+        .number {
+            width: 100%;
+            border-radius: 18px;
+            border: 1px solid rgba(26, 34, 48, 0.13);
+            background: rgba(255, 255, 255, 0.92);
+            padding: 14px 16px;
+            color: var(--text);
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .textarea {
+            min-height: 124px;
+            resize: vertical;
+        }
+
+        .input:focus,
+        .textarea:focus,
+        .number:focus {
+            outline: none;
+            border-color: rgba(217, 107, 43, 0.48);
+            box-shadow: 0 0 0 4px rgba(217, 107, 43, 0.12);
+        }
+
+        .stack {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .option-card {
+            padding: 14px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .option-card h3 {
+            margin: 0 0 10px;
+            font-size: 0.9rem;
+            letter-spacing: -0.01em;
+        }
+
+        .check {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            font-size: 0.92rem;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+
+        .check input {
+            margin-top: 3px;
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent);
+        }
+
+        .hint {
+            font-size: 0.86rem;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            padding: 16px 18px;
+            border-radius: 18px;
+            display: none;
+            border: 1px solid transparent;
+            font-size: 0.95rem;
         }
 
         .message.show {
@@ -290,309 +479,702 @@
         }
 
         .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border-left: 4px solid #e74c3c;
+            background: rgba(179, 71, 44, 0.08);
+            border-color: rgba(179, 71, 44, 0.18);
+            color: var(--danger);
         }
 
         .message.success {
-            background: #d4edda;
-            color: #155724;
-            border-left: 4px solid #2ecc71;
+            background: rgba(45, 138, 86, 0.08);
+            border-color: rgba(45, 138, 86, 0.18);
+            color: var(--success);
         }
 
-        /* 空状态 */
-        .empty-state {
+        .results-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .planner-panel {
+            margin-bottom: 18px;
+            padding: 18px 20px;
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.68);
+            border: 1px solid rgba(26, 34, 48, 0.08);
+            box-shadow: 0 14px 34px rgba(26, 34, 48, 0.05);
+            display: none;
+        }
+
+        .planner-panel.show {
+            display: block;
+        }
+
+        .planner-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .planner-title {
+            font-size: 1rem;
+            font-weight: 760;
+            letter-spacing: -0.02em;
+        }
+
+        .planner-meta {
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+
+        .planner-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+
+        .planner-card {
+            padding: 14px;
+            border-radius: 18px;
+            background: rgba(38, 92, 99, 0.05);
+            border: 1px solid rgba(38, 92, 99, 0.1);
+        }
+
+        .planner-card h3 {
+            margin: 0 0 10px;
+            font-size: 0.84rem;
+            color: var(--sea);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .planner-copy {
+            color: var(--text);
+            font-size: 0.88rem;
+            line-height: 1.58;
+        }
+
+        .planner-copy.muted {
+            color: var(--muted);
+        }
+
+        .planner-rounds {
+            display: grid;
+            gap: 10px;
+        }
+
+        .planner-round {
+            padding: 12px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.82);
+            border: 1px solid rgba(26, 34, 48, 0.08);
+        }
+
+        .planner-round-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+            color: var(--muted);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .results-meta {
+            text-align: right;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
+        .photo-card {
+            border-radius: 22px;
+            overflow: hidden;
+            background: var(--surface-strong);
+            border: 1px solid var(--line);
+            box-shadow: 0 18px 36px rgba(26, 34, 48, 0.08);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .photo-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 24px 50px rgba(26, 34, 48, 0.12);
+        }
+
+        .photo-image {
+            width: 100%;
+            height: 240px;
+            object-fit: cover;
+            background: linear-gradient(135deg, rgba(217, 107, 43, 0.08), rgba(38, 92, 99, 0.08));
+        }
+
+        .photo-body {
+            padding: 16px;
+        }
+
+        .photo-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .rank-badge,
+        .pill {
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .rank-badge {
+            background: rgba(38, 92, 99, 0.12);
+            color: var(--sea);
+        }
+
+        .pill {
+            background: rgba(217, 107, 43, 0.12);
+            color: var(--accent-deep);
+        }
+
+        .photo-description {
+            font-size: 0.92rem;
+            line-height: 1.58;
+            min-height: 72px;
+            color: var(--text);
+            margin-bottom: 12px;
+        }
+
+        .photo-insights {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding: 12px;
+            border-radius: 16px;
+            background: rgba(38, 92, 99, 0.05);
+            border: 1px solid rgba(38, 92, 99, 0.1);
+        }
+
+        .insight-row {
+            display: grid;
+            gap: 6px;
+        }
+
+        .insight-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--sea);
+        }
+
+        .chip-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(26, 34, 48, 0.08);
+            color: var(--text);
+            font-size: 0.78rem;
+            line-height: 1;
+            font-weight: 600;
+        }
+
+        .chip.identity {
+            background: rgba(217, 107, 43, 0.12);
+            border-color: rgba(217, 107, 43, 0.18);
+            color: var(--accent-deep);
+        }
+
+        .chip.media {
+            background: rgba(38, 92, 99, 0.1);
+            border-color: rgba(38, 92, 99, 0.18);
+            color: var(--sea);
+        }
+
+        .insight-copy {
+            font-size: 0.84rem;
+            line-height: 1.55;
+            color: var(--muted);
+            background: rgba(255, 255, 255, 0.76);
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(26, 34, 48, 0.06);
+        }
+
+        .photo-path {
+            display: block;
+            font-family: "Consolas", "SFMono-Regular", monospace;
+            font-size: 0.75rem;
+            line-height: 1.55;
+            color: var(--muted);
+            background: rgba(26, 34, 48, 0.04);
+            padding: 12px;
+            border-radius: 14px;
+            margin-bottom: 14px;
+            word-break: break-all;
+        }
+
+        .score {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
+        .bar {
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(26, 34, 48, 0.08);
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+
+        .bar span {
+            display: block;
+            height: 100%;
+            background: linear-gradient(90deg, var(--sea), var(--accent));
+        }
+
+        .card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .card-actions button {
+            flex: 1;
+            min-width: 110px;
+        }
+
+        .card-actions a {
+            flex: 1;
+            min-width: 110px;
+            text-decoration: none;
             text-align: center;
-            padding: 60px 20px;
-            color: #7f8c8d;
         }
 
-        .empty-state-icon {
-            font-size: 448rem;
-            margin-bottom: 15px;
-            opacity: 0.3;
+        .empty {
+            padding: 64px 20px;
+            text-align: center;
+            color: var(--muted);
+            border-radius: 26px;
+            background: rgba(255, 255, 255, 0.52);
+            border: 1px dashed rgba(26, 34, 48, 0.18);
         }
 
-        .empty-state-text {
-            font-size: 1.1rem;
-        }
-
-        /* 加载动画 */
         .loading {
             display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 2px solid #ffffff;
-            border-top-color: transparent;
+            width: 16px;
+            height: 16px;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-left: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.55);
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-left: 8px;
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
-        /* 响应式 */
-        @media (max-width: 768px) {
-            .results-grid {
+        @media (max-width: 1040px) {
+            .hero,
+            .search-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .shell {
+                padding: 20px 14px 42px;
+            }
+
+            .hero-copy,
+            .status-card,
+            .search-card {
+                padding: 18px;
+            }
+
+            .hero-grid,
+            .stack {
                 grid-template-columns: 1fr;
             }
 
-            .search-input-wrapper {
+            .results-head {
                 flex-direction: column;
+                align-items: flex-start;
             }
 
-            .search-input {
+            .results-meta {
+                text-align: left;
+            }
+
+            .status-header,
+            .status-row,
+            .status-actions {
+                grid-template-columns: 1fr;
+                display: grid;
+            }
+
+            .card-actions button {
                 width: 100%;
             }
 
-            .topk-wrapper {
-                width: 100%;
-                justify-content: space-between;
+            h1 {
+                font-size: clamp(1.36rem, 5.6vw, 1.86rem);
+                letter-spacing: -0.03em;
             }
 
-            .topk-input {
-                flex: 1;
-                max-width: 100px;
+            .lead {
+                max-width: none;
+                font-size: 0.89rem;
             }
-
-            .index-header {
-                flex-direction: column;
-                align-items: stretch;
-            }
-        }
-
-        /* Rerank控件样式 */
-        .rerank-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #e0e0e0;
-        }
-
-        .rerank-toggle {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .rerank-toggle input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-
-        .rerank-toggle span {
-            font-size: 0.9rem;
-            color: #666;
-        }
-
-        .rerank-topk-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .rerank-topk-wrapper label {
-            font-size: 0.9rem;
-            color: #666;
-            white-space: nowrap;
-        }
-
-        .rerank-topk-input {
-            width: 60px;
-            padding: 8px 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            text-align: center;
-            transition: border-color 0.3s;
-        }
-
-        .rerank-topk-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .rerank-topk-input:disabled {
-            background: #f5f5f5;
-            cursor: not-allowed;
-        }
-
-        .rerank-badge {
-            display: inline-block;
-            background: #e8f5e9;
-            color: #2e7d32;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            margin-left: 8px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>📷 照片搜索引擎</h1>
-        <p class="subtitle">基于AI的自然语言照片检索 Demo</p>
-
-        <!-- 索引区域 -->
-        <div class="index-section">
-            <div class="index-header">
-                <button class="btn-primary" id="init-btn" onclick="initIndex()">
-                    初始化索引
-                </button>
-                <div class="index-status" id="index-status">
-                    <div id="status-text">状态：未初始化</div>
-                    <div class="progress-info" id="progress-info"></div>
+    <div class="shell">
+        <section class="hero">
+            <div class="panel hero-copy">
+                <div class="hero-head">
+                    <span class="eyebrow">本地搜图</span>
+                    <h1>找图，更快一点。</h1>
+                    <p class="lead">
+                        输入一句描述，或者给一张图。结果会直接返回预览、本地路径和打开入口。
+                    </p>
+                </div>
+                <div class="hero-grid">
+                    <div class="metric">
+                        <strong id="metric-model">文本搜图</strong>
+                        <span>一句描述直接检索</span>
+                    </div>
+                    <div class="metric">
+                        <strong id="metric-embed">以图搜图</strong>
+                        <span>按参考图找相似图</span>
+                    </div>
+                    <div class="metric">
+                        <strong id="metric-mode">本地路径</strong>
+                        <span>原图打开与文件定位</span>
+                    </div>
                 </div>
             </div>
-        </div>
+            <aside class="panel status-card">
+                <div class="status-header">
+                    <span class="eyebrow status-eyebrow">索引</span>
+                    <span class="status-kicker">搜索前只需完成一次</span>
+                </div>
+                <div class="status-copy">
+                    <h2>准备好就能搜</h2>
+                    <p class="status-lead">索引完成后，文本搜图和以图搜图会直接开放。</p>
+                </div>
+                <div class="status-box" id="index-status" data-state="idle">
+                    <div class="status-row">
+                        <div>
+                            <div class="status-title">当前状态</div>
+                            <div class="status-main" id="status-text">尚未初始化</div>
+                        </div>
+                        <span class="status-pill" id="status-pill" data-state="idle">待准备</span>
+                    </div>
+                    <div class="status-meta" id="progress-info">先建立索引，再开始搜索。</div>
+                </div>
+                <div class="actions status-actions">
+                    <button class="btn-primary" id="incremental-init-btn" onclick="initIndex('incremental')">增量索引</button>
+                    <button class="btn-secondary" id="full-init-btn" onclick="initIndex('full')">全量重建</button>
+                    <button class="btn-ghost" onclick="checkIndexStatus()">刷新状态</button>
+                </div>
+                <p class="status-footnote">日常新增图片优先用增量索引；模型或索引结构变化时再执行全量重建。</p>
+            </aside>
+        </section>
 
-        <!-- 消息提示 -->
         <div class="message" id="message"></div>
 
-        <!-- 搜索区域 -->
-        <div class="search-section">
-            <div class="search-input-wrapper">
-                <input
-                    type="text"
-                    id="query-input"
-                    class="search-input"
-                    placeholder="输入查询（如：去年夏天在海边的照片）"
-                    disabled
-                >
-                <div class="topk-wrapper">
-                    <label for="topk-input">显示数量</label>
-                    <input
-                        type="number"
-                        id="topk-input"
-                        class="topk-input"
-                        value="10"
-                        min="1"
-                        max="50"
-                        disabled
-                    >
-                </div>
-                <button class="btn-primary" id="search-btn" onclick="searchPhotos()" disabled>
-                    搜索
-                </button>
+        <section class="panel search-card">
+            <div class="tabs">
+                <button class="tab active" id="tab-text" onclick="switchMode('text')">文本搜图</button>
+                <button class="tab" id="tab-image" onclick="switchMode('image')">以图搜图</button>
             </div>
-            <!-- Rerank控制区 -->
-            <div class="rerank-wrapper">
-                <label class="rerank-toggle">
-                    <input type="checkbox" id="rerank-checkbox" onchange="toggleRerankTopK()">
-                    <span>启用精排 (Rerank)</span>
-                </label>
-                <div class="rerank-topk-wrapper" id="rerank-topk-wrapper" style="display: none;">
-                    <label for="rerank-topk-input">保留数量</label>
-                    <input
-                        type="number"
-                        id="rerank-topk-input"
-                        class="rerank-topk-input"
-                        value="5"
-                        min="1"
-                        max="10"
-                    >
-                </div>
-            </div>
-            <div class="search-hint">
-                查询示例：<span>山上的照片</span><span>城市夜景</span><span>有人物的照片</span><span>聚餐</span><span>去年</span><span>冬天的风景</span>
-            </div>
-        </div>
 
-        <!-- 结果区域 -->
-        <div class="results-header">
-            <h2>搜索结果</h2>
-            <div class="results-stats" id="results-stats"></div>
-        </div>
-        <div id="results-grid" class="results-grid">
-            <div class="empty-state">
-                <div class="empty-state-icon">🔍</div>
-                <div class="empty-state-text">输入查询后开始搜索</div>
+            <div class="search-layout">
+                <div>
+                    <div class="mode-pane active" id="pane-text">
+                        <h2>文本搜图</h2>
+                        <div class="field">
+                            <label for="query-input">查询内容</label>
+                            <textarea
+                                id="query-input"
+                                class="textarea"
+                                placeholder="例如：请帮我找海边日落、城市夜景，或室内聚餐的照片"
+                                disabled
+                            ></textarea>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-primary" id="search-btn" onclick="searchPhotos()" disabled>开始搜索</button>
+                        </div>
+                    </div>
+
+                    <div class="mode-pane" id="pane-image">
+                        <h2>以图搜图</h2>
+                        <div class="field">
+                            <label for="image-upload-input">上传一张参考图</label>
+                            <input
+                                id="image-upload-input"
+                                class="input"
+                                type="file"
+                                accept=".jpg,.jpeg,.png,.webp"
+                                disabled
+                            >
+                        </div>
+                        <div class="field">
+                            <label for="image-path-input">本地数据库中的图片路径</label>
+                            <input
+                                id="image-path-input"
+                                class="input"
+                                type="text"
+                                placeholder="例如：C:\Users\86159\Desktop\test_photos\trip\IMG_0012.jpg"
+                                disabled
+                            >
+                        </div>
+                        <div class="field">
+                            <label for="query-hint-input">可选文本提示</label>
+                            <input
+                                id="query-hint-input"
+                                class="input"
+                                type="text"
+                                placeholder="例如：优先找同一人物或同一场景"
+                                disabled
+                            >
+                        </div>
+                        <div class="actions">
+                            <button class="btn-primary" id="image-upload-search-btn" onclick="searchByUpload()" disabled>上传并搜索</button>
+                            <button class="btn-secondary" id="image-search-btn" onclick="searchByImage()" disabled>搜索相似图片</button>
+                        </div>
+                    </div>
+                </div>
+
+                <aside class="stack">
+                    <div class="option-card">
+                        <h3>结果数量</h3>
+                        <div class="field">
+                            <label for="topk-input">Top K</label>
+                            <input id="topk-input" class="number" type="number" value="12" min="1" max="50" disabled>
+                        </div>
+                    </div>
+                    <div class="option-card">
+                        <h3>文本重排</h3>
+                        <label class="check">
+                            <input type="checkbox" id="text-rerank-checkbox">
+                            <span>再做一次文本排序</span>
+                        </label>
+                    </div>
+                    <div class="option-card">
+                        <h3>视觉重排</h3>
+                        <label class="check">
+                            <input type="checkbox" id="visual-rerank-checkbox">
+                            <span>再按图像内容排序</span>
+                        </label>
+                    </div>
+                    <div class="option-card">
+                        <h3>Rerank 保留数量</h3>
+                        <div class="field">
+                            <label for="rerank-topk-input">Rerank Top K</label>
+                            <input id="rerank-topk-input" class="number" type="number" value="8" min="1" max="50">
+                        </div>
+                    </div>
+                    <div class="option-card">
+                        <h3>检索策略</h3>
+                        <p class="hint">
+                            默认以结构化语义为主，融合 OCR、媒介类型、标签和高置信人物名。
+                        </p>
+                    </div>
+                    <div class="option-card">
+                        <h3>提示</h3>
+                        <p class="hint">
+                            结果卡片会显示命中原因。重建索引后，人物名、演出、专辑封面等查询会更稳定。
+                        </p>
+                    </div>
+                </aside>
             </div>
-        </div>
+        </section>
+
+        <section class="results-head">
+            <div>
+                <h2>结果</h2>
+                <div class="hint">预览、复制路径、打开位置、搜索相似图。</div>
+            </div>
+            <div class="results-meta" id="results-stats">等待搜索</div>
+        </section>
+
+        <section class="planner-panel" id="planner-panel">
+            <div class="planner-header">
+                <div class="planner-title">检索规划</div>
+                <div class="planner-meta" id="planner-meta">等待搜索</div>
+            </div>
+            <div class="planner-grid" id="planner-grid"></div>
+        </section>
+
+        <section id="results-grid" class="results-grid">
+            <div class="empty">
+                建立索引后即可开始搜索。
+            </div>
+        </section>
     </div>
 
     <script>
         let statusPollingId = null;
+        let currentMode = "text";
 
-        function toggleRerankTopK() {
-            const checkbox = document.getElementById('rerank-checkbox');
-            const wrapper = document.getElementById('rerank-topk-wrapper');
-            wrapper.style.display = checkbox.checked ? 'flex' : 'none';
+        function escapeHtml(text) {
+            const div = document.createElement("div");
+            div.textContent = text || "";
+            return div.innerHTML;
         }
 
-        function showMessage(text, type = 'error') {
-            const messageDiv = document.getElementById('message');
+        function showMessage(text, type = "error") {
+            const messageDiv = document.getElementById("message");
             messageDiv.textContent = text;
             messageDiv.className = `message show ${type}`;
             setTimeout(() => {
-                messageDiv.className = 'message';
+                if (messageDiv.textContent === text) {
+                    messageDiv.className = "message";
+                }
             }, 5000);
         }
 
-        function updateIndexStatus(status, message, progress = '') {
-            const statusDiv = document.getElementById('index-status');
-            const statusText = document.getElementById('status-text');
-            const progressInfo = document.getElementById('progress-info');
-            const initBtn = document.getElementById('init-btn');
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById("tab-text").classList.toggle("active", mode === "text");
+            document.getElementById("tab-image").classList.toggle("active", mode === "image");
+            document.getElementById("pane-text").classList.toggle("active", mode === "text");
+            document.getElementById("pane-image").classList.toggle("active", mode === "image");
+        }
 
-            statusDiv.className = `index-status ${status}`;
-            statusText.textContent = `状态：${message}`;
+        function updateIndexStatus(status, message, progress = "") {
+            const statusBox = document.getElementById("index-status");
+            const statusText = document.getElementById("status-text");
+            const progressInfo = document.getElementById("progress-info");
+            const incrementalInitBtn = document.getElementById("incremental-init-btn");
+            const fullInitBtn = document.getElementById("full-init-btn");
+            const statusPill = document.getElementById("status-pill");
+
+            statusBox.dataset.state = status;
+            statusText.textContent = message;
             progressInfo.textContent = progress;
+            statusPill.dataset.state = status;
+            statusPill.textContent = (
+                {
+                    ready: "可搜索",
+                    processing: "进行中",
+                    failed: "需处理",
+                    idle: "待准备",
+                }[status] || "待准备"
+            );
 
-            if (status === 'processing') {
-                initBtn.disabled = true;
-                initBtn.innerHTML = '构建中<span class="loading"></span>';
-            } else if (status === 'ready') {
-                initBtn.disabled = false;
-                initBtn.textContent = '重新初始化索引';
-                enableSearch(true);
+            if (status === "processing") {
+                incrementalInitBtn.disabled = true;
+                fullInitBtn.disabled = true;
+                incrementalInitBtn.innerHTML = '构建中<span class="loading"></span>';
+                fullInitBtn.textContent = "全量重建";
             } else {
-                initBtn.disabled = false;
-                initBtn.textContent = '初始化索引';
+                incrementalInitBtn.disabled = false;
+                fullInitBtn.disabled = false;
+                incrementalInitBtn.textContent = "增量索引";
+                fullInitBtn.textContent = "全量重建";
             }
+
+            enableSearch(status === "ready");
         }
 
         function enableSearch(enabled) {
-            document.getElementById('query-input').disabled = !enabled;
-            document.getElementById('search-btn').disabled = !enabled;
-            document.getElementById('topk-input').disabled = !enabled;
+            document.getElementById("query-input").disabled = !enabled;
+            document.getElementById("search-btn").disabled = !enabled;
+            document.getElementById("image-path-input").disabled = !enabled;
+            document.getElementById("image-upload-input").disabled = !enabled;
+            document.getElementById("query-hint-input").disabled = !enabled;
+            document.getElementById("image-search-btn").disabled = !enabled;
+            document.getElementById("image-upload-search-btn").disabled = !enabled;
+            document.getElementById("topk-input").disabled = !enabled;
         }
 
-        async function initIndex() {
+        function getSearchOptions() {
+            const topK = Math.min(Math.max(parseInt(document.getElementById("topk-input").value || "12", 10), 1), 50);
+            const rerankTopK = Math.min(Math.max(parseInt(document.getElementById("rerank-topk-input").value || String(topK), 10), 1), 50);
+            return {
+                top_k: topK,
+                rerank_top_k: rerankTopK,
+                enable_text_rerank: document.getElementById("text-rerank-checkbox").checked,
+                enable_visual_rerank: document.getElementById("visual-rerank-checkbox").checked,
+            };
+        }
+
+        async function initIndex(mode = "incremental") {
             try {
                 enableSearch(false);
-                const response = await fetch('/init_index', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
+                const incrementalInitBtn = document.getElementById("incremental-init-btn");
+                const fullInitBtn = document.getElementById("full-init-btn");
+                incrementalInitBtn.disabled = true;
+                fullInitBtn.disabled = true;
+                if (mode === "full") {
+                    fullInitBtn.innerHTML = '重建中<span class="loading"></span>';
+                } else {
+                    incrementalInitBtn.innerHTML = '构建中<span class="loading"></span>';
+                }
+                const response = await fetch("/init_index", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({mode}),
                 });
-
                 const result = await response.json();
 
-                if (result.status === 'processing') {
-                    updateIndexStatus('processing', '索引构建中');
+                if (result.status === "processing") {
+                    updateIndexStatus("processing", "索引构建中", "正在处理图片与向量，请稍候。");
                     startStatusPolling();
-                } else if (result.status === 'success') {
-                    updateIndexStatus('ready', '索引就绪',
-                        `共 ${result.indexed_count} 张照片，耗时 ${result.elapsed_time.toFixed(1)} 秒`);
-                    showMessage('索引初始化成功！', 'success');
-                } else {
-                    updateIndexStatus('failed', '索引构建失败',
-                        result.message || '请检查照片目录和API配置');
-                    showMessage('索引构建失败：' + result.message);
+                    return;
                 }
+
+                if (result.status === "success") {
+                    updateIndexStatus("ready", "索引已就绪", `共 ${result.indexed_count} 张图片，耗时 ${Number(result.elapsed_time || 0).toFixed(1)} 秒。`);
+                    if (mode === "full") {
+                        showMessage("全量重建完成。建议仅在模型或索引结构变化时使用。", "success");
+                    } else {
+                        showMessage("增量索引完成。新增图片已经补入当前索引。", "success");
+                    }
+                    return;
+                }
+
+                updateIndexStatus("failed", "索引构建失败", result.message || "请检查目录和 API 配置。");
+                showMessage(result.message || "索引构建失败");
             } catch (error) {
-                showMessage('请求失败：' + error.message);
-                updateIndexStatus('failed', '请求失败');
+                updateIndexStatus("failed", "请求失败", error.message);
+                showMessage(`请求失败：${error.message}`);
+            } finally {
+                document.getElementById("incremental-init-btn").textContent = "增量索引";
+                document.getElementById("full-init-btn").textContent = "全量重建";
             }
         }
 
@@ -604,164 +1186,429 @@
         }
 
         function stopStatusPolling() {
-            if (statusPollingId) {
-                clearInterval(statusPollingId);
-                statusPollingId = null;
+            if (!statusPollingId) {
+                return;
             }
+            clearInterval(statusPollingId);
+            statusPollingId = null;
         }
 
         async function checkIndexStatus() {
             try {
-                const response = await fetch('/index_status');
+                const response = await fetch("/index_status");
                 const status = await response.json();
-
-                if (status.status === 'processing') {
+                if (status.status === "processing") {
                     const indexed = status.indexed_count || 0;
                     const total = status.total_count || 0;
-                    const progress = total > 0 ? `${indexed}/${total}` : '0';
-                    updateIndexStatus('processing', '索引构建中',
-                        `进度：${progress}，耗时 ${status.elapsed_time.toFixed(1)} 秒`);
-                } else if (status.status === 'ready') {
+                    updateIndexStatus(
+                        "processing",
+                        "索引构建中",
+                        `当前进度 ${indexed}/${total}，耗时 ${Number(status.elapsed_time || 0).toFixed(1)} 秒。`
+                    );
+                    return;
+                }
+                if (status.status === "ready") {
                     stopStatusPolling();
-                    updateIndexStatus('ready', '索引就绪',
-                        `共 ${status.indexed_count} 张照片`);
-                    enableSearch(true);
-                } else if (status.status === 'failed') {
+                    updateIndexStatus("ready", "索引已就绪", `共 ${status.indexed_count || 0} 张图片可检索。`);
+                    return;
+                }
+                if (status.status === "failed") {
                     stopStatusPolling();
-                    updateIndexStatus('failed', '索引构建失败', status.message);
+                    updateIndexStatus("failed", "索引状态异常", status.message || "请重新初始化索引。");
                 }
             } catch (error) {
-                console.error('获取状态失败:', error);
+                console.error("获取状态失败", error);
             }
         }
 
         async function searchPhotos() {
-            const queryInput = document.getElementById('query-input');
-            const query = queryInput.value.trim();
-            const topKInput = document.getElementById('topk-input');
-            const topK = Math.min(Math.max(parseInt(topKInput.value) || 10, 1), 50);
-
+            const query = document.getElementById("query-input").value.trim();
             if (!query) {
-                showMessage('请输入查询内容');
+                showMessage("请输入查询内容");
                 return;
             }
-
-            if (query.length < 5) {
-                showMessage('查询内容至少需要5个字符');
-                return;
-            }
-
-            const searchBtn = document.getElementById('search-btn');
-            searchBtn.disabled = true;
-            searchBtn.innerHTML = '搜索中<span class="loading"></span>';
+            const button = document.getElementById("search-btn");
+            button.disabled = true;
+            button.innerHTML = '搜索中<span class="loading"></span>';
 
             try {
-                const enableRerank = document.getElementById('rerank-checkbox').checked;
-                const rerankTopK = parseInt(document.getElementById('rerank-topk-input').value) || 5;
-
-                const response = await fetch('/search_photos', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                const response = await fetch("/search_photos", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({
-                        query: query,
-                        top_k: topK,
-                        enable_rerank: enableRerank,
-                        rerank_top_k: rerankTopK
-                    })
+                        query,
+                        ...getSearchOptions(),
+                    }),
                 });
-
                 const result = await response.json();
-
-                if (result.status === 'success') {
-                    renderResults(result.results, result.elapsed_time, result.reranked || false);
-                } else {
-                    showMessage('搜索失败：' + result.message);
-                    document.getElementById('results-grid').innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">❌</div>
-                            <div class="empty-state-text">搜索失败：${result.message}</div>
-                        </div>
-                    `;
+                if (result.status !== "success") {
+                    throw new Error(result.message || "搜索失败");
                 }
+                renderResults(result.results, {
+                    elapsed: result.elapsed_time,
+                    textReranked: result.text_reranked,
+                    visualReranked: result.visual_reranked,
+                    title: `文本搜索完成，共 ${result.total_results} 个结果`,
+                    searchDebug: result.search_debug,
+                });
             } catch (error) {
-                showMessage('请求失败：' + error.message);
-                document.getElementById('results-grid').innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">❌</div>
-                        <div class="empty-state-text">请求失败：${error.message}</div>
-                    </div>
-                `;
+                showMessage(error.message || String(error));
+                renderEmpty(`搜索失败：${error.message || error}`);
             } finally {
-                searchBtn.disabled = false;
-                searchBtn.textContent = '搜索';
+                button.disabled = false;
+                button.textContent = "开始搜索";
             }
         }
 
-        function renderResults(results, elapsedTime, reranked = false) {
-            const resultsGrid = document.getElementById('results-grid');
-            const resultsStats = document.getElementById('results-stats');
+        async function searchByImage(pathOverride = "") {
+            const imagePathInput = document.getElementById("image-path-input");
+            const imagePath = (pathOverride || imagePathInput.value).trim();
+            if (!imagePath) {
+                showMessage("请输入图片路径");
+                return;
+            }
+            imagePathInput.value = imagePath;
+            switchMode("image");
+
+            const button = document.getElementById("image-search-btn");
+            button.disabled = true;
+            button.innerHTML = '搜索中<span class="loading"></span>';
+
+            try {
+                const response = await fetch("/search_by_image", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        image_path: imagePath,
+                        query_hint: document.getElementById("query-hint-input").value.trim(),
+                        ...getSearchOptions(),
+                    }),
+                });
+                const result = await response.json();
+                if (result.status !== "success") {
+                    throw new Error(result.message || "以图搜图失败");
+                }
+                renderResults(result.results, {
+                    elapsed: result.elapsed_time,
+                    textReranked: result.text_reranked,
+                    visualReranked: result.visual_reranked,
+                    title: `参考图：${result.query_image_path}`,
+                    searchDebug: result.search_debug,
+                });
+            } catch (error) {
+                showMessage(error.message || String(error));
+                renderEmpty(`以图搜图失败：${error.message || error}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = "搜索相似图片";
+            }
+        }
+
+        async function searchByUpload() {
+            const uploadInput = document.getElementById("image-upload-input");
+            const file = uploadInput.files && uploadInput.files[0];
+            if (!file) {
+                showMessage("请先选择一张图片");
+                return;
+            }
+            switchMode("image");
+
+            const button = document.getElementById("image-upload-search-btn");
+            button.disabled = true;
+            button.innerHTML = '上传中<span class="loading"></span>';
+
+            try {
+                const form = new FormData();
+                form.append("image", file);
+                form.append("query_hint", document.getElementById("query-hint-input").value.trim());
+                const options = getSearchOptions();
+                form.append("top_k", String(options.top_k));
+                form.append("rerank_top_k", String(options.rerank_top_k));
+                form.append("enable_text_rerank", String(options.enable_text_rerank));
+                form.append("enable_visual_rerank", String(options.enable_visual_rerank));
+
+                const response = await fetch("/search_by_uploaded_image", {
+                    method: "POST",
+                    body: form,
+                });
+                const result = await response.json();
+                if (result.status !== "success") {
+                    throw new Error(result.message || "上传图片检索失败");
+                }
+                renderResults(result.results, {
+                    elapsed: result.elapsed_time,
+                    textReranked: result.text_reranked,
+                    visualReranked: result.visual_reranked,
+                    title: `参考图：${result.query_image_name || "已上传图片"}`,
+                    searchDebug: result.search_debug,
+                });
+            } catch (error) {
+                showMessage(error.message || String(error));
+                renderEmpty(`上传图片检索失败：${error.message || error}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = "上传并搜索";
+            }
+        }
+
+        async function openPhotoLocation(path) {
+            try {
+                const response = await fetch("/open_photo_location", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({image_path: path}),
+                });
+                const result = await response.json();
+                if (result.status !== "success") {
+                    throw new Error(result.message || "打开文件位置失败");
+                }
+                showMessage(result.message || "已尝试打开文件位置", "success");
+            } catch (error) {
+                showMessage(error.message || String(error));
+            }
+        }
+
+        async function copyPhotoPath(path) {
+            try {
+                await navigator.clipboard.writeText(path);
+                showMessage("路径已复制到剪贴板", "success");
+            } catch (error) {
+                showMessage(`复制路径失败：${error.message || error}`);
+            }
+        }
+
+        function renderEmpty(message) {
+            document.getElementById("results-stats").textContent = "无结果";
+            document.getElementById("planner-panel").classList.remove("show");
+            document.getElementById("planner-grid").innerHTML = "";
+            document.getElementById("planner-meta").textContent = "等待搜索";
+            document.getElementById("results-grid").innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
+        }
+
+        function renderPlanner(debugInfo) {
+            const panel = document.getElementById("planner-panel");
+            const grid = document.getElementById("planner-grid");
+            const meta = document.getElementById("planner-meta");
+
+            if (!debugInfo || !debugInfo.rounds || debugInfo.rounds.length === 0) {
+                panel.classList.remove("show");
+                grid.innerHTML = "";
+                meta.textContent = "等待搜索";
+                return;
+            }
+
+            const baseIntent = debugInfo.base_intent || {};
+            const intentLines = [];
+            if (baseIntent.search_text) {
+                intentLines.push(`视觉语义：${escapeHtml(baseIntent.search_text)}`);
+            }
+            if (baseIntent.media_terms && baseIntent.media_terms.length) {
+                intentLines.push(`媒介：${escapeHtml(baseIntent.media_terms.join(" / "))}`);
+            }
+            if (baseIntent.identity_terms && baseIntent.identity_terms.length) {
+                intentLines.push(`人物：${escapeHtml(baseIntent.identity_terms.join(" / "))}`);
+            }
+            if (baseIntent.time_hint || baseIntent.season || baseIntent.time_period) {
+                intentLines.push(
+                    `时间：${escapeHtml([baseIntent.time_hint, baseIntent.season, baseIntent.time_period].filter(Boolean).join(" / "))}`
+                );
+            }
+
+            const alternativeHtml = (debugInfo.alternatives || []).map((item) => {
+                const parts = [];
+                if (item.search_text) {
+                    parts.push(item.search_text);
+                }
+                if (item.media_terms && item.media_terms.length) {
+                    parts.push(item.media_terms.join(" / "));
+                }
+                if (item.identity_terms && item.identity_terms.length) {
+                    parts.push(item.identity_terms.join(" / "));
+                }
+                return `
+                    <div class="planner-copy">${escapeHtml(parts.join(" | ") || "无补充")}</div>
+                    <div class="planner-copy muted">${escapeHtml(item.reason || "")}</div>
+                `;
+            }).join("");
+
+            const roundsHtml = (debugInfo.rounds || []).map((round) => {
+                const roundIntent = round.intent || {};
+                const parts = [];
+                if (roundIntent.search_text) {
+                    parts.push(roundIntent.search_text);
+                }
+                if (roundIntent.media_terms && roundIntent.media_terms.length) {
+                    parts.push(roundIntent.media_terms.join(" / "));
+                }
+                if (roundIntent.identity_terms && roundIntent.identity_terms.length) {
+                    parts.push(roundIntent.identity_terms.join(" / "));
+                }
+
+                return `
+                    <div class="planner-round">
+                        <div class="planner-round-top">
+                            <span>${escapeHtml(round.round || "base")}</span>
+                            <span>Top ${Number(round.top_score || 0).toFixed(2)} / ${round.result_count || 0} 条</span>
+                        </div>
+                        <div class="planner-copy">${escapeHtml(parts.join(" | ") || "无显式意图")}</div>
+                        <div class="planner-copy muted">${escapeHtml(round.reason || "")}</div>
+                    </div>
+                `;
+            }).join("");
+
+            grid.innerHTML = `
+                <div class="planner-card">
+                    <h3>基础意图</h3>
+                    <div class="planner-copy">${intentLines.length ? intentLines.join("<br>") : "当前模式未使用文本规划。"}</div>
+                </div>
+                <div class="planner-card">
+                    <h3>扩展轮次</h3>
+                    <div class="planner-copy">${debugInfo.expansion_triggered ? "已触发" : "未触发"}</div>
+                    <div class="planner-copy muted">${escapeHtml(debugInfo.expansion_reason || "第一轮结果足够强，不需要扩展。")}</div>
+                    ${alternativeHtml || '<div class="planner-copy muted">没有生成替代意图。</div>'}
+                </div>
+                <div class="planner-card">
+                    <h3>反思轮次</h3>
+                    <div class="planner-copy">${debugInfo.reflection_triggered ? "已触发" : "未触发"}</div>
+                    <div class="planner-copy muted">${escapeHtml(debugInfo.reflection_reason || "第二轮结果已足够，未进入反思。")}</div>
+                </div>
+                <div class="planner-card">
+                    <h3>轮次明细</h3>
+                    <div class="planner-rounds">${roundsHtml}</div>
+                </div>
+            `;
+
+            meta.textContent = `${debugInfo.mode || "text"} 模式，${debugInfo.rounds.length} 轮`;
+            panel.classList.add("show");
+        }
+
+        function renderChips(items, className = "") {
+            if (!items || items.length === 0) {
+                return "";
+            }
+            return `
+                <div class="chip-wrap">
+                    ${items.map((item) => `<span class="chip ${className}">${escapeHtml(item)}</span>`).join("")}
+                </div>
+            `;
+        }
+
+        function renderMatchSummary(summary) {
+            if (!summary) {
+                return "";
+            }
+            const blocks = [];
+
+            if (summary.media_types && summary.media_types.length) {
+                blocks.push(`
+                    <div class="insight-row">
+                        <div class="insight-label">媒介类型</div>
+                        ${renderChips(summary.media_types, "media")}
+                    </div>
+                `);
+            }
+
+            if (summary.identities && summary.identities.length) {
+                blocks.push(`
+                    <div class="insight-row">
+                        <div class="insight-label">识别人物</div>
+                        ${renderChips(summary.identities, "identity")}
+                    </div>
+                `);
+            }
+
+            if (summary.top_tags && summary.top_tags.length) {
+                blocks.push(`
+                    <div class="insight-row">
+                        <div class="insight-label">高置信标签</div>
+                        ${renderChips(summary.top_tags)}
+                    </div>
+                `);
+            }
+
+            if (summary.identity_evidence && summary.identity_evidence.length) {
+                blocks.push(`
+                    <div class="insight-row">
+                        <div class="insight-label">识别证据</div>
+                        ${renderChips(summary.identity_evidence)}
+                    </div>
+                `);
+            }
+
+            if (summary.ocr_excerpt) {
+                blocks.push(`
+                    <div class="insight-row">
+                        <div class="insight-label">OCR 摘要</div>
+                        <div class="insight-copy">${escapeHtml(summary.ocr_excerpt)}</div>
+                    </div>
+                `);
+            }
+
+            if (blocks.length === 0) {
+                return "";
+            }
+
+            return `<div class="photo-insights">${blocks.join("")}</div>`;
+        }
+
+        function renderResults(results, meta) {
+            const rerankMarks = [];
+            if (meta.textReranked) {
+                rerankMarks.push("文本 Rerank");
+            }
+            if (meta.visualReranked) {
+                rerankMarks.push("视觉 Rerank");
+            }
+            const suffix = rerankMarks.length ? `，已启用 ${rerankMarks.join(" + ")}` : "";
+            document.getElementById("results-stats").textContent =
+                `${meta.title}，耗时 ${Number(meta.elapsed || 0).toFixed(2)} 秒${suffix}`;
+            renderPlanner(meta.searchDebug);
 
             if (!results || results.length === 0) {
-                resultsGrid.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <div class="empty-state-text">未找到匹配的照片</div>
-                    </div>
-                `;
-                resultsStats.textContent = '耗时 0.00 秒';
+                renderEmpty("未找到匹配图片。可以增大 Top K，或关闭重排后再试。");
                 return;
             }
 
-            let statsText = `共 ${results.length} 个结果，耗时 ${elapsedTime.toFixed(2)} 秒`;
-            if (reranked) {
-                statsText += ' (已精排)';
-            }
-            resultsStats.textContent = statsText;
-
-            const html = results.map(item => {
-                const scorePercent = Math.round(item.score * 100);
+            const html = results.map((item) => {
+                const scorePercent = Math.max(0, Math.min(100, Math.round((item.score || 0) * 100)));
+                const matchSummary = renderMatchSummary(item.match_summary);
                 return `
-                    <div class="photo-card">
-                        <img src="${item.photo_url}" alt="照片" class="photo-image" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22280%22 height=%22200%22><rect fill=%22%23f0f0f0%22 width=%22100%25%22 height=%22100%25%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23999%22>图片加载失败</text></svg>'">
-                        <div class="photo-info">
-                            <span class="photo-rank">#${item.rank}</span>
-                            <p class="photo-description">${escapeHtml(item.description || '无描述')}</p>
-                            <div class="photo-score">相似度：${(item.score * 100).toFixed(1)}%</div>
-                            <div class="score-bar">
-                                <div class="score-fill" style="width: ${scorePercent}%"></div>
+                    <article class="photo-card">
+                        <img
+                            class="photo-image"
+                            src="${item.photo_url}"
+                            alt="搜索结果图片"
+                            onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22320%22 height=%22240%22%3E%3Crect width=%22100%25%22 height=%22100%25%22 fill=%22%23eee6da%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22 fill=%22%23707b87%22%3E图片加载失败%3C/text%3E%3C/svg%3E';"
+                        >
+                        <div class="photo-body">
+                            <div class="photo-top">
+                                <span class="rank-badge">#${item.rank || "-"}</span>
+                                <span class="pill">${scorePercent}%</span>
+                            </div>
+                            <div class="photo-description">${escapeHtml(item.description || "无描述")}</div>
+                            ${matchSummary}
+                            <code class="photo-path">${escapeHtml(item.photo_path || "")}</code>
+                            <div class="score">
+                                <span>${escapeHtml(item.file_name || "未命名文件")}</span>
+                                <span>相似度 ${(Number(item.score || 0) * 100).toFixed(1)}%</span>
+                            </div>
+                            <div class="bar"><span style="width:${scorePercent}%"></span></div>
+                            <div class="card-actions">
+                                <a class="btn-ghost" href="${item.photo_url}" target="_blank" rel="noreferrer">查看原图</a>
+                                <button class="btn-ghost" onclick="openPhotoLocation(${JSON.stringify(item.photo_path)})">定位本地文件</button>
+                                <button class="btn-ghost" onclick="copyPhotoPath(${JSON.stringify(item.photo_path)})">复制路径</button>
+                                <button class="btn-secondary" onclick="searchByImage(${JSON.stringify(item.photo_path)})">搜索相似</button>
                             </div>
                         </div>
-                    </div>
+                    </article>
                 `;
-            }).join('');
+            }).join("");
 
-            resultsGrid.innerHTML = html;
+            document.getElementById("results-grid").innerHTML = html;
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // 页面加载时检查索引状态
-        window.addEventListener('load', async () => {
-            try {
-                const response = await fetch('/index_status');
-                const status = await response.json();
-
-                if (status.status === 'ready') {
-                    updateIndexStatus('ready', '索引就绪',
-                        `共 ${status.indexed_count} 张照片`);
-                } else if (status.status === 'processing') {
-                    updateIndexStatus('processing', '索引构建中');
-                    startStatusPolling();
-                }
-            } catch (error) {
-                console.error('获取初始状态失败:', error);
-            }
+        window.addEventListener("load", async () => {
+            await checkIndexStatus();
         });
     </script>
 </body>
