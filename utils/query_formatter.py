@@ -102,9 +102,11 @@ class QueryFormatter:
 2. media_terms
 3. identity_terms
 4. strict_identity_filter
-5. time_hint
-6. season
-7. time_period
+5. intent_mode
+6. intent_contract
+7. time_hint
+8. season
+9. time_period
 
 原则：
 - 以理解用户真正想找的图像内容为目标，而不是机械抽词。
@@ -112,6 +114,15 @@ class QueryFormatter:
 - media_terms 只在你对媒介类型判断清楚时才返回，使用内部规范值：album_cover, poster, stage_performance, screen。
 - identity_terms 用于提取明确的人名、艺名、公众人物称呼或稳定别称；不确定时宁可不填。
 - strict_identity_filter 表示该查询是否应把身份匹配视为硬约束。只有当用户明确要找某个特定人物本人的照片时才设为 true。
+- intent_mode 只能是 strict 或 open。
+- 当用户在找明确且不可替换的目标时，intent_mode 应为 strict。这里的“明确目标”不只包括特定人物，也包括特定物体、特定载体、特定内容组合或明确不可替换的检索对象。
+- intent_contract 用来表达这个 query 的最小不可丢失目标，格式固定为：
+  {{
+    "core_target": "",
+    "must_keep": [],
+    "avoid_drift": ""
+  }}
+- strict 模式下，后续任何扩写或反思都只能围绕 intent_contract 做保守重述，不能把目标替换成更泛的同类概念。
 - time_hint 保留原始时间表达；season 和 time_period 做结构化归纳。
 - 只返回 JSON，不要解释。
 """
@@ -122,6 +133,12 @@ class QueryFormatter:
   "media_terms": [],
   "identity_terms": [],
   "strict_identity_filter": false,
+  "intent_mode": "open",
+  "intent_contract": {{
+    "core_target": "",
+    "must_keep": [],
+    "avoid_drift": ""
+  }},
   "time_hint": null,
   "season": null,
   "time_period": null
@@ -139,20 +156,27 @@ class QueryFormatter:
   - “请帮我找陶喆的照片” -> true
   - “像陶喆风格的舞台照” -> false
   - “陶喆演唱会现场” -> 通常 true
+- intent_mode:
+  - 若 query 可以被更泛化的近义表达替代，设为 open
+  - 若 query 存在明确不可替换的核心目标，设为 strict
+- intent_contract:
+  - core_target: 用一句短语概括用户真正要找的东西
+  - must_keep: 保留不可替换的核心词或目标，可是人物、物体、载体或内容组合
+  - avoid_drift: 简短说明后续不该漂移到什么方向
 - 不要把“海边”发散成“沙滩海浪蓝天”，也不要把“频谱分析仪 屏幕”发散成“仪器特写 波形曲线 参数读数”。
 - 如果 query 同时包含时间和画面内容，search_text 主要保留画面内容；时间相关信息填入其余字段。
 
 示例：
 - 用户 query: "去年的照片"
-  输出: {{"search_text": "", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "time_hint": "去年", "season": null, "time_period": null}}
+  输出: {{"search_text": "", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "intent_mode": "open", "intent_contract": {{"core_target": "去年的照片", "must_keep": [], "avoid_drift": ""}}, "time_hint": "去年", "season": null, "time_period": null}}
 - 用户 query: "夏天海边的照片"
-  输出: {{"search_text": "海边", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "time_hint": null, "season": "夏天", "time_period": null}}
+  输出: {{"search_text": "海边", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "intent_mode": "open", "intent_contract": {{"core_target": "夏天海边的照片", "must_keep": ["海边"], "avoid_drift": ""}}, "time_hint": null, "season": "夏天", "time_period": null}}
 - 用户 query: "频谱分析仪 屏幕"
-  输出: {{"search_text": "频谱分析仪 屏幕", "media_terms": ["screen"], "identity_terms": [], "strict_identity_filter": false, "time_hint": null, "season": null, "time_period": null}}
+  输出: {{"search_text": "频谱分析仪 屏幕", "media_terms": ["screen"], "identity_terms": [], "strict_identity_filter": false, "intent_mode": "strict", "intent_contract": {{"core_target": "频谱分析仪屏幕", "must_keep": ["频谱分析仪", "屏幕"], "avoid_drift": "不要扩成泛化仪器或一般曲线图"}}, "time_hint": null, "season": null, "time_period": null}}
 - 用户 query: "去年傍晚的篮球场"
-  输出: {{"search_text": "篮球场", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "time_hint": "去年", "season": null, "time_period": "傍晚"}}
+  输出: {{"search_text": "篮球场", "media_terms": [], "identity_terms": [], "strict_identity_filter": false, "intent_mode": "open", "intent_contract": {{"core_target": "去年傍晚的篮球场照片", "must_keep": ["篮球场"], "avoid_drift": ""}}, "time_hint": "去年", "season": null, "time_period": "傍晚"}}
 - 用户 query: "周杰伦演唱会"
-  输出: {{"search_text": "演唱会现场", "media_terms": ["stage_performance"], "identity_terms": ["周杰伦"], "strict_identity_filter": true, "time_hint": null, "season": null, "time_period": null}}
+  输出: {{"search_text": "演唱会现场", "media_terms": ["stage_performance"], "identity_terms": ["周杰伦"], "strict_identity_filter": true, "intent_mode": "strict", "intent_contract": {{"core_target": "周杰伦演唱会现场", "must_keep": ["周杰伦", "演唱会现场"], "avoid_drift": "不要扩成其他男歌手、专辑或泛化舞台照"}}, "time_hint": null, "season": null, "time_period": null}}
 
 用户 query: {user_query}"""
 
@@ -176,6 +200,9 @@ class QueryFormatter:
                     "media_terms": payload.get("media_terms") or [],
                     "identity_terms": payload.get("identity_terms") or [],
                     "strict_identity_filter": bool(payload.get("strict_identity_filter", False)),
+                    "intent_mode": payload.get("intent_mode"),
+                    "intent_contract": payload.get("intent_contract"),
+                    "contract_satisfied": True,
                     "time_hint": payload.get("time_hint") or None,
                     "season": payload.get("season") or None,
                     "time_period": payload.get("time_period") or None,
@@ -193,6 +220,18 @@ class QueryFormatter:
                     for value in result["identity_terms"]
                     if str(value).strip()
                 ]
+                result["intent_mode"] = self._normalize_intent_mode(
+                    result.get("intent_mode"),
+                    strict_identity_filter=result["strict_identity_filter"],
+                )
+                result["intent_contract"] = self._normalize_intent_contract(
+                    result.get("intent_contract"),
+                    user_query=user_query,
+                    search_text=result["search_text"],
+                    media_terms=result["media_terms"],
+                    identity_terms=result["identity_terms"],
+                    intent_mode=result["intent_mode"],
+                )
 
                 allowed_seasons = {"春天", "夏天", "秋天", "冬天"}
                 if result["season"] not in allowed_seasons:
@@ -215,6 +254,16 @@ class QueryFormatter:
                         "media_terms": [],
                         "identity_terms": [],
                         "strict_identity_filter": False,
+                        "intent_mode": "open",
+                        "intent_contract": self._normalize_intent_contract(
+                            {},
+                            user_query=user_query,
+                            search_text=user_query,
+                            media_terms=[],
+                            identity_terms=[],
+                            intent_mode="open",
+                        ),
+                        "contract_satisfied": True,
                         "time_hint": None,
                         "season": None,
                         "time_period": None,
@@ -227,7 +276,83 @@ class QueryFormatter:
             "media_terms": [],
             "identity_terms": [],
             "strict_identity_filter": False,
+            "intent_mode": "open",
+            "intent_contract": self._normalize_intent_contract(
+                {},
+                user_query=user_query,
+                search_text=user_query,
+                media_terms=[],
+                identity_terms=[],
+                intent_mode="open",
+            ),
+            "contract_satisfied": True,
             "original_query": user_query,
+        }
+
+    @staticmethod
+    def _normalize_intent_mode(value: Any, *, strict_identity_filter: bool) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized in {"strict", "open"}:
+            return normalized
+        return "strict" if strict_identity_filter else "open"
+
+    @staticmethod
+    def _normalize_intent_contract(
+        value: Any,
+        *,
+        user_query: str,
+        search_text: str,
+        media_terms: list[str],
+        identity_terms: list[str],
+        intent_mode: str,
+        base_contract: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        contract = value if isinstance(value, dict) else {}
+        inherited = base_contract if isinstance(base_contract, dict) else {}
+
+        core_target = str(contract.get("core_target") or inherited.get("core_target") or "").strip()
+        if not core_target:
+            core_target = (
+                search_text.strip()
+                or " ".join(identity_terms).strip()
+                or " ".join(media_terms).strip()
+                or user_query.strip()
+            )
+
+        raw_must_keep = contract.get("must_keep")
+        if not isinstance(raw_must_keep, list):
+            raw_must_keep = inherited.get("must_keep") if isinstance(inherited.get("must_keep"), list) else []
+        must_keep = []
+        seen = set()
+        for item in raw_must_keep or []:
+            normalized = str(item or "").strip()
+            if not normalized:
+                continue
+            lowered = normalized.lower()
+            if lowered in seen:
+                continue
+            must_keep.append(normalized)
+            seen.add(lowered)
+
+        if not must_keep:
+            seed_terms = identity_terms or media_terms
+            if intent_mode == "strict" and not seed_terms and search_text.strip():
+                seed_terms = [search_text.strip()]
+            for item in seed_terms:
+                normalized = str(item or "").strip()
+                if not normalized:
+                    continue
+                lowered = normalized.lower()
+                if lowered in seen:
+                    continue
+                must_keep.append(normalized)
+                seen.add(lowered)
+
+        avoid_drift = str(contract.get("avoid_drift") or inherited.get("avoid_drift") or "").strip()
+        return {
+            "core_target": core_target,
+            "must_keep": must_keep,
+            "avoid_drift": avoid_drift,
         }
 
     @staticmethod
@@ -238,12 +363,16 @@ class QueryFormatter:
         time_hint: Any = None,
         season: Any = None,
         time_period: Any = None,
+        base_intent: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         result = {
             "search_text": str(payload.get("search_text") or "").strip(),
             "media_terms": payload.get("media_terms") or [],
             "identity_terms": payload.get("identity_terms") or [],
             "strict_identity_filter": bool(payload.get("strict_identity_filter", False)),
+            "intent_mode": payload.get("intent_mode"),
+            "intent_contract": payload.get("intent_contract"),
+            "contract_satisfied": bool(payload.get("contract_satisfied", True)),
             "time_hint": time_hint,
             "season": season,
             "time_period": time_period,
@@ -262,6 +391,24 @@ class QueryFormatter:
             for value in result["identity_terms"]
             if str(value).strip()
         ]
+        base_contract = {}
+        if isinstance(base_intent, dict):
+            maybe_contract = base_intent.get("intent_contract")
+            if isinstance(maybe_contract, dict):
+                base_contract = maybe_contract
+        result["intent_mode"] = QueryFormatter._normalize_intent_mode(
+            result.get("intent_mode"),
+            strict_identity_filter=result["strict_identity_filter"],
+        )
+        result["intent_contract"] = QueryFormatter._normalize_intent_contract(
+            result.get("intent_contract"),
+            user_query=user_query,
+            search_text=result["search_text"],
+            media_terms=result["media_terms"],
+            identity_terms=result["identity_terms"],
+            intent_mode=result["intent_mode"],
+            base_contract=base_contract,
+        )
 
         allowed_seasons = {"春天", "夏天", "秋天", "冬天"}
         if result["season"] not in allowed_seasons:
@@ -294,12 +441,19 @@ class QueryFormatter:
 
 只返回 JSON：
 {{
-  "alternatives": [
+ "alternatives": [
     {{
       "search_text": "",
       "media_terms": [],
       "identity_terms": [],
       "strict_identity_filter": false,
+      "intent_mode": "open",
+      "intent_contract": {{
+        "core_target": "",
+        "must_keep": [],
+        "avoid_drift": ""
+      }},
+      "contract_satisfied": true,
       "reason": ""
     }}
   ]
@@ -314,8 +468,10 @@ class QueryFormatter:
 - 如果原查询已经足够明确，允许返回空数组。
 - 每个替代意图必须保持和原查询同一目标，不得偏题。
 - 可以补充更容易检索的视觉表达、常见载体或同一意图下的保守语义重述。
-- 对特定人物查询，可以补充演出、海报、舞台、大屏等高频载体，但不能凭空添加别的人名。
+- 你必须显式判断替代意图是否仍然遵守第一轮意图中的 intent_contract；如果遵守，contract_satisfied=true，否则为 false。
+- 如果第一轮 intent_mode 是 strict，那么替代意图必须保留 core_target 和 must_keep，不允许把目标扩成更泛的同类对象、同类人物或同类场景。
 - strict_identity_filter 只有在替代意图仍然要求“必须是这个人本人”时才为 true。
+- 不允许把“明确的人/物/载体/内容组合”改写成泛化类别词。
 - 只返回 JSON，不要解释。"""
 
         for attempt in range(self.max_retries):
@@ -344,6 +500,7 @@ class QueryFormatter:
                             time_hint=base_intent.get("time_hint"),
                             season=base_intent.get("season"),
                             time_period=base_intent.get("time_period"),
+                            base_intent=base_intent,
                         )
                     )
                 return normalized
@@ -375,6 +532,13 @@ class QueryFormatter:
   "media_terms": [],
   "identity_terms": [],
   "strict_identity_filter": false,
+  "intent_mode": "open",
+  "intent_contract": {{
+    "core_target": "",
+    "must_keep": [],
+    "avoid_drift": ""
+  }},
+  "contract_satisfied": true,
   "reason": ""
 }}
 """
@@ -394,8 +558,11 @@ class QueryFormatter:
 
 要求：
 - 如果当前结果已经足够接近，允许返回空 JSON {{}}。
+- 反思的目标是“在不改原始目标的前提下修正检索表达”，不是换目标。
+- 你必须显式判断新的意图是否仍然遵守第一轮 intent_contract；如果遵守，contract_satisfied=true，否则为 false。
 - 如果原查询是明确的人物检索，只有当你仍然认为必须找该人物本人时，strict_identity_filter 才为 true。
-- 你可以决定“更强调媒介类型”、“更强调人物近景”、“去掉过强约束”、“把抽象描述改成更容易检索的视觉表达”。
+- 如果第一轮 intent_mode 是 strict，那么新的意图必须保留 core_target 和 must_keep，只能做更稳健的重述或收紧，不能改成泛化替代品。
+- 你可以决定“更强调媒介类型”、“更强调主体近景”、“把抽象描述改成更容易检索的视觉表达”，但不能改变原始目标。
 - reason 必须简短说明你为何这样调整。
 - 只返回 JSON，不要解释。"""
 
@@ -421,6 +588,7 @@ class QueryFormatter:
                     time_hint=base_intent.get("time_hint"),
                     season=base_intent.get("season"),
                     time_period=base_intent.get("time_period"),
+                    base_intent=base_intent,
                 )
             except Exception:
                 if attempt == self.max_retries - 1:

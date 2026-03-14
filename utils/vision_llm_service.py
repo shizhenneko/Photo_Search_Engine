@@ -10,8 +10,8 @@ from openai import OpenAI
 
 from utils.image_parser import get_image_dimensions, resize_and_optimize_image
 from utils.structured_analysis import (
+    get_enhanced_analysis_reason,
     normalize_analysis_payload,
-    should_run_enhanced_analysis,
 )
 
 
@@ -70,6 +70,7 @@ class SU8VisionLLMService(VisionLLMService):
         self.image_format = image_format.upper() if image_format.upper() in {"JPEG", "PNG", "WEBP"} else "WEBP"
         self.client = client or OpenAI(api_key=api_key, base_url=base_url)
         self._last_analysis_metrics: Optional[Dict[str, Any]] = None
+        self.enhanced_analysis_enabled = True
 
     def _get_image_base64(self, image_path: str) -> str:
         image_bytes = resize_and_optimize_image(
@@ -88,19 +89,18 @@ class SU8VisionLLMService(VisionLLMService):
 
     def _build_description_prompt(self) -> str:
         return (
-            "你是图片结构化理解器。请严格观察图片并返回 JSON。\n"
-            "要求：\n"
-            "1. 只描述可见内容，但允许识别载体类型、可读文字、公众人物候选和媒介属性。\n"
-            "2. description 用于前端展示，应自然、准确、简洁。\n"
-            "3. outer_scene_summary 描述相机实际拍到的外层场景。\n"
-            "4. inner_content_summary 描述被拍对象内部承载的内容，例如专辑封面、海报、屏幕内容。\n"
-            "5. media_types 必须从这些值中选择：album_cover, poster, stage_performance, screen, artwork_print, merch, document, graffiti, photo, other。\n"
-            "6. tags 返回数组，每项格式为 {\"tag\": \"...\", \"confidence\": 0-1}。\n"
-            "7. identity_candidates 返回数组，每项格式为 {\"name\": \"...\", \"aliases\": [], \"confidence\": 0-1, \"evidence_sources\": []}。\n"
-            "8. analysis_flags 返回布尔字典，可用键包括 text_heavy, has_stage, has_screen, has_packaging, has_public_figure_likelihood。\n"
-            "9. 对公众人物识别必须保守：只有当视觉特征或可读文字足以支持具体身份时，才返回具体姓名；否则返回空数组，不要用“像某某”硬猜。\n"
-            "10. evidence_sources 必须明确区分文字证据和视觉证据，例如 readable_text、visible_text、ocr_text、face_similarity、signature_stage_pose、hairstyle、tattoo。\n"
-            "11. 只返回 JSON，不要输出解释。"
+            "观察图片并只返回 JSON。字段固定为："
+            "{\"description\":\"\",\"outer_scene_summary\":\"\",\"inner_content_summary\":\"\","
+            "\"media_types\":[],\"tags\":[],\"ocr_text\":\"\",\"person_roles\":[],"
+            "\"identity_candidates\":[],\"analysis_flags\":{}}。\n"
+            "要求：description 用一句话简洁总结；outer_scene_summary 只写相机实际拍到的外层场景；"
+            "inner_content_summary 只写被拍对象内部最有检索价值的内容。"
+            "media_types 仅能从 album_cover, poster, stage_performance, screen, artwork_print, merch, document, graffiti, photo, other 中选择。"
+            "tags 用高价值短标签，最多 8 个，优先直接返回字符串；如返回对象，格式为 {\"tag\":\"\",\"confidence\":0-1}。"
+            "ocr_text 只保留最有检索价值的关键文字，尽量控制在 200 字内。"
+            "identity_candidates 仅在视觉或可读文字足以支持身份时返回，格式为 {\"name\":\"\",\"aliases\":[],\"confidence\":0-1,\"evidence_sources\":[]}。"
+            "analysis_flags 只保留值为 true 的键，可用 text_heavy, has_stage, has_screen, has_packaging, has_public_figure_likelihood, classification_uncertain。"
+            "不要猜测公众人物，不要解释，不要输出 JSON 以外内容。"
         )
 
     def _default_analysis(self, image_path: str) -> Dict[str, Any]:
@@ -140,16 +140,72 @@ class SU8VisionLLMService(VisionLLMService):
             raise ValueError("视觉模型返回的分析结果不是对象")
         return data
 
-    def _build_enhanced_prompt(self, base_analysis: Dict[str, Any]) -> str:
+    @staticmethod
+    def _truncate_text(value: Any, limit: int) -> str:
+        text = str(value or "").strip()
+        if len(text) <= limit:
+            return text
+        return text[: max(0, limit - 1)].rstrip() + "…"
+
+    def _build_enhancement_context(self, base_analysis: Dict[str, Any]) -> str:
+        compact_candidates: List[Dict[str, Any]] = []
+        for candidate in list(base_analysis.get("identity_candidates") or [])[:2]:
+            if not isinstance(candidate, dict):
+                continue
+            compact_candidates.append(
+                {
+                    "name": self._truncate_text(candidate.get("name"), 32),
+                    "confidence": round(float(candidate.get("confidence", 0.0)), 4),
+                    "evidence_sources": list(candidate.get("evidence_sources") or [])[:3],
+                }
+            )
+
+        compact_flags = {
+            str(key): bool(value)
+            for key, value in (base_analysis.get("analysis_flags") or {}).items()
+            if value
+        }
+        context = {
+            "description": self._truncate_text(base_analysis.get("description"), 80),
+            "outer_scene_summary": self._truncate_text(base_analysis.get("outer_scene_summary"), 80),
+            "inner_content_summary": self._truncate_text(base_analysis.get("inner_content_summary"), 120),
+            "media_types": list(base_analysis.get("media_types") or [])[:4],
+            "tags": list(base_analysis.get("tags") or [])[:8],
+            "ocr_text_excerpt": self._truncate_text(base_analysis.get("ocr_text"), 200),
+            "person_roles": list(base_analysis.get("person_roles") or [])[:4],
+            "identity_names": list(base_analysis.get("identity_names") or [])[:4],
+            "identity_candidates": compact_candidates,
+            "analysis_flags": compact_flags,
+        }
+        return json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _get_enhancement_focus(reason: Optional[str]) -> str:
+        focus_map = {
+            "model_marked_uncertain": "优先重新确认内容类型、关键文字和主体身份。",
+            "missing_media_type": "优先修正 media_types，并明确拍到的是载体还是实际场景。",
+            "public_figure_needs_review": "优先复核 identity_candidates，只有证据足够时才返回姓名。",
+            "person_identity_missing": "优先复核主体身份与 supporting evidence_sources。",
+            "ocr_signal_weak": "优先补强 ocr_text 与 inner_content_summary，只保留关键文字。",
+            "retrieval_signal_sparse": "优先补强 inner_content_summary、media_types、tags 和关键 OCR。",
+        }
+        return focus_map.get(reason or "", "优先修正最影响检索的字段。")
+
+    def _build_enhanced_prompt(self, base_analysis: Dict[str, Any], enhanced_reason: Optional[str] = None) -> str:
+        compact_context = self._build_enhancement_context(base_analysis)
         return (
-            "你将看到同一张图片，请基于已有初步分析做增强识别，只返回 JSON。\n"
-            "重点补强：\n"
-            "1. 更准确的 inner_content_summary。\n"
-            "2. 更准确的 OCR 文本。\n"
-            "3. 若图片中可能出现公众人物，请返回更高质量的 identity_candidates。\n"
-            "4. 若图片实际是专辑封面、海报、屏幕、舞台或周边，请修正 media_types。\n"
-            "5. 若公众人物无法凭视觉稳定唯一识别，请不要返回具体姓名；宁可留空，也不要误认。\n"
-            f"初步分析：{json.dumps(base_analysis, ensure_ascii=False)}"
+            "同一张图片做第二轮复核，只返回 JSON。\n"
+            "目标：不是重写第一次结果，而是针对弱项做更准的修正。\n"
+            "输出规则："
+            "1. 只返回需要修改或补充的字段，未修改字段省略；"
+            "2. 可返回字段仅限 description, outer_scene_summary, inner_content_summary, media_types, tags, ocr_text, identity_candidates, analysis_flags；"
+            "3. OCR 只保留最有检索价值的关键文字，尽量控制在 200 字内；"
+            "4. analysis_flags 只保留值为 true 的键；"
+            "5. 若身份仍不稳，不返回具体姓名。"
+            f"触发原因：{enhanced_reason or 'unknown'}。"
+            f"{self._get_enhancement_focus(enhanced_reason)}"
+            "不要把第一次结果整份重写回来。"
+            f"第一次结果摘要：{compact_context}"
         )
 
     def get_last_analysis_metrics(self) -> Optional[Dict[str, Any]]:
@@ -211,13 +267,16 @@ class SU8VisionLLMService(VisionLLMService):
                     self._last_analysis_metrics["base_normalize_seconds"] + normalize_elapsed, 4
                 )
 
-                enhanced_needed = should_run_enhanced_analysis(normalized)
+                enhanced_reason = get_enhanced_analysis_reason(normalized)
+                enhanced_needed = self.enhanced_analysis_enabled and enhanced_reason is not None
                 attempt_metrics["enhanced_triggered"] = enhanced_needed
+                attempt_metrics["enhanced_reason"] = enhanced_reason
                 self._last_analysis_metrics["enhanced_triggered"] = enhanced_needed
+                self._last_analysis_metrics["enhanced_reason"] = enhanced_reason
                 if enhanced_needed:
                     try:
                         enhanced_prompt_start = time.perf_counter()
-                        enhanced_prompt = self._build_enhanced_prompt(normalized)
+                        enhanced_prompt = self._build_enhanced_prompt(normalized, enhanced_reason)
                         enhanced_prompt_elapsed = time.perf_counter() - enhanced_prompt_start
                         attempt_metrics["enhanced_prompt_seconds"] = round(enhanced_prompt_elapsed, 4)
                         self._last_analysis_metrics["enhanced_prompt_seconds"] = round(

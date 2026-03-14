@@ -253,6 +253,12 @@ class TestQueryFormatter(unittest.TestCase):
             "media_terms": ["stage_performance"],
             "identity_terms": ["周杰伦"],
             "strict_identity_filter": True,
+            "intent_mode": "strict",
+            "intent_contract": {
+                "core_target": "周杰伦演唱会现场",
+                "must_keep": ["周杰伦", "演唱会现场"],
+                "avoid_drift": "不要扩成泛化舞台照",
+            },
             "time_hint": None,
             "season": None,
             "time_period": None,
@@ -270,6 +276,40 @@ class TestQueryFormatter(unittest.TestCase):
         self.assertEqual(result["media_terms"], ["stage_performance"])
         self.assertEqual(result["identity_terms"], ["周杰伦"])
         self.assertTrue(result["strict_identity_filter"])
+        self.assertEqual(result["intent_mode"], "strict")
+        self.assertEqual(result["intent_contract"]["must_keep"], ["周杰伦", "演唱会现场"])
+
+    def test_format_query_extracts_strict_contract_for_non_person_explicit_query(self) -> None:
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content=json.dumps({
+            "search_text": "频谱分析仪 屏幕",
+            "media_terms": ["screen"],
+            "identity_terms": [],
+            "strict_identity_filter": False,
+            "intent_mode": "strict",
+            "intent_contract": {
+                "core_target": "频谱分析仪屏幕",
+                "must_keep": ["频谱分析仪", "屏幕"],
+                "avoid_drift": "不要扩成一般设备屏幕",
+            },
+            "time_hint": None,
+            "season": None,
+            "time_period": None,
+        })))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        formatter = QueryFormatter(
+            api_key="test-key",
+            model_name="test-model",
+            base_url="https://test.com",
+            client=mock_client,
+        )
+
+        result = formatter.format_query("频谱分析仪 屏幕")
+        self.assertEqual(result["intent_mode"], "strict")
+        self.assertEqual(result["intent_contract"]["must_keep"], ["频谱分析仪", "屏幕"])
+        self.assertFalse(result["strict_identity_filter"])
 
     def test_expand_query_intents_returns_alternatives(self) -> None:
         mock_client = Mock()
@@ -281,6 +321,13 @@ class TestQueryFormatter(unittest.TestCase):
                     "media_terms": ["stage_performance"],
                     "identity_terms": ["陶喆"],
                     "strict_identity_filter": True,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "陶喆的照片",
+                        "must_keep": ["陶喆"],
+                        "avoid_drift": "不要扩成其他男歌手",
+                    },
+                    "contract_satisfied": True,
                     "reason": "补充现场语义"
                 },
                 {
@@ -288,6 +335,13 @@ class TestQueryFormatter(unittest.TestCase):
                     "media_terms": ["stage_performance", "screen"],
                     "identity_terms": ["陶喆"],
                     "strict_identity_filter": False,
+                    "intent_mode": "open",
+                    "intent_contract": {
+                        "core_target": "陶喆的照片",
+                        "must_keep": ["陶喆"],
+                        "avoid_drift": "不要扩成其他男歌手",
+                    },
+                    "contract_satisfied": False,
                     "reason": "补充常见拍摄载体"
                 }
             ]
@@ -308,6 +362,12 @@ class TestQueryFormatter(unittest.TestCase):
                 "media_terms": [],
                 "identity_terms": ["陶喆"],
                 "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "陶喆的照片",
+                    "must_keep": ["陶喆"],
+                    "avoid_drift": "不要扩成其他男歌手",
+                },
                 "time_hint": None,
                 "season": None,
                 "time_period": None,
@@ -319,6 +379,8 @@ class TestQueryFormatter(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]["identity_terms"], ["陶喆"])
         self.assertEqual(result[1]["media_terms"], ["stage_performance", "screen"])
+        self.assertTrue(result[0]["contract_satisfied"])
+        self.assertFalse(result[1]["contract_satisfied"])
 
     def test_reflect_on_weak_results_returns_refined_intent(self) -> None:
         mock_client = Mock()
@@ -328,6 +390,13 @@ class TestQueryFormatter(unittest.TestCase):
             "media_terms": ["stage_performance"],
             "identity_terms": ["陶喆"],
             "strict_identity_filter": True,
+            "intent_mode": "strict",
+            "intent_contract": {
+                "core_target": "陶喆的照片",
+                "must_keep": ["陶喆"],
+                "avoid_drift": "不要扩成其他男歌手",
+            },
+            "contract_satisfied": True,
             "reason": "前两轮结果大多只有泛化男歌手，需要更强调近景舞台人像",
         })))]
         mock_client.chat.completions.create.return_value = mock_response
@@ -346,6 +415,12 @@ class TestQueryFormatter(unittest.TestCase):
                 "media_terms": [],
                 "identity_terms": ["陶喆"],
                 "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "陶喆的照片",
+                    "must_keep": ["陶喆"],
+                    "avoid_drift": "不要扩成其他男歌手",
+                },
                 "time_hint": None,
                 "season": None,
                 "time_period": None,
@@ -362,3 +437,4 @@ class TestQueryFormatter(unittest.TestCase):
         self.assertEqual(result["identity_terms"], ["陶喆"])
         self.assertTrue(result["strict_identity_filter"])
         self.assertIn("更强调近景舞台人像", result["reason"])
+        self.assertTrue(result["contract_satisfied"])

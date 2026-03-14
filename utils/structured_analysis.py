@@ -62,14 +62,11 @@ ALLOWED_MEDIA_TYPES = {
     "other",
 }
 
-ENHANCED_MEDIA_TYPES = {
-    "album_cover",
-    "poster",
-    "stage_performance",
-    "screen",
-    "document",
-    "merch",
-}
+OCR_HEAVY_THRESHOLD = 36
+OCR_STRONG_THRESHOLD = 48
+RICH_DESCRIPTION_THRESHOLD = 24
+RICH_INNER_SUMMARY_THRESHOLD = 18
+MIN_SIGNAL_SCORE_FOR_SKIP = 3
 
 TEXT_EVIDENCE_KEYWORDS = (
     "text",
@@ -239,17 +236,89 @@ def select_identity_names(
 
 
 def should_run_enhanced_analysis(analysis: Dict[str, Any]) -> bool:
+    return get_enhanced_analysis_reason(analysis) is not None
+
+
+def _has_confident_identity_candidate(candidates: Sequence[Any], threshold: float = 0.7) -> bool:
+    for candidate in candidates or []:
+        if not isinstance(candidate, dict):
+            continue
+        try:
+            confidence = float(candidate.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if confidence >= threshold:
+            return True
+    return False
+
+
+def _is_media_classified(media_types: Sequence[str]) -> bool:
+    normalized = [item for item in media_types if item]
+    return bool(normalized and set(normalized) != {"other"})
+
+
+def get_enhanced_analysis_reason(analysis: Dict[str, Any]) -> str | None:
     media_types = set(normalize_media_types(analysis.get("media_types") or []))
     person_roles = normalize_person_roles(analysis.get("person_roles") or [])
     flags = normalize_analysis_flags(analysis.get("analysis_flags"))
     ocr_text = normalize_ocr_text(analysis.get("ocr_text"))
-    text_heavy = len(ocr_text) >= 24
-    return bool(
-        person_roles
-        or text_heavy
-        or media_types.intersection(ENHANCED_MEDIA_TYPES)
-        or flags.get("has_public_figure_likelihood")
+    description = _normalize_text(analysis.get("description"))
+    inner_summary = _normalize_text(analysis.get("inner_content_summary"))
+    tags = normalize_tags(analysis.get("tags") or [], min_confidence=0.0)
+    identity_names = [_normalize_text(name) for name in analysis.get("identity_names") or [] if _normalize_text(name)]
+    identity_candidates = analysis.get("identity_candidates") or []
+
+    text_heavy = bool(flags.get("text_heavy")) or len(ocr_text) >= OCR_HEAVY_THRESHOLD
+    classification_uncertain = bool(
+        flags.get("classification_uncertain")
+        or flags.get("needs_enhanced_review")
+        or flags.get("fine_grained_details_missing")
+        or flags.get("ocr_incomplete")
+        or flags.get("identity_uncertain")
     )
+    missing_media = not _is_media_classified(list(media_types))
+    rich_description = len(description) >= RICH_DESCRIPTION_THRESHOLD
+    rich_inner_summary = len(inner_summary) >= RICH_INNER_SUMMARY_THRESHOLD
+    strong_ocr = len(ocr_text) >= (OCR_STRONG_THRESHOLD if text_heavy else 16)
+    enough_tags = len(tags) >= 2
+
+    confident_identity_candidate = _has_confident_identity_candidate(identity_candidates)
+    retrieval_signal_score = 0
+    if not missing_media:
+        retrieval_signal_score += 1
+    if rich_description:
+        retrieval_signal_score += 1
+    if rich_inner_summary:
+        retrieval_signal_score += 1
+    if strong_ocr:
+        retrieval_signal_score += 1
+    if enough_tags:
+        retrieval_signal_score += 1
+    if identity_names or confident_identity_candidate:
+        retrieval_signal_score += 1
+
+    if classification_uncertain:
+        return "model_marked_uncertain"
+    if missing_media and (
+        text_heavy
+        or person_roles
+        or flags.get("has_screen")
+        or flags.get("has_stage")
+        or flags.get("has_packaging")
+        or flags.get("has_public_figure_likelihood")
+    ):
+        return "missing_media_type"
+    if flags.get("has_public_figure_likelihood") and not identity_names and not confident_identity_candidate:
+        return "public_figure_needs_review"
+    if person_roles and not identity_names and not confident_identity_candidate and retrieval_signal_score < MIN_SIGNAL_SCORE_FOR_SKIP:
+        return "person_identity_missing"
+    if text_heavy and not strong_ocr and retrieval_signal_score < MIN_SIGNAL_SCORE_FOR_SKIP:
+        return "ocr_signal_weak"
+    if retrieval_signal_score < MIN_SIGNAL_SCORE_FOR_SKIP and (
+        missing_media or not rich_inner_summary or (text_heavy and not strong_ocr)
+    ):
+        return "retrieval_signal_sparse"
+    return None
 
 
 def build_retrieval_text(

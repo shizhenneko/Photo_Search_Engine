@@ -58,6 +58,8 @@ def initialize_services(
         image_quality=int(config.get("IMAGE_QUALITY", 85)),
         image_format=str(config.get("IMAGE_FORMAT", "WEBP")),
     )
+    enhanced_analysis_enabled = bool(config.get("ENHANCED_ANALYSIS_ENABLED", True))
+    setattr(vision_service, "enhanced_analysis_enabled", enhanced_analysis_enabled)
 
     time_parser = TimeParser(
         api_key=str(config.get("SU8_API_KEY", "")),

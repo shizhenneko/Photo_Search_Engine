@@ -43,6 +43,23 @@ class VisionServiceTests(unittest.TestCase):
             base64_url = service._get_image_base64(path)
             self.assertIn("data:image/webp;base64,", base64_url)
 
+    def test_description_prompt_is_compact_but_keeps_required_fields(self) -> None:
+        service = SU8VisionLLMService(
+            api_key="test-key",
+            model_name="gpt-5.4",
+            base_url="https://www.su8.codes/codex/v1",
+            client=Mock(),
+        )
+
+        prompt = service._build_description_prompt()
+
+        self.assertIn("\"description\"", prompt)
+        self.assertIn("\"inner_content_summary\"", prompt)
+        self.assertIn("\"identity_candidates\"", prompt)
+        self.assertIn("album_cover, poster, stage_performance", prompt)
+        self.assertIn("200 字内", prompt)
+        self.assertNotIn("signature_stage_pose", prompt)
+
     def test_generate_description(self) -> None:
         mock_client = Mock()
         mock_client.chat.completions.create.return_value = Mock(
@@ -109,6 +126,59 @@ class VisionServiceTests(unittest.TestCase):
             self.assertTrue(metrics["enhanced_succeeded"])
             self.assertGreaterEqual(metrics["base_analysis_seconds"], 0.0)
             self.assertGreaterEqual(metrics["enhanced_analysis_seconds"], 0.0)
+
+    def test_enhanced_prompt_requests_visual_identity_recheck(self) -> None:
+        service = SU8VisionLLMService(
+            api_key="test-key",
+            model_name="gpt-5.4",
+            base_url="https://www.su8.codes/codex/v1",
+            client=Mock(),
+        )
+        prompt = service._build_enhanced_prompt(
+            {
+                "description": "舞台上的男歌手",
+                "media_types": ["stage_performance"],
+                "identity_candidates": [],
+            },
+            "public_figure_needs_review",
+        )
+        self.assertIn("第二轮复核", prompt)
+        self.assertIn("只返回需要修改或补充的字段", prompt)
+        self.assertIn("触发原因：public_figure_needs_review", prompt)
+        self.assertIn("identity_candidates", prompt)
+
+    def test_enhanced_prompt_uses_compact_context(self) -> None:
+        service = SU8VisionLLMService(
+            api_key="test-key",
+            model_name="gpt-5.4",
+            base_url="https://www.su8.codes/codex/v1",
+            client=Mock(),
+        )
+        long_analysis = {
+            "description": "舞台上的男歌手，背后有大屏幕和灯光，手持麦克风，正在进行演出",
+            "outer_scene_summary": "观众席前方拍摄到的室内舞台现场，画面包含灯光和屏幕",
+            "inner_content_summary": "屏幕上出现演出视觉素材和人物特写，整体像大型商业演出现场的舞台记录",
+            "media_types": ["stage_performance"],
+            "tags": ["舞台", "男歌手", "演出现场", "大屏幕"],
+            "ocr_text": "SUPER LIVE WORLD TOUR 2026 SPECIAL GUEST ARTIST",
+            "person_roles": ["singer"],
+            "identity_names": ["某歌手"],
+            "identity_candidates": [
+                {
+                    "name": "某歌手",
+                    "confidence": 0.73,
+                    "evidence_sources": ["face_similarity", "hairstyle", "stage_pose"],
+                }
+            ],
+            "analysis_flags": {"has_stage": True, "has_public_figure_likelihood": True},
+        }
+
+        prompt = service._build_enhanced_prompt(long_analysis, "public_figure_needs_review")
+
+        self.assertIn("第一次结果摘要：", prompt)
+        self.assertIn("\"ocr_text_excerpt\"", prompt)
+        self.assertNotIn("SUPER LIVE WORLD TOUR 2026 SPECIAL GUEST ARTIST\"", prompt)
+        self.assertNotIn("\"identity_evidence\"", prompt)
 
 
 if __name__ == "__main__":

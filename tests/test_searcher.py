@@ -672,6 +672,91 @@ class SearcherTests(unittest.TestCase):
         maybe_expand.assert_called_once()
         self.assertEqual(results, strong_results)
 
+    def test_search_continues_expansion_when_results_do_not_fill_top_k(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "帮我找河南说唱之神的照片": {
+                    "search_text": "",
+                    "media_terms": [],
+                    "identity_terms": ["河南说唱之神"],
+                    "strict_identity_filter": True,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "河南说唱之神的照片",
+                        "must_keep": ["河南说唱之神"],
+                        "avoid_drift": "不要漂移到只出现名字的截图",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "帮我找河南说唱之神的照片",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[
+            {
+                "search_text": "演出现场 舞台 说唱歌手",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "河南说唱之神的照片",
+                    "must_keep": ["河南说唱之神"],
+                    "avoid_drift": "不要漂移到只出现名字的截图",
+                },
+                "contract_satisfied": True,
+                "reason": "补充演出现场视觉表达",
+            }
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        first_round_results = [
+            {
+                "photo_path": "/tmp/screenshot.jpg",
+                "description": "网易云截图",
+                "score": 0.91,
+                "vector_score": 0.91,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/screenshot.jpg", "identity_names": ["河南说唱之神"]},
+            }
+        ]
+        expanded_results = [
+            {
+                "photo_path": "/tmp/photo.jpg",
+                "description": "河南说唱之神演出现场",
+                "score": 0.86,
+                "vector_score": 0.86,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/photo.jpg", "identity_names": ["河南说唱之神"]},
+            }
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[first_round_results, expanded_results]) as hybrid_search, \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("帮我找河南说唱之神的照片", top_k=5)
+
+        self.assertEqual(hybrid_search.call_count, 2)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["photo_path"], "/tmp/screenshot.jpg")
+        self.assertEqual(results[1]["photo_path"], "/tmp/photo.jpg")
+
     def test_search_expands_when_first_round_is_weak(self) -> None:
         vector_store = Mock()
         vector_store.load.return_value = True
@@ -687,6 +772,12 @@ class SearcherTests(unittest.TestCase):
                     "media_terms": [],
                     "identity_terms": ["陶喆"],
                     "strict_identity_filter": True,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "陶喆的照片",
+                        "must_keep": ["陶喆"],
+                        "avoid_drift": "不要扩成其他男歌手",
+                    },
                     "time_hint": None,
                     "season": None,
                     "time_period": None,
@@ -699,7 +790,14 @@ class SearcherTests(unittest.TestCase):
                 "search_text": "舞台男歌手 现场演出",
                 "media_terms": ["stage_performance"],
                 "identity_terms": ["陶喆"],
-                "strict_identity_filter": False,
+                "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "陶喆的照片",
+                    "must_keep": ["陶喆"],
+                    "avoid_drift": "不要扩成其他男歌手",
+                },
+                "contract_satisfied": True,
                 "time_hint": None,
                 "season": None,
                 "time_period": None,
@@ -718,17 +816,160 @@ class SearcherTests(unittest.TestCase):
         weak_results = [
             {"photo_path": "/tmp/weak.jpg", "description": "模糊男歌手", "score": 0.41, "vector_score": 0.41, "keyword_score": 0.0, "rank": 1},
         ]
-        expanded_results = [
+        expanded_round_results = [
+            {
+                "photo_path": "/tmp/better.jpg",
+                "description": "舞台男歌手",
+                "score": 0.78,
+                "vector_score": 0.78,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/better.jpg", "identity_names": ["陶喆"]},
+            },
+        ]
+        expected_results = [
             {"photo_path": "/tmp/better.jpg", "description": "舞台男歌手", "score": 0.78, "vector_score": 0.78, "keyword_score": 0.0, "rank": 1},
         ]
 
-        with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_results]) as hybrid_search, \
+        with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_round_results]) as hybrid_search, \
              patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
             results = searcher.search("请帮我找陶喆的照片", top_k=5)
 
         self.assertEqual(hybrid_search.call_count, 2)
         query_formatter.expand_query_intents.assert_called_once()
-        self.assertEqual(results, expanded_results)
+        self.assertEqual(results, expected_results)
+
+    def test_search_skips_expansion_that_breaks_strict_contract_for_non_person_query(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "频谱分析仪 屏幕": {
+                    "search_text": "频谱分析仪 屏幕",
+                    "media_terms": ["screen"],
+                    "identity_terms": [],
+                    "strict_identity_filter": False,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "频谱分析仪屏幕",
+                        "must_keep": ["频谱分析仪", "屏幕"],
+                        "avoid_drift": "不要扩成一般设备屏幕",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "频谱分析仪 屏幕",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[
+            {
+                "search_text": "设备显示屏 曲线图",
+                "media_terms": ["screen"],
+                "identity_terms": [],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "设备显示屏",
+                    "must_keep": ["设备", "屏幕"],
+                    "avoid_drift": "泛化设备",
+                },
+                "contract_satisfied": False,
+                "reason": "泛化成更常见的设备屏幕",
+            }
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        weak_results = [
+            {"photo_path": "/tmp/base.jpg", "description": "频谱分析仪屏幕", "score": 0.42, "vector_score": 0.42, "keyword_score": 0.0, "rank": 1},
+        ]
+
+        with patch.object(searcher, "_hybrid_search", return_value=weak_results) as hybrid_search, \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("频谱分析仪 屏幕", top_k=5)
+
+        self.assertEqual(hybrid_search.call_count, 1)
+        self.assertEqual(results, weak_results)
+
+    def test_search_allows_open_query_expansion(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "海边日落": {
+                    "search_text": "海边日落",
+                    "media_terms": [],
+                    "identity_terms": [],
+                    "strict_identity_filter": False,
+                    "intent_mode": "open",
+                    "intent_contract": {
+                        "core_target": "海边日落",
+                        "must_keep": ["海边"],
+                        "avoid_drift": "",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "海边日落",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[
+            {
+                "search_text": "海边 傍晚 落日",
+                "media_terms": [],
+                "identity_terms": [],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "海边日落",
+                    "must_keep": ["海边"],
+                    "avoid_drift": "",
+                },
+                "contract_satisfied": True,
+                "reason": "补充常见视觉表达",
+            }
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+        )
+
+        weak_results = [
+            {"photo_path": "/tmp/weak.jpg", "description": "海边", "score": 0.41, "vector_score": 0.41, "keyword_score": 0.0, "rank": 1},
+        ]
+        expanded_results = [
+            {"photo_path": "/tmp/better.jpg", "description": "海边日落", "score": 0.74, "vector_score": 0.74, "keyword_score": 0.0, "rank": 1},
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, expanded_results]) as hybrid_search, \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("海边日落", top_k=5)
+
+        self.assertEqual(hybrid_search.call_count, 2)
+        self.assertEqual(results[0], expanded_results[0])
+        self.assertEqual(results[1], weak_results[0] | {"rank": 2})
 
     def test_search_records_search_debug_for_expansion_round(self) -> None:
         vector_store = Mock()
@@ -745,6 +986,12 @@ class SearcherTests(unittest.TestCase):
                     "media_terms": [],
                     "identity_terms": ["陶喆"],
                     "strict_identity_filter": True,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "陶喆的照片",
+                        "must_keep": ["陶喆"],
+                        "avoid_drift": "不要扩成其他男歌手",
+                    },
                     "time_hint": None,
                     "season": None,
                     "time_period": None,
@@ -758,6 +1005,13 @@ class SearcherTests(unittest.TestCase):
                 "media_terms": ["stage_performance"],
                 "identity_terms": ["陶喆"],
                 "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "陶喆的照片",
+                    "must_keep": ["陶喆"],
+                    "avoid_drift": "不要扩成其他男歌手",
+                },
+                "contract_satisfied": True,
                 "time_hint": None,
                 "season": None,
                 "time_period": None,
@@ -828,6 +1082,12 @@ class SearcherTests(unittest.TestCase):
                     "media_terms": [],
                     "identity_terms": ["陶喆"],
                     "strict_identity_filter": True,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "陶喆的照片",
+                        "must_keep": ["陶喆"],
+                        "avoid_drift": "不要扩成其他男歌手",
+                    },
                     "time_hint": None,
                     "season": None,
                     "time_period": None,
@@ -840,7 +1100,14 @@ class SearcherTests(unittest.TestCase):
                 "search_text": "华语男歌手 舞台照",
                 "media_terms": ["stage_performance"],
                 "identity_terms": ["陶喆"],
-                "strict_identity_filter": False,
+                "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "陶喆的照片",
+                    "must_keep": ["陶喆"],
+                    "avoid_drift": "不要扩成其他男歌手",
+                },
+                "contract_satisfied": True,
                 "time_hint": None,
                 "season": None,
                 "time_period": None,
@@ -853,6 +1120,13 @@ class SearcherTests(unittest.TestCase):
             "media_terms": ["stage_performance"],
             "identity_terms": ["陶喆"],
             "strict_identity_filter": True,
+            "intent_mode": "strict",
+            "intent_contract": {
+                "core_target": "陶喆的照片",
+                "must_keep": ["陶喆"],
+                "avoid_drift": "不要扩成其他男歌手",
+            },
+            "contract_satisfied": True,
             "time_hint": None,
             "season": None,
             "time_period": None,

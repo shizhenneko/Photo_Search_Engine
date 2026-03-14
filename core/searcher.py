@@ -112,6 +112,8 @@ class Searcher:
                 "media_terms": list(intent.get("media_terms") or []),
                 "identity_terms": list(intent.get("identity_terms") or []),
                 "strict_identity_filter": bool(intent.get("strict_identity_filter", False)),
+                "intent_mode": str(intent.get("intent_mode") or "open"),
+                "intent_contract": dict(intent.get("intent_contract") or {}),
                 "time_hint": intent.get("time_hint"),
                 "season": intent.get("season"),
                 "time_period": intent.get("time_period"),
@@ -203,6 +205,41 @@ class Searcher:
             parts.append(" ".join(identity_terms))
         query_text = " ".join(parts).strip()
         return query_text or original_query.strip()
+
+    @staticmethod
+    def _intent_contract_is_satisfied(
+        base_intent: Dict[str, Any],
+        candidate_intent: Dict[str, Any],
+    ) -> bool:
+        base_mode = str(base_intent.get("intent_mode") or "open").strip().lower()
+        if base_mode != "strict":
+            return bool(candidate_intent.get("contract_satisfied", True))
+
+        if candidate_intent.get("contract_satisfied") is False:
+            return False
+
+        base_contract = base_intent.get("intent_contract") or {}
+        must_keep = [
+            str(item).strip().lower()
+            for item in (base_contract.get("must_keep") or [])
+            if str(item).strip()
+        ]
+        if not must_keep:
+            return True
+
+        candidate_texts = [
+            str(candidate_intent.get("search_text") or "").strip().lower(),
+            " ".join(str(item).strip().lower() for item in (candidate_intent.get("media_terms") or []) if str(item).strip()),
+            " ".join(str(item).strip().lower() for item in (candidate_intent.get("identity_terms") or []) if str(item).strip()),
+            str((candidate_intent.get("intent_contract") or {}).get("core_target") or "").strip().lower(),
+            " ".join(
+                str(item).strip().lower()
+                for item in ((candidate_intent.get("intent_contract") or {}).get("must_keep") or [])
+                if str(item).strip()
+            ),
+        ]
+        combined = " ".join(part for part in candidate_texts if part)
+        return all(token in combined for token in must_keep)
 
     @staticmethod
     def _compute_metadata_boost(
@@ -410,6 +447,11 @@ class Searcher:
         if len(results) < min(top_k, 3) and top_score < 0.72:
             return True
         return False
+
+    @staticmethod
+    def _should_expand_to_fill_results(results: List[Dict[str, Any]], top_k: int) -> bool:
+        target = max(1, int(top_k))
+        return len(results) < target
 
     def _get_gradient_threshold(
         self,
@@ -886,6 +928,8 @@ class Searcher:
         )
         if not reflection:
             return current_results
+        if not self._intent_contract_is_satisfied(base_intent, reflection):
+            return current_results
 
         embedding_query = self._build_query_text(
             search_text=str(reflection.get("search_text") or ""),
@@ -938,7 +982,9 @@ class Searcher:
             return base_results
         if not self.query_expansion_enabled or self.query_expansion_max_alternatives <= 0:
             return base_results
-        if not self._should_expand_results(base_results, normalized_top_k):
+        should_expand_for_quality = self._should_expand_results(base_results, normalized_top_k)
+        should_expand_for_count = self._should_expand_to_fill_results(base_results, normalized_top_k)
+        if not should_expand_for_quality and not should_expand_for_count:
             return base_results
 
         alternatives = self.query_formatter.expand_query_intents(
@@ -953,6 +999,8 @@ class Searcher:
         merged: List[Dict[str, Any]] = [dict(item) for item in base_results]
         best_results: List[Dict[str, Any]] = base_results
         for alt in alternatives:
+            if not self._intent_contract_is_satisfied(base_intent, alt):
+                continue
             embedding_query = self._build_query_text(
                 search_text=str(alt.get("search_text") or ""),
                 media_terms=list(alt.get("media_terms") or []),
@@ -994,7 +1042,12 @@ class Searcher:
 
         expansion_reason = ""
         if debug["alternatives"]:
-            expansion_reason = "第一轮结果偏弱，尝试保守扩写查询意图"
+            if should_expand_for_quality and should_expand_for_count:
+                expansion_reason = "第一轮结果偏弱且数量不足，尝试保守扩写查询意图"
+            elif should_expand_for_quality:
+                expansion_reason = "第一轮结果偏弱，尝试保守扩写查询意图"
+            else:
+                expansion_reason = "第一轮结果数量不足，尝试保守扩写查询意图"
         debug["expansion_reason"] = expansion_reason
 
         if self._should_expand_results(final_results, normalized_top_k):
@@ -1161,6 +1214,8 @@ class Searcher:
             "media_terms": list(media_terms),
             "identity_terms": list(identity_terms),
             "strict_identity_filter": strict_identity_filter,
+            "intent_mode": str(format_result.get("intent_mode") or "open") if query_formatter_enabled else "open",
+            "intent_contract": dict(format_result.get("intent_contract") or {}) if query_formatter_enabled else {},
             "time_hint": time_hints.get("time_hint"),
             "season": time_hints.get("season"),
             "time_period": time_hints.get("time_period"),

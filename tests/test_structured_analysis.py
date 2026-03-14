@@ -1,6 +1,7 @@
 import unittest
 
 from utils.structured_analysis import (
+    get_enhanced_analysis_reason,
     build_match_summary,
     normalize_analysis_payload,
     normalize_media_types,
@@ -99,6 +100,38 @@ class StructuredAnalysisTests(unittest.TestCase):
                 }
             )
         )
+
+    def test_should_skip_enhanced_analysis_when_first_pass_is_already_strong(self) -> None:
+        analysis = {
+            "description": "一张清晰拍摄的 vim 键位速查文档，包含键盘布局、模式切换和常用编辑命令说明。",
+            "outer_scene_summary": "桌面上的文档照片",
+            "inner_content_summary": "vim 键盘图速查表，包含普通模式、插入模式和编辑快捷键。",
+            "media_types": ["document"],
+            "tags": ["vim", "快捷键", "键盘图"],
+            "ocr_text": "vim hjkl dd yy p u ctrl r :wq / ?",
+            "person_roles": [],
+            "identity_candidates": [],
+            "identity_names": [],
+            "analysis_flags": {"text_heavy": True},
+        }
+        self.assertFalse(should_run_enhanced_analysis(analysis))
+        self.assertIsNone(get_enhanced_analysis_reason(analysis))
+
+    def test_should_run_enhanced_analysis_when_retrieval_signal_is_sparse(self) -> None:
+        analysis = {
+            "description": "一张图片",
+            "outer_scene_summary": "桌上的纸张",
+            "inner_content_summary": "",
+            "media_types": ["other"],
+            "tags": ["图片"],
+            "ocr_text": "",
+            "person_roles": [],
+            "identity_candidates": [],
+            "identity_names": [],
+            "analysis_flags": {},
+        }
+        self.assertTrue(should_run_enhanced_analysis(analysis))
+        self.assertEqual(get_enhanced_analysis_reason(analysis), "retrieval_signal_sparse")
 
     def test_build_match_summary(self) -> None:
         summary = build_match_summary(

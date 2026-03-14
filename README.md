@@ -1,196 +1,213 @@
-# 照片搜索引擎
+# Photo Search Engine
 
-基于 Flask 的本地照片搜索系统，当前运行架构已经统一为：
+<p align="center">
+  <strong>一个面向本地相册的 AI 照片搜索引擎</strong><br />
+  用自然语言、参考图片或上传图片，在自己的照片库里快速找到真正想找的那一张。
+</p>
 
-- gpt: 视觉描述、时间解析、视觉 Rerank、QueryFormatter
-- `Qwen/Qwen3-Embedding-8B` 向量生成、`Qwen/Qwen3-Reranker-8B` 文本 Rerank
-- FAISS：向量索引
-- Elasticsearch：可选的关键词与时间过滤检索
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.12+" />
+  <img src="https://img.shields.io/badge/Flask-3.0-111827?style=for-the-badge&logo=flask&logoColor=white" alt="Flask 3.0" />
+  <img src="https://img.shields.io/badge/FAISS-Vector_Search-0F766E?style=for-the-badge" alt="FAISS vector search" />
+  <img src="https://img.shields.io/badge/Elasticsearch-Optional-005571?style=for-the-badge&logo=elasticsearch&logoColor=white" alt="Elasticsearch optional" />
+  <img src="https://img.shields.io/badge/OpenAI-Compatible_API-10A37F?style=for-the-badge" alt="OpenAI compatible API" />
+  <img src="https://img.shields.io/badge/pytest-Tested-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" alt="pytest tested" />
+</p>
 
-系统支持文本搜图、以图搜图、上传图片搜图、文本重排、视觉重排，并在结果中返回图片描述、本地文件路径、预览链接和定位本地文件动作。
+<p align="center">
+  <img src="artifacts/home-after.png" alt="Photo Search Engine UI" width="100%" />
+</p>
 
-当前版本已经升级为结构化多信号检索：
+<p align="center">
+  Flask + FAISS + OpenAI 兼容模型接口 + 可选 Elasticsearch。<br />
+  支持文本搜图、以图搜图、时间过滤、混合检索、双阶段重排，以及可解释的搜索结果。
+</p>
 
-- 不再只依赖单段 caption
-- 每张图会提取媒介类型、标签、OCR 文本、人物角色、公众人物候选和 `retrieval_text`
-- 检索结果会返回 `match_summary`，用于解释命中原因
-- 文本检索会保留基础召回，并在弱结果时触发保守扩展与单轮反思
-- 前端会显示“检索规划”，用于观察基础意图、扩展轮次与反思轮次
+<p align="center">
+  <a href="#features">Features</a>
+  ·
+  <a href="#architecture">Architecture</a>
+  ·
+  <a href="#quick-start">Quick Start</a>
+  ·
+  <a href="#api-overview">API</a>
+  ·
+  <a href="#project-structure">Project Structure</a>
+</p>
 
-## 当前能力
+## Overview
 
-- 文本搜图：自然语言检索本地图库
-- 以图搜图：使用已入库图片路径检索相似图片
-- 上传图片搜图：使用临时上传图片分析结果生成 embedding，再检索相似图片
-- 混合检索：向量检索 + BM25 检索融合
-- 结构化图像理解：外层场景、内层内容、媒介类型、标签、OCR、人物候选
-- 时间过滤：支持“去年”“夏天”“傍晚”等语义过滤
-- 多轮查询理解：基础意图 -> 弱结果扩展 -> 弱结果反思
-- 双阶段重排：先文本 rerank，再视觉 rerank
-- 本地操作：返回路径、预览原图、打开文件所在位置
+当照片库规模变大以后，文件名、目录结构和人工翻找会很快失效。这个项目的目标不是做一个普通图库页，而是做一个真正能理解图片内容、理解检索意图、并能在本地图库里稳定召回结果的搜索系统。
 
-## 检索与归一化
+它目前是一个本地优先的照片检索应用：
 
-当前混合检索已经做归一化，融合逻辑是正确实现的：
+- 用自然语言搜索照片，例如“去年夏天傍晚在海边拍的照片”
+- 用一张已入库图片查找视觉相似结果
+- 上传一张临时图片做一次性相似搜索
+- 结合时间语义、关键词与向量召回做混合检索
+- 返回 `match_summary` 和 `search_debug`，解释系统为什么命中这张图
+- 支持增量索引，适合日常持续向相册新增照片
 
-- `utils/vector_store.py`：在 `cosine` 模式下先做 L2 归一化，再使用 `IndexFlatIP`
-- `utils/keyword_store.py`：把 Elasticsearch BM25 分数按每次查询的 `max_score` 归一到 `0-1`
-- `core/searcher.py`：只有在某一路检索信号真实命中时才参与融合，再按可用权重重归一
+> [!IMPORTANT]
+> 这是一个本地优先项目，但不是完全离线项目。图片分析、查询理解、时间解析、embedding 和 rerank 会请求你配置的远程模型接口；索引文件、元数据和图片文件本身仍保留在本地。
 
-当前向量检索使用 `retrieval_text`，它由高置信 `media_types`、`top_tags`、`outer_scene_summary`、`inner_content_summary`、`ocr_text` 和 `identity_names` 组合而成。
+## Features
 
-这意味着：
+| Capability | Description |
+| --- | --- |
+| Structured image understanding | 不只生成一段 caption，而是提取 `outer_scene_summary`、`inner_content_summary`、`media_types`、`tags`、`ocr_text`、`identity_candidates`、`retrieval_text` |
+| Text-to-image search | 直接用自然语言描述目标照片，支持长尾描述、场景描述、人物/媒介线索 |
+| Image-to-image search | 支持使用已入库图片路径检索相似图片 |
+| Upload-to-search | 支持上传一张临时图片进行一次性检索，不写入索引 |
+| Time-aware filtering | 支持“去年”“夏天”“傍晚”等自然语言时间约束，时间标签基于 EXIF 拍摄时间 |
+| Hybrid retrieval | FAISS 向量召回 + Elasticsearch 关键词检索融合；未启用 Elasticsearch 时自动降级为纯向量检索 |
+| Query planning | 包含基础意图、保守扩展、单轮反思式调整，尽量兼顾召回与精度 |
+| Two-stage rerank | 可选文本 rerank 与视觉 rerank，提升前排结果质量 |
+| Explainable results | 返回 `match_summary` 和 `search_debug`，方便前端解释命中原因与检索规划 |
+| Incremental indexing | 默认支持增量索引，新增照片后无需每次全量重建 |
 
-- 向量命中但没有 BM25 命中的图片，不会因为 `keyword_score=0` 被平白压分
-- 同时命中向量和 BM25 的结果，仍然会按 `VECTOR_WEIGHT` / `KEYWORD_WEIGHT` 融合
-- 只有 BM25 命中的结果，也可以独立进入排序结果
+## Use Cases
 
-如果未启用 Elasticsearch，系统会自动退化为纯向量检索，并对时间过滤走内存元数据匹配。
+你可以用它处理这类检索任务：
 
-## 查询理解与检索规划
+- `去年夏天傍晚在海边拍的照片`
+- `有明显海报文字的图片`
+- `像截图一样的照片`
+- `某位公众人物出镜的图片`
+- `帮我找和这张图风格最接近的照片`
 
-当前文本检索不是单轮黑盒改写，而是保守分层：
+## Architecture
 
-1. 第一轮：保留用户原始意图，提取 `search_text`、`media_terms`、`identity_terms` 与时间提示
-2. 第二轮：只有当第一轮结果偏弱时，才触发少量替代意图扩展
-3. 第三轮：如果第二轮仍偏弱，再基于弱结果做一次反思式调整
+```mermaid
+flowchart LR
+    A["Local Photo Directory"] --> B["Indexer"]
+    B --> C["EXIF Extraction"]
+    B --> D["Vision Analysis"]
+    D --> E["Structured Metadata"]
+    E --> F["retrieval_text"]
+    F --> G["Embedding Service"]
+    G --> H["FAISS Vector Index"]
+    E --> I["metadata.json"]
+    E --> J["Elasticsearch (optional)"]
 
-这个流程的目标是提高泛化能力，同时不破坏基础召回。高分首轮结果不会被强行改写。
+    K["Text Query / Image Query"] --> L["Searcher"]
+    L --> M["Time Parser"]
+    L --> N["Query Formatter"]
+    L --> H
+    L --> J
+    M --> O["Time Filters"]
+    N --> P["Query Planning"]
+    H --> Q["Hybrid Recall"]
+    J --> Q
+    O --> Q
+    P --> Q
+    Q --> R["Text Rerank (optional)"]
+    R --> S["Visual Rerank (optional)"]
+    S --> T["Results + match_summary + search_debug"]
+```
 
-前端结果区上方会展示 `search_debug` 对应的“检索规划”面板，包含：
+### Retrieval Pipeline
 
-- 基础意图
-- 是否触发扩展
-- 是否触发反思
-- 各轮 top score 与结果数量
+1. 索引阶段扫描本地图片目录，读取 EXIF，并生成结构化图像分析。
+2. 系统把高置信度分析字段拼接为 `retrieval_text`，再生成 embedding 写入 FAISS。
+3. 如果启用了 Elasticsearch，会同步写入结构化字段用于关键词与过滤检索。
+4. 查询阶段会解析时间语义，并在必要时执行保守的查询扩展与单轮反思。
+5. 基础召回结果会做融合和重排，避免缺失某一路信号时被无端压分。
+6. 最终结果可选经过文本 rerank 与视觉 rerank，再返回给前端展示。
 
-## 时间元数据策略
+## Search Modes
 
-当前版本只使用 **EXIF 拍摄时间** 生成结构化时间标签：
+| Mode | Input | Typical endpoint | Notes |
+| --- | --- | --- | --- |
+| Text search | 自然语言查询 | `POST /search_photos` | 支持时间语义、查询扩展、rerank |
+| Image search by path | 本地绝对路径 | `POST /search_by_image` | 用已入库图片做相似搜索 |
+| Uploaded image search | `multipart/form-data` 图片文件 | `POST /search_by_uploaded_image` | 临时图片搜索，不写入索引 |
 
-- `year`
-- `month`
-- `day`
-- `season`
-- `time_period`
-- `weekday`
+## Quick Start
 
-`file_time` 不再用于生成这些标签，也不会再用于 ES 时间过滤。这样做的目的是避免没有 EXIF 时间的图片因为文件修改时间被错误打上“夏天”“傍晚”“2025年”等标签。
+### 1. Requirements
 
-这意味着：
+- Python `3.12+`
+- `uv`
+- 可用的 Vision API Key
+- 可用的 Embedding API Key
+- 可选的 Elasticsearch 实例
+- 支持的图片格式：`.jpg`、`.jpeg`、`.png`、`.webp`
 
-- 没有 EXIF `datetime` 的图片，不会被错误标记时间信息
-- 这类图片仍然可以参与普通向量检索和以图搜图
-- 但在“去年”“夏天”“傍晚”这类时间过滤查询中，它们不会被时间条件错误命中
-
-如果你修改了时间标签策略、Embedding 模型、Rerank 模型、结构化分析 prompt、检索字段或 Elasticsearch mapping，应该重新构建索引。
-
-## 索引策略
-
-当前索引构建已经支持增量更新：
-
-- 前端提供两个入口：`增量索引` 和 `全量重建`
-- `POST /init_index` 支持通过 JSON 参数 `mode` 选择索引方式
-- `mode=incremental` 或省略 `mode` 时，会优先加载现有 FAISS 索引与元数据
-- 只对新增图片生成结构化分析与 embedding
-- 已存在的图片不会重复分析，也不会重复写入
-- `mode=full` 时会清空现有索引并执行全量重建
-
-这意味着，日常新增照片后应该优先使用“增量索引”，它会从当前状态补齐新图，而不是每次都重扫并重建全部图片。
-
-仍然需要全量重建的场景只有：
-
-- 切换 `EMBEDDING_MODEL`
-- 修改结构化分析字段或 `retrieval_text` 生成逻辑
-- 修改 Elasticsearch mapping
-- 旧索引文件损坏或与当前维度 / metric 不兼容
-
-## 快速开始
-
-### 1. 使用 uv 创建环境
+### 2. Create The Environment
 
 ```bash
 uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
-### 2. 配置 `.env`
+### 3. Configure `.env`
 
-参考 `.env.example`
+复制 `.env.example` 为 `.env`，至少补齐以下变量：
 
-默认模型：
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `PHOTO_DIR` | Yes | None | 本地照片目录绝对路径，支持 Windows 路径或 WSL 路径 |
+| `SU8_API_KEY` or `OPENAI_API_KEY` | Yes | None | Vision、时间解析、QueryFormatter 默认复用 |
+| `EMBEDDING_API_KEY` | Yes | None | 文本和图片检索 embedding |
+| `ELASTICSEARCH_HOST` | No | `localhost` | 关键词检索与过滤增强；设为空可禁用 |
+| `SERVER_PORT` | No | `10001` | 本地 Web 服务端口 |
+
+一个最小可运行配置示例：
+
+```bash
+PHOTO_DIR=/absolute/path/to/your/photos
+SU8_API_KEY=su8-your-key
+EMBEDDING_API_KEY=sk-your-key
+ELASTICSEARCH_HOST=
+```
+
+<details>
+<summary>查看推荐默认配置</summary>
 
 ```bash
 VISION_MODEL=gpt-5.4
 STRUCTURED_ANALYSIS_ENABLED=true
 ENHANCED_ANALYSIS_ENABLED=true
-TAG_MIN_CONFIDENCE=0.65
-IDENTITY_TEXT_MIN_CONFIDENCE=0.70
-IDENTITY_VISUAL_MIN_CONFIDENCE=0.92
 TIME_PARSE_MODEL=gpt-5.1
+QUERY_FORMAT_ENABLED=true
+QUERY_EXPANSION_ENABLED=true
 EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B
 TEXT_RERANK_MODEL=Qwen/Qwen3-Reranker-8B
+VISUAL_RERANK_ENABLED=true
+VECTOR_METRIC=cosine
+VECTOR_WEIGHT=0.85
+KEYWORD_WEIGHT=0.15
 ```
 
-### 3. 启动服务
+</details>
+
+### 4. Start The App
 
 ```bash
 ./.venv/bin/python main.py
 ```
 
-如果 `10001` 端口被占用，可临时切换：
+默认访问地址：
+
+```text
+http://127.0.0.1:10001/
+```
+
+如果端口已被占用：
 
 ```bash
 SERVER_PORT=10002 ./.venv/bin/python main.py
 ```
 
-### Windows 本地启动
+### 5. Build The Index
 
-如果你是在 Windows + WSL 环境下运行，推荐直接使用单一入口脚本。你只需要运行一次脚本，脚本会自动完成以下动作：
+服务启动后，可以在首页直接点击：
 
-- 自动选择前端端口，从 `10001` 开始向后寻找空闲端口，例如 `10001 -> 10002`
-- 以 `-Xms1g -Xmx1g` 启动 Elasticsearch，避免 Windows 上默认自动堆过大导致 JVM 启动失败
-- 启动 WSL 中的 Flask 前端
-- 输出最终可访问的前端地址和 Elasticsearch 地址
-- 把运行日志和状态文件写入 `artifacts/runtime/`
+- `增量索引`：日常新增照片后补齐索引
+- `全量重建`：模型、索引结构或 mapping 变化后重建全部索引
 
-运行方式：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\start_stack.ps1"
-```
-
-脚本执行完成后，会在终端里打印类似下面的结果：
-
-```text
-[DONE] Elasticsearch: http://127.0.0.1:9200
-[DONE] Frontend: http://127.0.0.1:10001
-```
-
-补充说明：
-
-- 如果 `10001` 已经被占用，脚本不会报错退出，而是自动改用下一个空闲端口，例如 `10002`
-- 当前唯一主入口脚本是 `artifacts/start_stack.ps1`
-- 如果你想查看当前 `9200`、`10001`、`10002` 的监听和 HTTP 状态，可以额外执行：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\check_services.ps1"
-```
-
-### 4. 构建索引
-
-启动后访问：
-
-- `http://127.0.0.1:10001/`
-
-前端按钮说明：
-
-- `增量索引`：日常新增图片后补齐当前索引
-- `全量重建`：模型、索引结构或 mapping 发生变化后重建全部索引
-
-也可以直接调用接口。
-
-增量索引：
+也可以直接调用 HTTP 接口：
 
 ```bash
 curl -X POST http://127.0.0.1:10001/init_index \
@@ -198,48 +215,168 @@ curl -X POST http://127.0.0.1:10001/init_index \
   -d '{"mode":"incremental"}'
 ```
 
-全量重建：
-
 ```bash
 curl -X POST http://127.0.0.1:10001/init_index \
   -H 'Content-Type: application/json' \
   -d '{"mode":"full"}'
 ```
 
-注意：
+## What Gets Stored
 
-- 省略 `mode` 时默认按增量索引处理
-- 日常新增图片时，应优先使用 `增量索引`
-- 切换 embedding 模型后仍然必须执行 `全量重建`
+索引构建后，本地会生成这些核心文件：
 
-如果你刚更新到当前版本，必须立即重建索引，因为：
+| File | Purpose |
+| --- | --- |
+| `data/photo_search.index` | FAISS 向量索引 |
+| `data/metadata.json` | 结构化元数据与检索字段 |
+| `data/index_status.status` | 当前索引状态 |
+| `data/index_ready.marker` | 索引可用标记 |
+| `data/index_timing.jsonl` | 索引构建耗时日志 |
 
-- 向量输入已从 `description` 切换为 `retrieval_text`
-- 元数据新增了结构化分析字段
-- Elasticsearch mapping 新增了 `retrieval_text`、`media_types`、`identity_names` 等字段
-- 旧索引不会自动迁移
+如果启用了 Elasticsearch，还会额外建立关键词索引文档。
 
-## 主要接口
+## API Overview
 
-- `POST /init_index`：建立或更新图片索引，支持 `{"mode":"incremental"}` 与 `{"mode":"full"}`
-- `GET /index_status`：查看索引状态
-- `POST /search_photos`：文本搜图
-- `POST /search_by_image`：以图搜图
-- `POST /search_by_uploaded_image`：上传图片搜图
-- `POST /open_photo_location`：定位本地文件
-- `GET /photo?path=...`：预览原图
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/` | `GET` | 首页，服务端渲染的单页前端 |
+| `/init_index` | `POST` | 启动增量索引或全量重建 |
+| `/index_status` | `GET` | 获取当前索引状态 |
+| `/search_photos` | `POST` | 文本搜图 |
+| `/search_by_image` | `POST` | 使用已入库图片路径进行相似检索 |
+| `/search_by_uploaded_image` | `POST` | 上传图片进行临时检索 |
+| `/open_photo_location` | `POST` | 在本地文件管理器中打开图片所在位置 |
+| `/photo?path=...` | `GET` | 预览图片，供前端结果卡片展示 |
 
-搜索结果中的每条记录还会返回 `match_summary`，包含：
+<details>
+<summary>查看请求示例</summary>
 
-- `media_types`
-- `top_tags`
-- `identities`
-- `identity_evidence`
-- `ocr_excerpt`
+`POST /search_photos`
 
-文本搜索、以图搜图和上传图片搜图的响应中还会包含 `search_debug`，用于展示检索规划和轮次信息。
+```json
+{
+  "query": "去年夏天傍晚在海边拍的照片",
+  "top_k": 12,
+  "rerank_top_k": 12,
+  "enable_text_rerank": true,
+  "enable_visual_rerank": true
+}
+```
 
-## 开发与测试
+`POST /search_by_image`
+
+```json
+{
+  "image_path": "C:/Users/you/Pictures/example.jpg",
+  "top_k": 12,
+  "query_hint": "偏暖色的人像",
+  "enable_visual_rerank": true
+}
+```
+
+`POST /search_by_uploaded_image`
+
+使用 `multipart/form-data` 发送以下字段：
+
+- `image`
+- `top_k`
+- `rerank_top_k`
+- `enable_text_rerank`
+- `enable_visual_rerank`
+- `query_hint`
+
+</details>
+
+## Result Shape
+
+搜索结果中的每条记录通常包含这些字段：
+
+```json
+{
+  "photo_path": "C:/Users/you/Pictures/example.jpg",
+  "photo_url": "/photo?path=C%3A%2FUsers%2Fyou%2FPictures%2Fexample.jpg",
+  "file_name": "example.jpg",
+  "score": 0.9134,
+  "rank": 1,
+  "match_summary": {
+    "media_types": ["photo"],
+    "top_tags": ["beach", "sunset"],
+    "identities": [],
+    "identity_evidence": [],
+    "ocr_excerpt": ""
+  }
+}
+```
+
+整个搜索响应还会附带：
+
+- `search_debug`：记录基础意图、扩展轮次、反思轮次、各轮结果数量和分数
+- `text_reranked`：文本 rerank 是否实际执行
+- `visual_reranked`：视觉 rerank 是否实际执行
+- `elapsed_time`：请求耗时
+
+## Indexing Strategy
+
+当前版本已经支持增量索引。大多数日常使用场景不需要全量重建。
+
+| Scenario | Recommended mode |
+| --- | --- |
+| 新增了一批照片 | `incremental` |
+| 切换了 embedding 模型 | `full` |
+| 修改了 `retrieval_text` 生成逻辑 | `full` |
+| 修改了结构化分析字段 | `full` |
+| 修改了 Elasticsearch mapping | `full` |
+| 旧索引损坏或维度不兼容 | `full` |
+
+## Time Metadata Rules
+
+时间过滤依赖 EXIF 中的拍摄时间，而不是文件修改时间。这是为了避免没有 EXIF 的图片被错误打上时间标签。
+
+这意味着：
+
+- 没有 EXIF `datetime` 的图片仍然可以参与普通检索和以图搜图
+- 但它们不会被“去年”“夏天”“傍晚”这类时间过滤查询误命中
+
+## Windows + WSL Workflow
+
+如果你在 Windows + WSL 环境下运行，仓库已经提供了更顺手的本地启动脚本：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\start_stack.ps1"
+```
+
+这个脚本会自动：
+
+- 从 `10001` 开始寻找空闲前端端口
+- 以更稳妥的 JVM 参数启动 Elasticsearch
+- 启动 WSL 中的 Flask 服务
+- 输出最终可访问的前端地址和 Elasticsearch 地址
+- 把运行日志和状态文件写入 `artifacts/runtime/`
+
+检查本地服务状态：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\check_services.ps1"
+```
+
+## Project Structure
+
+```text
+api/                 Flask 路由与 HTTP 接口
+core/                索引与检索核心逻辑
+utils/               模型服务、时间解析、路径处理、向量存储等
+templates/           服务端渲染单页前端
+tests/               pytest 测试与 fake helpers
+artifacts/           截图、辅助脚本、运行脚本
+data/                本地索引、状态文件与元数据
+config.py            环境变量配置加载
+main.py              应用入口
+README.md            项目说明
+```
+
+## Development
+
+使用 `uv` 作为标准开发工作流。
 
 运行完整测试：
 
@@ -247,28 +384,38 @@ curl -X POST http://127.0.0.1:10001/init_index \
 ./.venv/bin/python -m pytest -q
 ```
 
-运行单文件测试：
+运行单个测试文件：
 
 ```bash
 ./.venv/bin/python -m pytest tests/test_routes.py -q
+./.venv/bin/python -m pytest tests/test_searcher.py -q
+./.venv/bin/python -m pytest tests/test_indexer.py -q
 ```
 
-## 项目结构
+测试默认使用轻量 fake service，不会消耗真实线上额度。
 
-```text
-api/                 HTTP 路由
-core/                索引与检索核心逻辑
-templates/           单页前端
-tests/               单元测试与集成边界测试
-utils/               模型服务、向量存储、路径处理等
-config.py            环境变量配置加载
-main.py              应用入口
-```
+## Notes
 
-## 说明
+- 前端目前是一个服务端渲染单页，适合快速本地使用，也方便后续继续演进 UI。
+- `QUERY_FORMAT_API_KEY` 默认可复用 `SU8_API_KEY`，`TEXT_RERANK_API_KEY` 默认可复用 `EMBEDDING_API_KEY`。
+- Elasticsearch 是可选增强能力，不可用时系统仍可退化运行。
+- `/photo` 预览接口要求绝对路径，且当前仅支持 `.jpg`、`.jpeg`、`.png`、`.webp`。
 
-- QueryFormatter 保留启用，但默认与 SU8 复用同一套中转配置
-- Elasticsearch 是可选项；未启动时系统仍可运行
-- 没有 EXIF 时间的图片不会生成时间标签，但不会影响普通文本检索、以图搜图和 rerank
-- 前端索引入口已经拆分为“增量索引”和“全量重建”两个按钮，默认日常使用增量索引
-- Figma MCP 已尝试接入，但当前提供的设计文件对当前登录账号不可访问，因此前端优化基于现有实现继续演进，而不是直接抽取设计 token
+## Roadmap
+
+- [ ] 更强的筛选能力与结果面板对比
+- [ ] 更稳定的人物识别与身份证据策略
+- [ ] 更细的结果解释和调试信息展示
+- [ ] 更完整的部署、数据管理与运维脚本
+- [ ] 更丰富的前端交互与结果浏览体验
+
+## Contributing
+
+欢迎继续基于当前结构扩展这个项目。提交 PR 时，建议同时说明：
+
+- 改动了哪些检索逻辑或配置变量
+- 是否需要重新构建索引
+- 跑了哪些测试
+- 如果涉及 UI，附上截图
+
+在修改检索逻辑时，优先补充对应的 route 测试和底层单元测试。
