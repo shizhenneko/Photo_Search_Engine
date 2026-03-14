@@ -15,6 +15,10 @@
 </p>
 
 <p align="center">
+  <img src="artifacts/home-before.png" alt="Photo Search Engine UI" width="100%" />
+</p>
+
+<p align="center">
   Flask + FAISS + OpenAI 兼容模型接口 + 可选 Elasticsearch。<br />
   支持文本搜图、以图搜图、时间过滤、混合检索、双阶段重排，以及可解释的搜索结果。
 </p>
