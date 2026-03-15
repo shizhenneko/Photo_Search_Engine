@@ -54,14 +54,21 @@ def load_config() -> Dict[str, Any]:
 
     vision_api_key = os.getenv("VISION_API_KEY") or llm_api_key
     vision_base_url = os.getenv("VISION_BASE_URL") or llm_base_url
+    time_parse_api_key = os.getenv("TIME_PARSE_API_KEY") or llm_api_key
+    time_parse_base_url = os.getenv("TIME_PARSE_BASE_URL") or llm_base_url
     visual_rerank_api_key = os.getenv("VISUAL_RERANK_API_KEY") or vision_api_key
     visual_rerank_base_url = os.getenv("VISUAL_RERANK_BASE_URL") or vision_base_url
     query_format_api_key = os.getenv("QUERY_FORMAT_API_KEY") or llm_api_key
-    query_format_base_url = os.getenv("QUERY_FORMAT_BASE_URL", llm_base_url)
-    embedding_api_key = os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY")
-    embedding_base_url = os.getenv("EMBEDDING_BASE_URL", "https://router.tumuer.me/v1")
+    query_format_base_url = os.getenv("QUERY_FORMAT_BASE_URL") or llm_base_url
+    embedding_api_key = os.getenv("EMBEDDING_API_KEY") or llm_api_key
+    embedding_base_url = os.getenv("EMBEDDING_BASE_URL") or "https://router.tumuer.me/v1"
     text_rerank_api_key = os.getenv("TEXT_RERANK_API_KEY") or embedding_api_key
-    text_rerank_base_url = os.getenv("TEXT_RERANK_BASE_URL", embedding_base_url)
+    text_rerank_base_url = os.getenv("TEXT_RERANK_BASE_URL") or embedding_base_url
+    query_max_expansion_rounds = _get_int(
+        "QUERY_MAX_EXPANSION_ROUNDS",
+        _get_int("QUERY_EXPANSION_MAX_ALTERNATIVES", 2),
+    )
+    query_max_reflection_rounds = _get_int("QUERY_MAX_REFLECTION_ROUNDS", 2)
 
     config: Dict[str, Any] = {
         "PHOTO_DIR": os.getenv("PHOTO_DIR"),
@@ -80,6 +87,7 @@ def load_config() -> Dict[str, Any]:
         "BATCH_SIZE": _get_int("BATCH_SIZE", 8),
         "MAX_RETRIES": _get_int("MAX_RETRIES", 3),
         "TIMEOUT": _get_int("TIMEOUT", 45),
+        "INDEX_BACKGROUND_MODE": os.getenv("INDEX_BACKGROUND_MODE", "process").strip().lower(),
         "SERVER_HOST": os.getenv("SERVER_HOST", "127.0.0.1"),
         "SERVER_PORT": _get_int("SERVER_PORT", 10001),
         "SECRET_KEY": os.getenv("SECRET_KEY", "dev-secret-key"),
@@ -104,6 +112,8 @@ def load_config() -> Dict[str, Any]:
         "TAG_MIN_CONFIDENCE": _get_float("TAG_MIN_CONFIDENCE", 0.65),
         "IDENTITY_TEXT_MIN_CONFIDENCE": _get_float("IDENTITY_TEXT_MIN_CONFIDENCE", 0.7),
         "IDENTITY_VISUAL_MIN_CONFIDENCE": _get_float("IDENTITY_VISUAL_MIN_CONFIDENCE", 0.92),
+        "TIME_PARSE_API_KEY": time_parse_api_key,
+        "TIME_PARSE_BASE_URL": time_parse_base_url,
         "TIME_PARSE_MODEL": os.getenv("TIME_PARSE_MODEL", "gpt-5.1"),
         "TIME_PARSE_REASONING_EFFORT": os.getenv("TIME_PARSE_REASONING_EFFORT", "low"),
         "TIME_PARSE_STRATEGY": os.getenv("TIME_PARSE_STRATEGY", "local_first"),
@@ -113,9 +123,14 @@ def load_config() -> Dict[str, Any]:
         "QUERY_FORMAT_MODEL": os.getenv("QUERY_FORMAT_MODEL", "gpt-5.1"),
         "QUERY_FORMAT_REASONING_EFFORT": os.getenv("QUERY_FORMAT_REASONING_EFFORT", "low"),
         "QUERY_EXPANSION_ENABLED": _get_bool("QUERY_EXPANSION_ENABLED", True),
-        "QUERY_EXPANSION_MAX_ALTERNATIVES": _get_int("QUERY_EXPANSION_MAX_ALTERNATIVES", 2),
+        "QUERY_EXPANSION_MAX_ALTERNATIVES": query_max_expansion_rounds,
+        "QUERY_MAX_EXPANSION_ROUNDS": query_max_expansion_rounds,
         "QUERY_MULTI_ROUND_ENABLED": _get_bool("QUERY_MULTI_ROUND_ENABLED", False),
         "QUERY_REFLECTION_ENABLED": _get_bool("QUERY_REFLECTION_ENABLED", False),
+        "QUERY_MAX_REFLECTION_ROUNDS": query_max_reflection_rounds,
+        "QUERY_DYNAMIC_THRESHOLD_FLOOR": _get_float("QUERY_DYNAMIC_THRESHOLD_FLOOR", 0.05),
+        "QUERY_STRICT_FLOOR_MIN": _get_float("QUERY_STRICT_FLOOR_MIN", 0.22),
+        "QUERY_BROAD_FLOOR_MIN": _get_float("QUERY_BROAD_FLOOR_MIN", 0.12),
         "QUERY_CACHE_ENABLED": _get_bool("QUERY_CACHE_ENABLED", True),
         "QUERY_CACHE_SIZE": _get_int("QUERY_CACHE_SIZE", 2000),
         "EMBEDDING_CACHE_ENABLED": _get_bool("EMBEDDING_CACHE_ENABLED", True),

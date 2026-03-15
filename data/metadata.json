@@ -1,15 +1,15 @@
 [
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20230815_152757.jpg",
-    "description": "茂密的森林中，阳光透过树叶洒下斑驳光影。",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20230815_152757.jpg",
+    "description": "茂密森林中的树木和植被。",
     "outer_scene_summary": "阳光透过树叶的森林景象。",
-    "inner_content_summary": "森林中树木繁茂，阳光透过树叶形成斑驳光影，地面覆盖着落叶。",
+    "inner_content_summary": "茂密的森林，阳光透过树叶洒下斑驳光影，地面覆盖着落叶和灌木。",
     "media_types": [
       "自然风光",
       "户外摄影"
     ],
     "top_tags": [
-      "光影效果",
+      "光影",
       "落叶"
     ],
     "ocr_text": "",
@@ -20,8 +20,8 @@
     "analysis_flags": {
       "retrieval_signal_sparse": true
     },
-    "embedding_text": "自然风光 户外摄影 光影效果 落叶 阳光透过树叶的森林景象。 森林中树木繁茂，阳光透过树叶形成斑驳光影，地面覆盖着落叶。",
-    "retrieval_text": "自然风光 户外摄影 光影效果 落叶 阳光透过树叶的森林景象。 森林中树木繁茂，阳光透过树叶形成斑驳光影，地面覆盖着落叶。",
+    "embedding_text": "自然风光 户外摄影 光影 落叶 阳光透过树叶的森林景象。 茂密的森林，阳光透过树叶洒下斑驳光影，地面覆盖着落叶和灌木。",
+    "retrieval_text": "自然风光 户外摄影 光影 落叶 阳光透过树叶的森林景象。 茂密的森林，阳光透过树叶洒下斑驳光影，地面覆盖着落叶和灌木。",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-08-15T15:27:58",
@@ -42,10 +42,10 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20230816_103618.jpg",
-    "description": "一个粉色毛绒玩具的特写。",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20230816_103618.jpg",
+    "description": "一个粉色毛绒玩具的特写照片。",
     "outer_scene_summary": "毛绒玩具放置在布料上。",
-    "inner_content_summary": "毛绒玩具有闭着的眼睛和彩色的角，带有蓝色和黄色的装饰。",
+    "inner_content_summary": "毛绒玩具有闭着的眼睛和彩色的耳朵，耳朵上有黄色和蓝色的装饰。",
     "media_types": [
       "照片",
       "毛绒玩具"
@@ -59,8 +59,8 @@
     "identity_names": [],
     "identity_evidence": [],
     "analysis_flags": {},
-    "embedding_text": "照片 毛绒玩具 装饰 毛绒玩具放置在布料上。 毛绒玩具有闭着的眼睛和彩色的角，带有蓝色和黄色的装饰。",
-    "retrieval_text": "照片 毛绒玩具 装饰 毛绒玩具放置在布料上。 毛绒玩具有闭着的眼睛和彩色的角，带有蓝色和黄色的装饰。 无",
+    "embedding_text": "照片 毛绒玩具 装饰 毛绒玩具放置在布料上。 毛绒玩具有闭着的眼睛和彩色的耳朵，耳朵上有黄色和蓝色的装饰。",
+    "retrieval_text": "照片 毛绒玩具 装饰 毛绒玩具放置在布料上。 毛绒玩具有闭着的眼睛和彩色的耳朵，耳朵上有黄色和蓝色的装饰。 无",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-08-16T10:36:18",
@@ -81,10 +81,10 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20230817_213005.jpg",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20230817_213005.jpg",
     "description": "数学题目和解题过程的手写笔记。",
     "outer_scene_summary": "一张白纸，上面有手写的数学题目和解题步骤。",
-    "inner_content_summary": "包含不等式、对数和最小值问题的数学题，附有选择题和解题步骤。",
+    "inner_content_summary": "包含不等式、对数和最小值问题的数学题，附有选择题答案和解题步骤。",
     "media_types": [
       "手写笔记",
       "数学题"
@@ -99,7 +99,7 @@
       "手写",
       "笔记"
     ],
-    "ocr_text": "3. 若 x,y 满足 x^2+y^2-xy=1，则 ( ) A. x+y<1 B. x+y>-2 C. x^2+y^2≥1 D. x^2+y^2≤2 4. log_4(3a+4b)=log_2√ab，则 (a+b)min为 5. 已知 x>0, y>0, 且 x^2+y^2=x-y，则 ( ) A. x+y≥√2 B. x+y≤√2 C. x^2+y^2<1 D. x^2+y^2>1/2 6. 已知 x,y>0, 8/x+9/y=1，则 (√(x^2+y^2))min=",
+    "ocr_text": "3. 若x,y满足x^2+y^2-xy=1，则（ ） A. x+y<1 B. x+y>=-2 C. x^2+y^2>=1 D. x^2+y^2<=2 4. log4(2a+4b)=log2√ab，则(a+b)min为___ 5. 已知x>0, y>0, 且x^2+y^2=x-y，则（ ） A. x+y>√2-1 B. x+y<√2-1 C. x^2+y^2<1 D. x^2+y^2>1/2 6. 已知x,y>0, 8/x^2+1/y=1，则(√(x^2+y^2))min=___",
     "person_roles": [],
     "identity_candidates": [],
     "identity_names": [],
@@ -107,8 +107,8 @@
     "analysis_flags": {
       "text_heavy": true
     },
-    "embedding_text": "手写笔记 数学题 数学 不等式 对数 最小值 选择题 解题步骤 手写 笔记 一张白纸，上面有手写的数学题目和解题步骤。 包含不等式、对数和最小值问题的数学题，附有选择题和解题步骤。",
-    "retrieval_text": "手写笔记 数学题 数学 不等式 对数 最小值 选择题 解题步骤 手写 笔记 一张白纸，上面有手写的数学题目和解题步骤。 包含不等式、对数和最小值问题的数学题，附有选择题和解题步骤。 3. 若 x,y 满足 x^2+y^2-xy=1，则 ( ) A. x+y<1 B. x+y>-2 C. x^2+y^2≥1 D. x^2+y^2≤2 4. log_4(3a+4b)=log_2√ab，则 (a+b)min为 5. 已知 x>0, y>0, 且 x^2+y^2=x-y，则 ( ) A. x+y≥√2 B. x+y≤√2 C. x^2+y^2<1 D. x^2+y^2>1/2 6. 已知 x,y>0, 8/x+9/y=1，则 (√(x^2+y^2))min=",
+    "embedding_text": "手写笔记 数学题 数学 不等式 对数 最小值 选择题 解题步骤 手写 笔记 一张白纸，上面有手写的数学题目和解题步骤。 包含不等式、对数和最小值问题的数学题，附有选择题答案和解题步骤。",
+    "retrieval_text": "手写笔记 数学题 数学 不等式 对数 最小值 选择题 解题步骤 手写 笔记 一张白纸，上面有手写的数学题目和解题步骤。 包含不等式、对数和最小值问题的数学题，附有选择题答案和解题步骤。 3. 若x,y满足x^2+y^2-xy=1，则（ ） A. x+y<1 B. x+y>=-2 C. x^2+y^2>=1 D. x^2+y^2<=2 4. log4(2a+4b)=log2√ab，则(a+b)min为___ 5. 已知x>0, y>0, 且x^2+y^2=x-y，则（ ） A. x+y>√2-1 B. x+y<√2-1 C. x^2+y^2<1 D. x^2+y^2>1/2 6. 已知x,y>0, 8/x^2+1/y=1，则(√(x^2+y^2))min=___",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-08-17T21:30:06",
@@ -129,29 +129,29 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20230828_155417.jpg",
-    "description": "课程和实验的时间安排及评分标准。",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20230828_155417.jpg",
+    "description": "课程安排和考核方式的展示。",
     "outer_scene_summary": "投影屏幕上显示课程信息。",
-    "inner_content_summary": "课程和实验的时间安排，评分标准包括作业、实验、机考和期末考试。",
+    "inner_content_summary": "课程安排在正心24和格物楼208、213，考核包括作业、实验、机考和试卷。",
     "media_types": [
       "投影幻灯片",
       "课程信息"
     ],
     "top_tags": [
       "课程安排",
-      "实验时间",
-      "评分标准",
-      "教室信息",
-      "学期安排"
+      "考核方式",
+      "教室",
+      "时间表",
+      "教育"
     ],
-    "ocr_text": "课程须知 上课地点：正心24 上课时间：1-6周 周一7-8节 周五3-4节（单） 7-18周 周一7-8节 周五3-4节（双） 实验：上课地点：格物楼208、213 上课时间：2、4周、7-18单周 周五3-4节 考核环节 所占分值 考核与评价细则（暂定） 作业 10% 自主式作业，占总成绩的10%。 Lab 40% 开放式实验作业，占总成绩的40%。8*5 Midterm 20% 机考 Final exam 30% 试卷 最终成绩计算=（1）+（2）+（3）+（4）",
+    "ocr_text": "课程须知 上课地点：正心24 上课时间：1-6周 周一7-8节 周五3-4节（单） 7-18周 周一7-8节 周五3-4节（双） 实验：上课地点：格物楼208、213 上课时间：2、4周、7-18单周 周五3-4节 考核比例：作业10%，Lab 40%，Mid-term 20%，Final exam 30% 课程最终成绩=（1）+（2）+（3）+（4）",
     "person_roles": [],
     "identity_candidates": [],
     "identity_names": [],
     "identity_evidence": [],
     "analysis_flags": {},
-    "embedding_text": "投影幻灯片 课程信息 课程安排 实验时间 评分标准 教室信息 学期安排 投影屏幕上显示课程信息。 课程和实验的时间安排，评分标准包括作业、实验、机考和期末考试。",
-    "retrieval_text": "投影幻灯片 课程信息 课程安排 实验时间 评分标准 教室信息 学期安排 投影屏幕上显示课程信息。 课程和实验的时间安排，评分标准包括作业、实验、机考和期末考试。 课程须知 上课地点：正心24 上课时间：1-6周 周一7-8节 周五3-4节（单） 7-18周 周一7-8节 周五3-4节（双） 实验：上课地点：格物楼208、213 上课时间：2、4周、7-18单周 周五3-4节 考核环节 所占分值 考核与评价细则（暂定） 作业 10% 自主式作业，占总成绩的10%。 Lab 40% 开放式实验作业，占总成绩的40%。8*5 Midterm 20% 机考 Final exam 30% 试卷 最终成绩计算=（1）+（2）+（3）+（4）",
+    "embedding_text": "投影幻灯片 课程信息 课程安排 考核方式 教室 时间表 教育 投影屏幕上显示课程信息。 课程安排在正心24和格物楼208、213，考核包括作业、实验、机考和试卷。",
+    "retrieval_text": "投影幻灯片 课程信息 课程安排 考核方式 教室 时间表 教育 投影屏幕上显示课程信息。 课程安排在正心24和格物楼208、213，考核包括作业、实验、机考和试卷。 课程须知 上课地点：正心24 上课时间：1-6周 周一7-8节 周五3-4节（单） 7-18周 周一7-8节 周五3-4节（双） 实验：上课地点：格物楼208、213 上课时间：2、4周、7-18单周 周五3-4节 考核比例：作业10%，Lab 40%，Mid-term 20%，Final exam 30% 课程最终成绩=（1）+（2）+（3）+（4）",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-08-28T15:54:18",
@@ -172,24 +172,26 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20230828_160151.jpg",
-    "description": "一张关于C语言编程学习资源的幻灯片。",
-    "outer_scene_summary": "一张投影在屏幕上的幻灯片。",
-    "inner_content_summary": "幻灯片列出了C语言编程的学习资源，包括书籍、在线课程、IDE推荐和视频简介。",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20230828_160151.jpg",
+    "description": "关于C语言程序设计的学习资源和开发环境推荐。",
+    "outer_scene_summary": "投影屏幕上显示的幻灯片内容。",
+    "inner_content_summary": "推荐书籍、在线课程、IDE和开发工具链接。",
     "media_types": [
       "幻灯片",
-      "教育内容"
+      "在线课程",
+      "编程工具"
     ],
     "top_tags": [
       "C语言",
       "编程",
-      "学习资源",
+      "开发环境",
       "在线课程",
-      "IDE推荐",
-      "书籍",
-      "视频"
+      "书籍推荐",
+      "CodeBlocks",
+      "GCC",
+      "GDB"
     ],
-    "ocr_text": "《C语言程序设计（慕课版）》苏小红、赵玲玲、孙志刚、王宇颖等编著 高等教育出版社2019年出版 Mooc: C语言程序设计精髓 苏小红等 https://www.icourse163.org/learn/HIT-69005?tid=146312444242#/learn/chapter/ Integrated Development Environment (IDE) 推荐：CodeBlocks + gcc（编译器）+ gdb（调试器） http://codeblocks.org codeblocks-20.03 mingw-nosetup.zip codeblocks-20.03 mingw-setup.exe/ C语言集成开发环境简介（16分钟）视频 备选：Visual Studio、CLion",
+    "ocr_text": "《C语言程序设计（慕课版）》苏小红、赵玲玲、孙志刚、王宇颖等编著 高等教育出版社2019年出版 Mooc: C语言程序设计精讲 苏小红等 https://www.icourse163.org/learn/HIT-690057?tid=146312444242#/learn/course Integrated Development Environment (IDE) 推荐：CodeBlocks + gcc（编译器）+ gdb（调试器） http://codeblocks.org codeblocks-20.03-mingw-nosetup.zip codeblocks-20.03-mingw-setup.exe/ C语言集成开发环境简介（16分钟）视频 备选：Visual Studio、CLion",
     "person_roles": [],
     "identity_candidates": [],
     "identity_names": [],
@@ -197,8 +199,8 @@
     "analysis_flags": {
       "text_heavy": true
     },
-    "embedding_text": "幻灯片 教育内容 C语言 编程 学习资源 在线课程 IDE推荐 书籍 视频 一张投影在屏幕上的幻灯片。 幻灯片列出了C语言编程的学习资源，包括书籍、在线课程、IDE推荐和视频简介。",
-    "retrieval_text": "幻灯片 教育内容 C语言 编程 学习资源 在线课程 IDE推荐 书籍 视频 一张投影在屏幕上的幻灯片。 幻灯片列出了C语言编程的学习资源，包括书籍、在线课程、IDE推荐和视频简介。 《C语言程序设计（慕课版）》苏小红、赵玲玲、孙志刚、王宇颖等编著 高等教育出版社2019年出版 Mooc: C语言程序设计精髓 苏小红等 https://www.icourse163.org/learn/HIT-69005?tid=146312444242#/learn/chapter/ Integrated Development Environment (IDE) 推荐：CodeBlocks + gcc（编译器）+ gdb（调试器） http://codeblocks.org codeblocks-20.03 mingw-nosetup.zip codeblocks-20.03 mingw-setup.exe/ C语言集成开发环境简介（16分钟）视频 备选：Visual Studio、CLion",
+    "embedding_text": "幻灯片 在线课程 编程工具 C语言 编程 开发环境 在线课程 书籍推荐 CodeBlocks GCC GDB 投影屏幕上显示的幻灯片内容。 推荐书籍、在线课程、IDE和开发工具链接。",
+    "retrieval_text": "幻灯片 在线课程 编程工具 C语言 编程 开发环境 在线课程 书籍推荐 CodeBlocks GCC GDB 投影屏幕上显示的幻灯片内容。 推荐书籍、在线课程、IDE和开发工具链接。 《C语言程序设计（慕课版）》苏小红、赵玲玲、孙志刚、王宇颖等编著 高等教育出版社2019年出版 Mooc: C语言程序设计精讲 苏小红等 https://www.icourse163.org/learn/HIT-690057?tid=146312444242#/learn/course Integrated Development Environment (IDE) 推荐：CodeBlocks + gcc（编译器）+ gdb（调试器） http://codeblocks.org codeblocks-20.03-mingw-nosetup.zip codeblocks-20.03-mingw-setup.exe/ C语言集成开发环境简介（16分钟）视频 备选：Visual Studio、CLion",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-08-28T16:01:52",
@@ -219,29 +221,32 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20230924_093728.jpg",
-    "description": "一张展示建筑物外墙上消防宣传标语的照片。",
-    "outer_scene_summary": "建筑物外墙上挂着消防宣传标语，旁边有柳树。",
-    "inner_content_summary": "标语内容为'防安全消除火患 平安相伴'。",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20230924_093728.jpg",
+    "description": "一张展示建筑物外墙上悬挂的消防宣传标语的照片。",
+    "outer_scene_summary": "建筑物外墙上悬挂着红色消防宣传标语，旁边有柳树。",
+    "inner_content_summary": "标语内容为'防安全 消除火患 平安相伴你'。",
     "media_types": [
       "户外标语",
       "宣传横幅"
     ],
     "top_tags": [
       "消防",
-      "安全",
       "标语",
+      "安全",
+      "户外",
       "柳树",
+      "红色",
+      "宣传",
       "建筑"
     ],
-    "ocr_text": "防安全消除火患 平安相伴",
+    "ocr_text": "防安全 消除火患 平安相伴你",
     "person_roles": [],
     "identity_candidates": [],
     "identity_names": [],
     "identity_evidence": [],
     "analysis_flags": {},
-    "embedding_text": "户外标语 宣传横幅 消防 安全 标语 柳树 建筑 建筑物外墙上挂着消防宣传标语，旁边有柳树。 标语内容为'防安全消除火患 平安相伴'。",
-    "retrieval_text": "户外标语 宣传横幅 消防 安全 标语 柳树 建筑 建筑物外墙上挂着消防宣传标语，旁边有柳树。 标语内容为'防安全消除火患 平安相伴'。 防安全消除火患 平安相伴",
+    "embedding_text": "户外标语 宣传横幅 消防 标语 安全 户外 柳树 红色 宣传 建筑 建筑物外墙上悬挂着红色消防宣传标语，旁边有柳树。 标语内容为'防安全 消除火患 平安相伴你'。",
+    "retrieval_text": "户外标语 宣传横幅 消防 标语 安全 户外 柳树 红色 宣传 建筑 建筑物外墙上悬挂着红色消防宣传标语，旁边有柳树。 标语内容为'防安全 消除火患 平安相伴你'。 防安全 消除火患 平安相伴你",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-09-24T09:37:29",
@@ -262,7 +267,7 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20231015_123946.jpg",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20231015_123946.jpg",
     "description": "一个穿着女仆装的动漫角色玩偶。",
     "outer_scene_summary": "玩偶被一只手拿着，背景模糊。",
     "inner_content_summary": "玩偶有黄色头发，戴着黑色女仆帽，穿着带有白色围裙的黑色连衣裙。",
@@ -275,9 +280,10 @@
       "动漫角色",
       "毛绒玩具",
       "黄色头发",
-      "黑色连衣裙",
+      "大眼睛",
       "可爱",
-      "二次元"
+      "二次元",
+      "手办"
     ],
     "ocr_text": "",
     "person_roles": [],
@@ -285,8 +291,8 @@
     "identity_names": [],
     "identity_evidence": [],
     "analysis_flags": {},
-    "embedding_text": "毛绒玩具 动漫角色 女仆装 动漫角色 毛绒玩具 黄色头发 黑色连衣裙 可爱 二次元 玩偶被一只手拿着，背景模糊。 玩偶有黄色头发，戴着黑色女仆帽，穿着带有白色围裙的黑色连衣裙。",
-    "retrieval_text": "毛绒玩具 动漫角色 女仆装 动漫角色 毛绒玩具 黄色头发 黑色连衣裙 可爱 二次元 玩偶被一只手拿着，背景模糊。 玩偶有黄色头发，戴着黑色女仆帽，穿着带有白色围裙的黑色连衣裙。",
+    "embedding_text": "毛绒玩具 动漫角色 女仆装 动漫角色 毛绒玩具 黄色头发 大眼睛 可爱 二次元 手办 玩偶被一只手拿着，背景模糊。 玩偶有黄色头发，戴着黑色女仆帽，穿着带有白色围裙的黑色连衣裙。",
+    "retrieval_text": "毛绒玩具 动漫角色 女仆装 动漫角色 毛绒玩具 黄色头发 大眼睛 可爱 二次元 手办 玩偶被一只手拿着，背景模糊。 玩偶有黄色头发，戴着黑色女仆帽，穿着带有白色围裙的黑色连衣裙。",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-10-15T12:39:47",
@@ -307,10 +313,10 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20231016_193231.jpg",
-    "description": "一块黑板上写满了数学公式和推导过程。",
-    "outer_scene_summary": "黑板上写有数学公式。",
-    "inner_content_summary": "黑板上包含积分、函数和变量等数学内容。",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20231016_193231.jpg",
+    "description": "一块黑板上写满了数学公式和运算步骤。",
+    "outer_scene_summary": "黑板上写有数学公式和运算步骤。",
+    "inner_content_summary": "黑板上包含函数、导数、积分等数学运算。",
     "media_types": [
       "黑板",
       "数学公式"
@@ -319,16 +325,22 @@
       "数学",
       "黑板",
       "公式",
-      "教育"
+      "运算",
+      "教育",
+      "学术",
+      "课堂",
+      "教学"
     ],
-    "ocr_text": "F(x) = F(x) + F(x) - x, h(x) + h(x), e^x h(x), tan h(x), ln h(x)",
+    "ocr_text": "F(x) = F(x) - F(x) + F(x) - F(x) + F(x) x f(x) + f(x) x f(x) - f(x) x f(x) + n f(x) x f(x) - n f(x)",
     "person_roles": [],
     "identity_candidates": [],
     "identity_names": [],
     "identity_evidence": [],
-    "analysis_flags": {},
-    "embedding_text": "黑板 数学公式 数学 黑板 公式 教育 黑板上写有数学公式。 黑板上包含积分、函数和变量等数学内容。",
-    "retrieval_text": "黑板 数学公式 数学 黑板 公式 教育 黑板上写有数学公式。 黑板上包含积分、函数和变量等数学内容。 F(x) = F(x) + F(x) - x, h(x) + h(x), e^x h(x), tan h(x), ln h(x)",
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "黑板 数学公式 数学 黑板 公式 运算 教育 学术 课堂 教学 黑板上写有数学公式和运算步骤。 黑板上包含函数、导数、积分等数学运算。",
+    "retrieval_text": "黑板 数学公式 数学 黑板 公式 运算 教育 学术 课堂 教学 黑板上写有数学公式和运算步骤。 黑板上包含函数、导数、积分等数学运算。 F(x) = F(x) - F(x) + F(x) - F(x) + F(x) x f(x) + f(x) x f(x) - f(x) x f(x) + n f(x) x f(x) - n f(x)",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-10-16T19:32:31",
@@ -349,21 +361,21 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20231019_234800.jpg",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20231019_234800.jpg",
     "description": "一只手拿着一个穿着女仆装的动漫角色玩偶。",
-    "outer_scene_summary": "室内环境中，一只手拿着玩偶。",
-    "inner_content_summary": "玩偶是黄色头发的动漫角色，穿着黑色和白色相间的女仆装，戴着黑色帽子。",
+    "outer_scene_summary": "一只手拿着玩偶，背景模糊。",
+    "inner_content_summary": "玩偶是黄色头发，穿着黑色和白色相间的女仆装，戴着黑色帽子。",
     "media_types": [
       "玩偶",
       "动漫角色"
     ],
     "top_tags": [
       "玩偶",
-      "动漫角色",
       "女仆装",
+      "动漫角色",
       "黄色头发",
       "黑色帽子",
-      "动漫周边",
+      "可爱",
       "手办"
     ],
     "ocr_text": "",
@@ -372,8 +384,8 @@
     "identity_names": [],
     "identity_evidence": [],
     "analysis_flags": {},
-    "embedding_text": "玩偶 动漫角色 玩偶 动漫角色 女仆装 黄色头发 黑色帽子 动漫周边 手办 室内环境中，一只手拿着玩偶。 玩偶是黄色头发的动漫角色，穿着黑色和白色相间的女仆装，戴着黑色帽子。",
-    "retrieval_text": "玩偶 动漫角色 玩偶 动漫角色 女仆装 黄色头发 黑色帽子 动漫周边 手办 室内环境中，一只手拿着玩偶。 玩偶是黄色头发的动漫角色，穿着黑色和白色相间的女仆装，戴着黑色帽子。",
+    "embedding_text": "玩偶 动漫角色 玩偶 女仆装 动漫角色 黄色头发 黑色帽子 可爱 手办 一只手拿着玩偶，背景模糊。 玩偶是黄色头发，穿着黑色和白色相间的女仆装，戴着黑色帽子。",
+    "retrieval_text": "玩偶 动漫角色 玩偶 女仆装 动漫角色 黄色头发 黑色帽子 可爱 手办 一只手拿着玩偶，背景模糊。 玩偶是黄色头发，穿着黑色和白色相间的女仆装，戴着黑色帽子。",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-10-19T23:48:01",
@@ -394,22 +406,22 @@
     }
   },
   {
-    "photo_path": "/mnt/c/Users/86159/Desktop/test_photos/IMG_20231106_075418.jpg",
-    "description": "雪后现代建筑与松树的景象。",
-    "outer_scene_summary": "一座现代建筑外有积雪覆盖的地面和松树。",
-    "inner_content_summary": "建筑外墙有几何图案装饰，松树被雪覆盖。",
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20231106_075418.jpg",
+    "description": "雪后松树与现代建筑的对比景象。",
+    "outer_scene_summary": "一座现代建筑前有一棵被雪覆盖的松树。",
+    "inner_content_summary": "松树的枝叶上积满了雪，建筑外墙有几何图案装饰。",
     "media_types": [
-      "建筑摄影",
-      "自然景观"
+      "户外摄影",
+      "自然景观",
+      "建筑摄影"
     ],
     "top_tags": [
-      "建筑",
-      "松树",
       "雪景",
-      "现代",
+      "松树",
+      "现代建筑",
       "冬季",
-      "户外",
-      "自然"
+      "几何图案",
+      "户外"
     ],
     "ocr_text": "",
     "person_roles": [],
@@ -417,8 +429,8 @@
     "identity_names": [],
     "identity_evidence": [],
     "analysis_flags": {},
-    "embedding_text": "建筑摄影 自然景观 建筑 松树 雪景 现代 冬季 户外 自然 一座现代建筑外有积雪覆盖的地面和松树。 建筑外墙有几何图案装饰，松树被雪覆盖。",
-    "retrieval_text": "建筑摄影 自然景观 建筑 松树 雪景 现代 冬季 户外 自然 一座现代建筑外有积雪覆盖的地面和松树。 建筑外墙有几何图案装饰，松树被雪覆盖。",
+    "embedding_text": "户外摄影 自然景观 建筑摄影 雪景 松树 现代建筑 冬季 几何图案 户外 一座现代建筑前有一棵被雪覆盖的松树。 松树的枝叶上积满了雪，建筑外墙有几何图案装饰。",
+    "retrieval_text": "户外摄影 自然景观 建筑摄影 雪景 松树 现代建筑 冬季 几何图案 户外 一座现代建筑前有一棵被雪覆盖的松树。 松树的枝叶上积满了雪，建筑外墙有几何图案装饰。",
     "index_text_version": 2,
     "exif_data": {
       "datetime": "2023-11-06T07:54:19",
@@ -436,6 +448,3136 @@
       "time_period": "早晨",
       "weekday": "星期一",
       "datetime_str": "2023-11-06T07:54:19"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20231106_124608.jpg",
+    "description": "冬季雪景中，人们在雪地中行走。",
+    "outer_scene_summary": "雪天的街道，两旁有树木和围栏。",
+    "inner_content_summary": "行人在雪地中行走，树木和围栏上覆盖着积雪。",
+    "media_types": [
+      "户外摄影",
+      "自然风光"
+    ],
+    "top_tags": [
+      "雪景",
+      "行人",
+      "树木",
+      "围栏",
+      "冬季",
+      "户外",
+      "自然",
+      "寒冷"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "户外摄影 自然风光 雪景 行人 树木 围栏 冬季 户外 自然 寒冷 雪天的街道，两旁有树木和围栏。 行人在雪地中行走，树木和围栏上覆盖着积雪。",
+    "retrieval_text": "户外摄影 自然风光 雪景 行人 树木 围栏 冬季 户外 自然 寒冷 雪天的街道，两旁有树木和围栏。 行人在雪地中行走，树木和围栏上覆盖着积雪。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2023-11-06T12:46:08",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2023-11-06T12:46:10",
+    "time_info": {
+      "year": 2023,
+      "month": 11,
+      "day": 6,
+      "hour": 12,
+      "season": "秋天",
+      "time_period": "中午",
+      "weekday": "星期一",
+      "datetime_str": "2023-11-06T12:46:08"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20231119_202028.jpg",
+    "description": "电脑屏幕上显示《植物大战僵尸》游戏画面。",
+    "outer_scene_summary": "电脑屏幕显示游戏画面，旁边有音乐软件界面。",
+    "inner_content_summary": "游戏中展示了多种植物和僵尸角色，关卡为1-1。",
+    "media_types": [
+      "电脑游戏",
+      "策略游戏"
+    ],
+    "top_tags": [
+      "植物大战僵尸",
+      "游戏画面",
+      "策略",
+      "卡通风格",
+      "僵尸",
+      "植物",
+      "关卡1-1",
+      "中文界面"
+    ],
+    "ocr_text": "植物大战僵尸中文版 关卡 1-1 菜单 我的播客 还没有下载的音乐哦，快去下载吧~",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_screen": true,
+      "text_heavy": false
+    },
+    "embedding_text": "电脑游戏 策略游戏 植物大战僵尸 游戏画面 策略 卡通风格 僵尸 植物 关卡1-1 中文界面 电脑屏幕显示游戏画面，旁边有音乐软件界面。 游戏中展示了多种植物和僵尸角色，关卡为1-1。",
+    "retrieval_text": "电脑游戏 策略游戏 植物大战僵尸 游戏画面 策略 卡通风格 僵尸 植物 关卡1-1 中文界面 电脑屏幕显示游戏画面，旁边有音乐软件界面。 游戏中展示了多种植物和僵尸角色，关卡为1-1。 植物大战僵尸中文版 关卡 1-1 菜单 我的播客 还没有下载的音乐哦，快去下载吧~",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2023-11-19T20:20:29",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2023-11-19T20:20:32",
+    "time_info": {
+      "year": 2023,
+      "month": 11,
+      "day": 19,
+      "hour": 20,
+      "season": "秋天",
+      "time_period": "夜晚",
+      "weekday": "星期日",
+      "datetime_str": "2023-11-19T20:20:29"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240106_152250.jpg",
+    "description": "一座大型冰雕建筑，顶部悬挂着“新年快乐”的横幅。",
+    "outer_scene_summary": "户外冰雕建筑，周围有参观者。",
+    "inner_content_summary": "冰雕建筑顶部悬挂着“新年快乐”的横幅。",
+    "media_types": [
+      "冰雕",
+      "户外摄影"
+    ],
+    "top_tags": [
+      "冰雕",
+      "新年",
+      "建筑",
+      "户外",
+      "节日",
+      "冬季",
+      "参观",
+      "摄影"
+    ],
+    "ocr_text": "新年快乐",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "冰雕 户外摄影 冰雕 新年 建筑 户外 节日 冬季 参观 摄影 户外冰雕建筑，周围有参观者。 冰雕建筑顶部悬挂着“新年快乐”的横幅。",
+    "retrieval_text": "冰雕 户外摄影 冰雕 新年 建筑 户外 节日 冬季 参观 摄影 户外冰雕建筑，周围有参观者。 冰雕建筑顶部悬挂着“新年快乐”的横幅。 新年快乐",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-01-06T15:22:50",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-01-06T15:22:50",
+    "time_info": {
+      "year": 2024,
+      "month": 1,
+      "day": 6,
+      "hour": 15,
+      "season": "冬天",
+      "time_period": "下午",
+      "weekday": "星期六",
+      "datetime_str": "2024-01-06T15:22:50"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240228_172704.jpg",
+    "description": "一把装饰精美的古典吉他，琴弦断裂。",
+    "outer_scene_summary": "吉他靠墙放置，背景为简单的白色墙面。",
+    "inner_content_summary": "吉他琴身有精美的装饰图案，琴弦断裂，琴颈上有指板标记。",
+    "media_types": [
+      "乐器",
+      "摄影"
+    ],
+    "top_tags": [
+      "吉他",
+      "古典吉他",
+      "断裂琴弦",
+      "装饰图案",
+      "指板标记",
+      "靠墙"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "乐器 摄影 吉他 古典吉他 断裂琴弦 装饰图案 指板标记 靠墙 吉他靠墙放置，背景为简单的白色墙面。 吉他琴身有精美的装饰图案，琴弦断裂，琴颈上有指板标记。",
+    "retrieval_text": "乐器 摄影 吉他 古典吉他 断裂琴弦 装饰图案 指板标记 靠墙 吉他靠墙放置，背景为简单的白色墙面。 吉他琴身有精美的装饰图案，琴弦断裂，琴颈上有指板标记。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-02-28T17:27:05",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-02-28T17:27:09",
+    "time_info": {
+      "year": 2024,
+      "month": 2,
+      "day": 28,
+      "hour": 17,
+      "season": "冬天",
+      "time_period": "傍晚",
+      "weekday": "星期三",
+      "datetime_str": "2024-02-28T17:27:05"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240301_230215.jpg",
+    "description": "一张展示龙年主题红包和宣传海报的照片。",
+    "outer_scene_summary": "墙上挂着一张宣传海报和一个龙年主题红包。",
+    "inner_content_summary": "海报上有卡通形象和二维码，红包上有熊猫形象和'龙年到'字样。",
+    "media_types": [
+      "海报",
+      "红包"
+    ],
+    "top_tags": [
+      "龙年",
+      "红包",
+      "熊猫",
+      "卡通",
+      "二维码",
+      "宣传",
+      "节日",
+      "庆祝"
+    ],
+    "ocr_text": "欢迎未来的你 走进问天的家 龙年到",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "海报 红包 龙年 红包 熊猫 卡通 二维码 宣传 节日 庆祝 墙上挂着一张宣传海报和一个龙年主题红包。 海报上有卡通形象和二维码，红包上有熊猫形象和'龙年到'字样。",
+    "retrieval_text": "海报 红包 龙年 红包 熊猫 卡通 二维码 宣传 节日 庆祝 墙上挂着一张宣传海报和一个龙年主题红包。 海报上有卡通形象和二维码，红包上有熊猫形象和'龙年到'字样。 欢迎未来的你 走进问天的家 龙年到",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-03-01T23:02:15",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-03-01T23:02:20",
+    "time_info": {
+      "year": 2024,
+      "month": 3,
+      "day": 1,
+      "hour": 23,
+      "season": "春天",
+      "time_period": "夜晚",
+      "weekday": "星期五",
+      "datetime_str": "2024-03-01T23:02:15"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240304_134909.jpg",
+    "description": "一张展示课程考核方式的幻灯片。",
+    "outer_scene_summary": "教室内投影仪展示幻灯片。",
+    "inner_content_summary": "幻灯片列出了课程考核方式，包括平时作业、生生互助答疑、课堂小测验、课程论文报告、期中和期末考核。",
+    "media_types": [
+      "幻灯片",
+      "投影"
+    ],
+    "top_tags": [
+      "考核方式",
+      "课程",
+      "教育",
+      "教学",
+      "幻灯片",
+      "投影",
+      "教室",
+      "学习"
+    ],
+    "ocr_text": "考核方式 平时作业（课后习题选题）：10% 生生互助答疑：6套阶段训练题，学生录制训练题答疑视频，共享 课堂小测验：10%（2次*5分/次） 课程论文报告：10%（5人一组，手写报告1000字以上） 期中：30%（大概在第7周周六4.20进行，卷面分60分） 期末：40%（卷面100分，期中考过的内容期末不再考试）",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "幻灯片 投影 考核方式 课程 教育 教学 幻灯片 投影 教室 学习 教室内投影仪展示幻灯片。 幻灯片列出了课程考核方式，包括平时作业、生生互助答疑、课堂小测验、课程论文报告、期中和期末考核。",
+    "retrieval_text": "幻灯片 投影 考核方式 课程 教育 教学 幻灯片 投影 教室 学习 教室内投影仪展示幻灯片。 幻灯片列出了课程考核方式，包括平时作业、生生互助答疑、课堂小测验、课程论文报告、期中和期末考核。 考核方式 平时作业（课后习题选题）：10% 生生互助答疑：6套阶段训练题，学生录制训练题答疑视频，共享 课堂小测验：10%（2次*5分/次） 课程论文报告：10%（5人一组，手写报告1000字以上） 期中：30%（大概在第7周周六4.20进行，卷面分60分） 期末：40%（卷面100分，期中考过的内容期末不再考试）",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-03-04T13:49:10",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-03-04T13:49:14",
+    "time_info": {
+      "year": 2024,
+      "month": 3,
+      "day": 4,
+      "hour": 13,
+      "season": "春天",
+      "time_period": "中午",
+      "weekday": "星期一",
+      "datetime_str": "2024-03-04T13:49:10"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240413_165001.jpg",
+    "description": "一面墙上展示着多个店铺招牌和宣传标语。",
+    "outer_scene_summary": "一面灰色砖墙，上面有多个彩色招牌和标语。",
+    "inner_content_summary": "招牌上有中文店名和英文翻译，标语表达了对哈尔滨的喜爱。",
+    "media_types": [
+      "户外广告",
+      "墙面装饰"
+    ],
+    "top_tags": [
+      "哈尔滨",
+      "中华巴洛克",
+      "店铺招牌",
+      "中英文",
+      "旅游宣传"
+    ],
+    "ocr_text": "这里是Harbin 中华巴洛克 没错，我也很喜欢马迭尔 YES, I LIKE MODERN TOO",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true,
+      "has_packaging": false
+    },
+    "embedding_text": "户外广告 墙面装饰 哈尔滨 中华巴洛克 店铺招牌 中英文 旅游宣传 一面灰色砖墙，上面有多个彩色招牌和标语。 招牌上有中文店名和英文翻译，标语表达了对哈尔滨的喜爱。",
+    "retrieval_text": "户外广告 墙面装饰 哈尔滨 中华巴洛克 店铺招牌 中英文 旅游宣传 一面灰色砖墙，上面有多个彩色招牌和标语。 招牌上有中文店名和英文翻译，标语表达了对哈尔滨的喜爱。 这里是Harbin 中华巴洛克 没错，我也很喜欢马迭尔 YES, I LIKE MODERN TOO",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-04-13T16:50:01",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-04-13T16:50:04",
+    "time_info": {
+      "year": 2024,
+      "month": 4,
+      "day": 13,
+      "hour": 16,
+      "season": "春天",
+      "time_period": "下午",
+      "weekday": "星期六",
+      "datetime_str": "2024-04-13T16:50:01"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240417_135121.jpg",
+    "description": "一杯带有精美拉花的咖啡。",
+    "outer_scene_summary": "咖啡杯放置在桌面上，背景模糊。",
+    "inner_content_summary": "咖啡表面有复杂的拉花图案，呈现出对称的几何形状。",
+    "media_types": [
+      "饮品",
+      "拉花艺术",
+      "摄影"
+    ],
+    "top_tags": [
+      "咖啡",
+      "拉花",
+      "饮品",
+      "艺术",
+      "早餐",
+      "休闲",
+      "摄影"
+    ],
+    "ocr_text": "微信扫一扫 加入我们",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "retrieval_signal_sparse": true
+    },
+    "embedding_text": "饮品 拉花艺术 摄影 咖啡 拉花 饮品 艺术 早餐 休闲 摄影 咖啡杯放置在桌面上，背景模糊。 咖啡表面有复杂的拉花图案，呈现出对称的几何形状。",
+    "retrieval_text": "饮品 拉花艺术 摄影 咖啡 拉花 饮品 艺术 早餐 休闲 摄影 咖啡杯放置在桌面上，背景模糊。 咖啡表面有复杂的拉花图案，呈现出对称的几何形状。 微信扫一扫 加入我们",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-04-17T13:51:21",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-04-17T13:51:24",
+    "time_info": {
+      "year": 2024,
+      "month": 4,
+      "day": 17,
+      "hour": 13,
+      "season": "春天",
+      "time_period": "中午",
+      "weekday": "星期三",
+      "datetime_str": "2024-04-17T13:51:21"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\QQ截图20240424153329.png",
+    "description": "布尔代数的性质和公式列表。",
+    "outer_scene_summary": "一张展示布尔代数性质的表格。",
+    "inner_content_summary": "包含布尔代数的幂等律、补余律、最小最大律、交换律、结合律、吸收律、分配律、无名定理和德摩根定律。",
+    "media_types": [
+      "数学公式",
+      "逻辑代数"
+    ],
+    "top_tags": [
+      "布尔代数",
+      "逻辑",
+      "数学",
+      "公式",
+      "幂等律",
+      "补余律",
+      "交换律",
+      "结合律"
+    ],
+    "ocr_text": "Idempotent: A·A = A A + A = A Complementary: A·¬A = 0 A + ¬A = 1 Minimum: A·1 = A A·0 = 0 Maximum: A + 0 = A A + 1 = 1 Commutative: A·B = B·A A + B = B + A Absorption: A·(A + B) = A A + (A·B) = A Associative: A·(B·C) = (A·B)·C A + (B + C) = (A + B) + C Unnamed Theorem: A·(¬A + B) = A·B A + (¬A·B) = A + B De Morgan: ¬A·¬B = ¬(A + B) ¬A + ¬B = ¬(A·B) Distributive: A·(B + C) = (A·B) + (A·C) A + (B·C)",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "数学公式 逻辑代数 布尔代数 逻辑 数学 公式 幂等律 补余律 交换律 结合律 一张展示布尔代数性质的表格。 包含布尔代数的幂等律、补余律、最小最大律、交换律、结合律、吸收律、分配律、无名定理和德摩根定律。",
+    "retrieval_text": "数学公式 逻辑代数 布尔代数 逻辑 数学 公式 幂等律 补余律 交换律 结合律 一张展示布尔代数性质的表格。 包含布尔代数的幂等律、补余律、最小最大律、交换律、结合律、吸收律、分配律、无名定理和德摩根定律。 Idempotent: A·A = A A + A = A Complementary: A·¬A = 0 A + ¬A = 1 Minimum: A·1 = A A·0 = 0 Maximum: A + 0 = A A + 1 = 1 Commutative: A·B = B·A A + B = B + A Absorption: A·(A + B) = A A + (A·B) = A Associative: A·(B·C) = (A·B)·C A + (B + C) = (A + B) + C Unnamed Theorem: A·(¬A + B) = A·B A + (¬A·B) = A + B De Morgan: ¬A·¬B = ¬(A + B) ¬A + ¬B = ¬(A·B) Distributive: A·(B + C) = (A·B) + (A·C) A + (B·C)",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2024-04-24T15:33:31.411596",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\vim插件表.jpg",
+    "description": "vi/vim编辑器键盘快捷键图示",
+    "outer_scene_summary": "一张展示vi/vim编辑器键盘快捷键的图表",
+    "inner_content_summary": "图表详细列出了vi/vim编辑器中各种模式下的键盘快捷键及其功能说明",
+    "media_types": [
+      "图表",
+      "快捷键指南"
+    ],
+    "top_tags": [
+      "vi",
+      "vim",
+      "键盘快捷键",
+      "编辑器",
+      "命令模式",
+      "可视模式",
+      "插入模式",
+      "操作说明"
+    ],
+    "ocr_text": "vi / vim 键盘图 Esc 命令模式 Q 退出 W 保存 E 编辑 R 替换 Y 复制 U 撤销 A 追加 S 删除 D 删除至行尾 F 查找 G 跳转 Z 命令 X 删除字符 C 删除至行尾 V 可视模式 B 向后单词 N 下一页 M 中间 @ 宏 Ctrl-R 重复 Ctrl-E 向上滚动 Ctrl-Y 向下滚动 :w 保存 :q 退出 :e 打开文件 :f 打开文件 :%s/x/y/g 全局替换 :h 帮助 :w new (新建文件 in vim) CTRL-R 重复 (vim) CTRL-E 向上翻 (vim) CTRL-Y 向下翻 (vim only) ZZ 保存退出 (vim only) zt 移动光标所在行至屏幕顶端 zb 底端, zz: 中间 gg: 文首 (vim only) G: 文尾 (vim only) :e # 打开光标处的文件名 (vim only)",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "图表 快捷键指南 vi vim 键盘快捷键 编辑器 命令模式 可视模式 插入模式 操作说明 一张展示vi/vim编辑器键盘快捷键的图表 图表详细列出了vi/vim编辑器中各种模式下的键盘快捷键及其功能说明",
+    "retrieval_text": "图表 快捷键指南 vi vim 键盘快捷键 编辑器 命令模式 可视模式 插入模式 操作说明 一张展示vi/vim编辑器键盘快捷键的图表 图表详细列出了vi/vim编辑器中各种模式下的键盘快捷键及其功能说明 vi / vim 键盘图 Esc 命令模式 Q 退出 W 保存 E 编辑 R 替换 Y 复制 U 撤销 A 追加 S 删除 D 删除至行尾 F 查找 G 跳转 Z 命令 X 删除字符 C 删除至行尾 V 可视模式 B 向后单词 N 下一页 M 中间 @ 宏 Ctrl-R 重复 Ctrl-E 向上滚动 Ctrl-Y 向下滚动 :w 保存 :q 退出 :e 打开文件 :f 打开文件 :%s/x/y/g 全局替换 :h 帮助 :w new (新建文件 in vim) CTRL-R 重复 (vim) CTRL-E 向上翻 (vim) CTRL-Y 向下翻 (vim only) ZZ 保存退出 (vim only) zt 移动光标所在行至屏幕顶端 zb 底端, zz: 中间 gg: 文首 (vim only) G: 文尾 (vim only) :e # 打开光标处的文件名 (vim only)",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2024-05-17T16:30:39.069659",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240531_123702.jpg",
+    "description": "《植物大战僵尸》游戏中的战斗场景。",
+    "outer_scene_summary": "游戏界面显示了多个植物和僵尸角色。",
+    "inner_content_summary": "植物和僵尸角色具有不同的生命值（HP），如300、1000、4000等。",
+    "media_types": [
+      "电子游戏",
+      "策略游戏"
+    ],
+    "top_tags": [
+      "植物大战僵尸",
+      "策略",
+      "卡通",
+      "战斗",
+      "僵尸",
+      "植物",
+      "生命值",
+      "游戏界面"
+    ],
+    "ocr_text": "HP:1000 HP:1896 HP:300 HP:300 HP:1000 HP:1000 HP:300 HP:20 HP:64830 HP:4000 HP:3138 HP:300",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_screen": true
+    },
+    "embedding_text": "电子游戏 策略游戏 植物大战僵尸 策略 卡通 战斗 僵尸 植物 生命值 游戏界面 游戏界面显示了多个植物和僵尸角色。 植物和僵尸角色具有不同的生命值（HP），如300、1000、4000等。",
+    "retrieval_text": "电子游戏 策略游戏 植物大战僵尸 策略 卡通 战斗 僵尸 植物 生命值 游戏界面 游戏界面显示了多个植物和僵尸角色。 植物和僵尸角色具有不同的生命值（HP），如300、1000、4000等。 HP:1000 HP:1896 HP:300 HP:300 HP:1000 HP:1000 HP:300 HP:20 HP:64830 HP:4000 HP:3138 HP:300",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-05-31T12:37:02",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-05-31T12:37:06",
+    "time_info": {
+      "year": 2024,
+      "month": 5,
+      "day": 31,
+      "hour": 12,
+      "season": "春天",
+      "time_period": "中午",
+      "weekday": "星期五",
+      "datetime_str": "2024-05-31T12:37:02"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240616_130613.jpg",
+    "description": "图书馆前举行的活动吸引了众多参与者。",
+    "outer_scene_summary": "图书馆建筑前有活动帐篷和人群。",
+    "inner_content_summary": "活动背景板上有‘2024’字样，可能是与图书馆相关的活动。",
+    "media_types": [
+      "户外活动",
+      "建筑",
+      "帐篷",
+      "文化活动"
+    ],
+    "top_tags": [
+      "图书馆",
+      "活动",
+      "人群",
+      "帐篷",
+      "2024",
+      "文化"
+    ],
+    "ocr_text": "图书馆",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "retrieval_signal_sparse": true
+    },
+    "embedding_text": "户外活动 建筑 帐篷 文化活动 图书馆 活动 人群 帐篷 2024 文化 图书馆建筑前有活动帐篷和人群。 活动背景板上有‘2024’字样，可能是与图书馆相关的活动。",
+    "retrieval_text": "户外活动 建筑 帐篷 文化活动 图书馆 活动 人群 帐篷 2024 文化 图书馆建筑前有活动帐篷和人群。 活动背景板上有‘2024’字样，可能是与图书馆相关的活动。 图书馆",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-06-16T13:06:14",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-06-16T13:06:18",
+    "time_info": {
+      "year": 2024,
+      "month": 6,
+      "day": 16,
+      "hour": 13,
+      "season": "夏天",
+      "time_period": "中午",
+      "weekday": "星期日",
+      "datetime_str": "2024-06-16T13:06:14"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240626_202207.jpg",
+    "description": "这是一张包含物理题目和图示的文档截图。",
+    "outer_scene_summary": "文档截图显示了物理题目和相关图示。",
+    "inner_content_summary": "题目涉及电容器、电势、导线和磁场等物理概念。",
+    "media_types": [
+      "文档截图",
+      "物理题目",
+      "图示"
+    ],
+    "top_tags": [
+      "电容器",
+      "电势",
+      "导线",
+      "磁场",
+      "物理题目",
+      "图示",
+      "文档",
+      "截图"
+    ],
+    "ocr_text": "14. 如图所示，有一空气平行板电容器极板间距为d。现平行插入一块面积相同，厚度为(e<d)的相对电容率为εr的电介质板，两极板间的电势差为U，略去边缘效应。试求介质中的电场强度E和电位移矢量D。 15. 如图所示，金属球A外面罩一同心金属球壳B，球A半径为R1，球B的内外半径分别为R2，R3，带电量为Q，求： (1) 球壳B内任一点电势； (2) 若A球接地，A球是否带电？ 16. 一无限长直载流导线旁共面放置一载流矩形线框。直导线中电流为I，线框中电流为I，线框尺寸与位置如图所示，其ab边与直线平行，长度为l1，与长直导线相距r0。试求线框各边受到长直载流导线的磁场的作用",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "文档截图 物理题目 图示 电容器 电势 导线 磁场 物理题目 图示 文档 截图 文档截图显示了物理题目和相关图示。 题目涉及电容器、电势、导线和磁场等物理概念。",
+    "retrieval_text": "文档截图 物理题目 图示 电容器 电势 导线 磁场 物理题目 图示 文档 截图 文档截图显示了物理题目和相关图示。 题目涉及电容器、电势、导线和磁场等物理概念。 14. 如图所示，有一空气平行板电容器极板间距为d。现平行插入一块面积相同，厚度为(e<d)的相对电容率为εr的电介质板，两极板间的电势差为U，略去边缘效应。试求介质中的电场强度E和电位移矢量D。 15. 如图所示，金属球A外面罩一同心金属球壳B，球A半径为R1，球B的内外半径分别为R2，R3，带电量为Q，求： (1) 球壳B内任一点电势； (2) 若A球接地，A球是否带电？ 16. 一无限长直载流导线旁共面放置一载流矩形线框。直导线中电流为I，线框中电流为I，线框尺寸与位置如图所示，其ab边与直线平行，长度为l1，与长直导线相距r0。试求线框各边受到长直载流导线的磁场的作用",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-06-26T20:22:07",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-06-26T20:22:10",
+    "time_info": {
+      "year": 2024,
+      "month": 6,
+      "day": 26,
+      "hour": 20,
+      "season": "夏天",
+      "time_period": "夜晚",
+      "weekday": "星期三",
+      "datetime_str": "2024-06-26T20:22:07"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240705_090049.jpg",
+    "description": "这是一张数学题目的图片，涉及数列和级数的收敛性问题。",
+    "outer_scene_summary": "一张数学题目的图片。",
+    "inner_content_summary": "题目涉及数列和级数的收敛性判断。",
+    "media_types": [
+      "文本"
+    ],
+    "top_tags": [
+      "数学",
+      "数列",
+      "级数",
+      "收敛性",
+      "选择题"
+    ],
+    "ocr_text": "设a_n>0，则下列命题中正确的是( )。 (A)若∑a_n收敛，则lim na_n=0 (B)若lim na_n=0，则∑a_n收敛 (C)若a_(n+1)/a_n≤(1-1/(n+1))^2，则∑a_n收敛 (D)若∑a_n收敛，则lim a_(n+1)/a_n≤1",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "文本 数学 数列 级数 收敛性 选择题 一张数学题目的图片。 题目涉及数列和级数的收敛性判断。",
+    "retrieval_text": "文本 数学 数列 级数 收敛性 选择题 一张数学题目的图片。 题目涉及数列和级数的收敛性判断。 设a_n>0，则下列命题中正确的是( )。 (A)若∑a_n收敛，则lim na_n=0 (B)若lim na_n=0，则∑a_n收敛 (C)若a_(n+1)/a_n≤(1-1/(n+1))^2，则∑a_n收敛 (D)若∑a_n收敛，则lim a_(n+1)/a_n≤1",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-07-05T09:00:49",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-07-05T09:00:53",
+    "time_info": {
+      "year": 2024,
+      "month": 7,
+      "day": 5,
+      "hour": 9,
+      "season": "夏天",
+      "time_period": "上午",
+      "weekday": "星期五",
+      "datetime_str": "2024-07-05T09:00:49"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240709_034322.jpg",
+    "description": "一只橘白相间的小猫在户外行走。",
+    "outer_scene_summary": "小猫在灰色地面上行走。",
+    "inner_content_summary": "小猫毛色为橘白相间，耳朵竖立，尾巴卷曲。",
+    "media_types": [
+      "数码照片"
+    ],
+    "top_tags": [
+      "猫",
+      "橘白",
+      "户外",
+      "行走",
+      "竖耳",
+      "卷尾"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "数码照片 猫 橘白 户外 行走 竖耳 卷尾 小猫在灰色地面上行走。 小猫毛色为橘白相间，耳朵竖立，尾巴卷曲。",
+    "retrieval_text": "数码照片 猫 橘白 户外 行走 竖耳 卷尾 小猫在灰色地面上行走。 小猫毛色为橘白相间，耳朵竖立，尾巴卷曲。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-07-09T03:43:22",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-07-09T03:43:25",
+    "time_info": {
+      "year": 2024,
+      "month": 7,
+      "day": 9,
+      "hour": 3,
+      "season": "夏天",
+      "time_period": "凌晨",
+      "weekday": "星期二",
+      "datetime_str": "2024-07-09T03:43:22"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240713_203047.jpg",
+    "description": "一场名为'Corn Wave'的音乐会现场。",
+    "outer_scene_summary": "音乐会现场，舞台灯光聚焦在'Corn Wave'字样上。",
+    "inner_content_summary": "乐队成员在舞台上表演，灯光聚焦于'Corn Wave'字样。",
+    "media_types": [
+      "现场音乐会",
+      "舞台灯光",
+      "现场演出"
+    ],
+    "top_tags": [
+      "音乐会",
+      "舞台灯光",
+      "乐队表演",
+      "Corn Wave",
+      "现场演出",
+      "音乐活动",
+      "舞台表演",
+      "现场音乐"
+    ],
+    "ocr_text": "Corn wave",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_stage": true,
+      "has_public_figure_likelihood": true
+    },
+    "embedding_text": "现场音乐会 舞台灯光 现场演出 音乐会 舞台灯光 乐队表演 Corn Wave 现场演出 音乐活动 舞台表演 现场音乐 音乐会现场，舞台灯光聚焦在'Corn Wave'字样上。 乐队成员在舞台上表演，灯光聚焦于'Corn Wave'字样。",
+    "retrieval_text": "现场音乐会 舞台灯光 现场演出 音乐会 舞台灯光 乐队表演 Corn Wave 现场演出 音乐活动 舞台表演 现场音乐 音乐会现场，舞台灯光聚焦在'Corn Wave'字样上。 乐队成员在舞台上表演，灯光聚焦于'Corn Wave'字样。 Corn wave",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-07-13T20:30:48",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-07-13T20:30:52",
+    "time_info": {
+      "year": 2024,
+      "month": 7,
+      "day": 13,
+      "hour": 20,
+      "season": "夏天",
+      "time_period": "夜晚",
+      "weekday": "星期六",
+      "datetime_str": "2024-07-13T20:30:48"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\Screenshot_20240720_113557_com.tencent.mobileqq.jpg",
+    "description": "2023级本科生申请跨专业发展课程的流程说明。",
+    "outer_scene_summary": "手机屏幕显示关于本科生申请跨专业发展课程的通知。",
+    "inner_content_summary": "通知包括申请时间、流程、报名网址及注意事项。",
+    "media_types": [
+      "手机截图",
+      "文字通知"
+    ],
+    "top_tags": [
+      "本科生",
+      "跨专业申请",
+      "课程申请",
+      "报名流程",
+      "教育通知",
+      "在线申请",
+      "学分要求",
+      "抽签确定"
+    ],
+    "ocr_text": "关于2023级本科生申请跨...展课程体系的机会，申请时间一般为大二学年秋季学期末或大二学年春季学期末...7月24日9:00-7月26日16:00，学生登录“本科教学管理与服务平台”...",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "手机截图 文字通知 本科生 跨专业申请 课程申请 报名流程 教育通知 在线申请 学分要求 抽签确定 手机屏幕显示关于本科生申请跨专业发展课程的通知。 通知包括申请时间、流程、报名网址及注意事项。",
+    "retrieval_text": "手机截图 文字通知 本科生 跨专业申请 课程申请 报名流程 教育通知 在线申请 学分要求 抽签确定 手机屏幕显示关于本科生申请跨专业发展课程的通知。 通知包括申请时间、流程、报名网址及注意事项。 关于2023级本科生申请跨...展课程体系的机会，申请时间一般为大二学年秋季学期末或大二学年春季学期末...7月24日9:00-7月26日16:00，学生登录“本科教学管理与服务平台”...",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-07-20T11:35:58",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-07-20T11:35:58",
+    "time_info": {
+      "year": 2024,
+      "month": 7,
+      "day": 20,
+      "hour": 11,
+      "season": "夏天",
+      "time_period": "上午",
+      "weekday": "星期六",
+      "datetime_str": "2024-07-20T11:35:58"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240808_065012.jpg",
+    "description": "一张中国南方航空的登机牌，显示航班信息和座位号。",
+    "outer_scene_summary": "一只手拿着登机牌，背景为地面。",
+    "inner_content_summary": "登机牌上有航班号CZ8412，座位号39J，登机口20，日期08AUG。",
+    "media_types": [
+      "登机牌"
+    ],
+    "top_tags": [
+      "登机牌",
+      "航班信息",
+      "中国南方航空",
+      "武汉",
+      "二维码"
+    ],
+    "ocr_text": "中国南方航空 CHINA SOUTHERN 姓名 LIUYUXUAN 航班号 CZ8412 日期 08AUG 到达站 WUH 座位号 39J 登机口 20 登机时间 0715 客票号 ETKT 7842565725 CZ 61590440796C",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "登机牌 登机牌 航班信息 中国南方航空 武汉 二维码 一只手拿着登机牌，背景为地面。 登机牌上有航班号CZ8412，座位号39J，登机口20，日期08AUG。",
+    "retrieval_text": "登机牌 登机牌 航班信息 中国南方航空 武汉 二维码 一只手拿着登机牌，背景为地面。 登机牌上有航班号CZ8412，座位号39J，登机口20，日期08AUG。 中国南方航空 CHINA SOUTHERN 姓名 LIUYUXUAN 航班号 CZ8412 日期 08AUG 到达站 WUH 座位号 39J 登机口 20 登机时间 0715 客票号 ETKT 7842565725 CZ 61590440796C",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-08-08T06:50:12",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-08-08T06:50:17",
+    "time_info": {
+      "year": 2024,
+      "month": 8,
+      "day": 8,
+      "hour": 6,
+      "season": "夏天",
+      "time_period": "早晨",
+      "weekday": "星期四",
+      "datetime_str": "2024-08-08T06:50:12"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240808_182737.jpg",
+    "description": "一幅包含动漫角色和大量手写文字的涂鸦墙。",
+    "outer_scene_summary": "一面墙上有动漫风格的手绘角色和许多手写文字。",
+    "inner_content_summary": "动漫角色有猫耳，墙上写有“中考加油”等字样。",
+    "media_types": [
+      "手绘",
+      "涂鸦",
+      "动漫风格"
+    ],
+    "top_tags": [
+      "动漫角色",
+      "涂鸦墙",
+      "手写文字",
+      "猫耳",
+      "中考加油",
+      "黑白"
+    ],
+    "ocr_text": "中考加油 2023.9.21 徐以珊 我是认真的啊！ 中考冠军 last kiss 如愿以偿",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "手绘 涂鸦 动漫风格 动漫角色 涂鸦墙 手写文字 猫耳 中考加油 黑白 一面墙上有动漫风格的手绘角色和许多手写文字。 动漫角色有猫耳，墙上写有“中考加油”等字样。",
+    "retrieval_text": "手绘 涂鸦 动漫风格 动漫角色 涂鸦墙 手写文字 猫耳 中考加油 黑白 一面墙上有动漫风格的手绘角色和许多手写文字。 动漫角色有猫耳，墙上写有“中考加油”等字样。 中考加油 2023.9.21 徐以珊 我是认真的啊！ 中考冠军 last kiss 如愿以偿",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-08-08T18:27:38",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-08-08T18:27:43",
+    "time_info": {
+      "year": 2024,
+      "month": 8,
+      "day": 8,
+      "hour": 18,
+      "season": "夏天",
+      "time_period": "傍晚",
+      "weekday": "星期四",
+      "datetime_str": "2024-08-08T18:27:38"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240808_182955.jpg",
+    "description": "一幅包含动漫风格人物和多处手写文字的涂鸦作品。",
+    "outer_scene_summary": "一张白纸上的手绘涂鸦，包含动漫人物和多处手写文字。",
+    "inner_content_summary": "动漫风格人物，旁边有“我是INM”、“QQ”等手写文字。",
+    "media_types": [
+      "手绘涂鸦",
+      "动漫风格"
+    ],
+    "top_tags": [
+      "动漫人物",
+      "涂鸦",
+      "手写文字",
+      "QQ",
+      "INM",
+      "动漫风格",
+      "手绘",
+      "涂鸦艺术"
+    ],
+    "ocr_text": "我是INM QQ:1749287639 你的意思是 你知道我是玩原神的",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "手绘涂鸦 动漫风格 动漫人物 涂鸦 手写文字 QQ INM 动漫风格 手绘 涂鸦艺术 一张白纸上的手绘涂鸦，包含动漫人物和多处手写文字。 动漫风格人物，旁边有“我是INM”、“QQ”等手写文字。",
+    "retrieval_text": "手绘涂鸦 动漫风格 动漫人物 涂鸦 手写文字 QQ INM 动漫风格 手绘 涂鸦艺术 一张白纸上的手绘涂鸦，包含动漫人物和多处手写文字。 动漫风格人物，旁边有“我是INM”、“QQ”等手写文字。 我是INM QQ:1749287639 你的意思是 你知道我是玩原神的",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-08-08T18:29:56",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-08-08T18:30:00",
+    "time_info": {
+      "year": 2024,
+      "month": 8,
+      "day": 8,
+      "hour": 18,
+      "season": "夏天",
+      "time_period": "傍晚",
+      "weekday": "星期四",
+      "datetime_str": "2024-08-08T18:29:56"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240809_124748.jpg",
+    "description": "一碗装有莲藕片和火腿片的浓汤。",
+    "outer_scene_summary": "桌上的陶瓷碗盛着热汤。",
+    "inner_content_summary": "汤中有莲藕片、火腿片、葱花和胡萝卜丁。",
+    "media_types": [
+      "食物摄影"
+    ],
+    "top_tags": [
+      "胡萝卜"
+    ],
+    "ocr_text": "无",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "食物摄影 胡萝卜 桌上的陶瓷碗盛着热汤。 汤中有莲藕片、火腿片、葱花和胡萝卜丁。",
+    "retrieval_text": "食物摄影 胡萝卜 桌上的陶瓷碗盛着热汤。 汤中有莲藕片、火腿片、葱花和胡萝卜丁。 无",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-08-09T12:47:49",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-08-09T12:47:55",
+    "time_info": {
+      "year": 2024,
+      "month": 8,
+      "day": 9,
+      "hour": 12,
+      "season": "夏天",
+      "time_period": "中午",
+      "weekday": "星期五",
+      "datetime_str": "2024-08-09T12:47:49"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240809_154109.jpg",
+    "description": "晴川阁大禹文化博物馆入口处的牌楼和游客。",
+    "outer_scene_summary": "一个装饰华丽的传统牌楼，上方有“晴川阁”字样，周围有游客和遮阳伞。",
+    "inner_content_summary": "牌楼上方写有“晴川阁”字样，下方有“晴川阁大禹文化博物馆欢迎您！”的标语。",
+    "media_types": [
+      "建筑",
+      "文化遗址",
+      "旅游"
+    ],
+    "top_tags": [
+      "晴川阁",
+      "牌楼",
+      "博物馆",
+      "游客",
+      "遮阳伞",
+      "传统文化",
+      "武汉",
+      "旅游"
+    ],
+    "ocr_text": "晴川阁 晴川阁大禹文化博物馆欢迎您！ 2024年08月08日 日最大承载量10000人",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "建筑 文化遗址 旅游 晴川阁 牌楼 博物馆 游客 遮阳伞 传统文化 武汉 旅游 一个装饰华丽的传统牌楼，上方有“晴川阁”字样，周围有游客和遮阳伞。 牌楼上方写有“晴川阁”字样，下方有“晴川阁大禹文化博物馆欢迎您！”的标语。",
+    "retrieval_text": "建筑 文化遗址 旅游 晴川阁 牌楼 博物馆 游客 遮阳伞 传统文化 武汉 旅游 一个装饰华丽的传统牌楼，上方有“晴川阁”字样，周围有游客和遮阳伞。 牌楼上方写有“晴川阁”字样，下方有“晴川阁大禹文化博物馆欢迎您！”的标语。 晴川阁 晴川阁大禹文化博物馆欢迎您！ 2024年08月08日 日最大承载量10000人",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-08-09T15:41:09",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-08-09T15:41:15",
+    "time_info": {
+      "year": 2024,
+      "month": 8,
+      "day": 9,
+      "hour": 15,
+      "season": "夏天",
+      "time_period": "下午",
+      "weekday": "星期五",
+      "datetime_str": "2024-08-09T15:41:09"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240813_133059.jpg",
+    "description": "一个人在拍摄一个古典园林景观。",
+    "outer_scene_summary": "一个古典园林，有假山、树木和池塘。",
+    "inner_content_summary": "园林中有假山、树木、池塘和一座小桥。",
+    "media_types": [
+      "园林景观",
+      "自然风光"
+    ],
+    "top_tags": [
+      "园林",
+      "假山",
+      "树木",
+      "池塘",
+      "小桥",
+      "古典建筑",
+      "自然风光",
+      "手机拍摄"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "园林景观 自然风光 园林 假山 树木 池塘 小桥 古典建筑 自然风光 手机拍摄 一个古典园林，有假山、树木和池塘。 园林中有假山、树木、池塘和一座小桥。",
+    "retrieval_text": "园林景观 自然风光 园林 假山 树木 池塘 小桥 古典建筑 自然风光 手机拍摄 一个古典园林，有假山、树木和池塘。 园林中有假山、树木、池塘和一座小桥。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-08-13T13:31:00",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-08-13T13:31:07",
+    "time_info": {
+      "year": 2024,
+      "month": 8,
+      "day": 13,
+      "hour": 13,
+      "season": "夏天",
+      "time_period": "中午",
+      "weekday": "星期二",
+      "datetime_str": "2024-08-13T13:31:00"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240813_151609.jpg",
+    "description": "一名学生手持学生证在中国共产党第一次全国代表大会会址前留影。",
+    "outer_scene_summary": "中国共产党第一次全国代表大会会址的门牌和建筑外观。",
+    "inner_content_summary": "学生证上显示“哈工大学生证”字样。",
+    "media_types": [
+      "现场照片",
+      "手持证件"
+    ],
+    "top_tags": [
+      "学生证",
+      "历史遗址",
+      "中国共产党",
+      "哈工大",
+      "留影"
+    ],
+    "ocr_text": "中国共产党第一次全国代表大会会址 哈工大学生证",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "现场照片 手持证件 学生证 历史遗址 中国共产党 哈工大 留影 中国共产党第一次全国代表大会会址的门牌和建筑外观。 学生证上显示“哈工大学生证”字样。",
+    "retrieval_text": "现场照片 手持证件 学生证 历史遗址 中国共产党 哈工大 留影 中国共产党第一次全国代表大会会址的门牌和建筑外观。 学生证上显示“哈工大学生证”字样。 中国共产党第一次全国代表大会会址 哈工大学生证",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-08-13T15:16:09",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-08-13T15:16:16",
+    "time_info": {
+      "year": 2024,
+      "month": 8,
+      "day": 13,
+      "hour": 15,
+      "season": "夏天",
+      "time_period": "下午",
+      "weekday": "星期二",
+      "datetime_str": "2024-08-13T15:16:09"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240823_155626.jpg",
+    "description": "校园内欢迎2024级新生入学的拱门装饰。",
+    "outer_scene_summary": "校园内设置的蓝色拱门，周围有树木和行人。",
+    "inner_content_summary": "拱门上写有“萌新璀璨 热烈欢迎2024级萌新入学”。",
+    "media_types": [
+      "户外装饰",
+      "迎新活动"
+    ],
+    "top_tags": [
+      "迎新",
+      "校园",
+      "拱门",
+      "2024级",
+      "装饰",
+      "蓝色",
+      "树木",
+      "行人"
+    ],
+    "ocr_text": "萌新璀璨 热烈欢迎2024级萌新入学",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "户外装饰 迎新活动 迎新 校园 拱门 2024级 装饰 蓝色 树木 行人 校园内设置的蓝色拱门，周围有树木和行人。 拱门上写有“萌新璀璨 热烈欢迎2024级萌新入学”。",
+    "retrieval_text": "户外装饰 迎新活动 迎新 校园 拱门 2024级 装饰 蓝色 树木 行人 校园内设置的蓝色拱门，周围有树木和行人。 拱门上写有“萌新璀璨 热烈欢迎2024级萌新入学”。 萌新璀璨 热烈欢迎2024级萌新入学",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-08-23T15:56:26",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-08-23T15:56:31",
+    "time_info": {
+      "year": 2024,
+      "month": 8,
+      "day": 23,
+      "hour": 15,
+      "season": "夏天",
+      "time_period": "下午",
+      "weekday": "星期五",
+      "datetime_str": "2024-08-23T15:56:26"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240909_141113.jpg",
+    "description": "展示热电偶连接和测量原理的示意图。",
+    "outer_scene_summary": "一张展示热电偶连接和测量原理的示意图。",
+    "inner_content_summary": "图中包含热电偶连接示意图，标明了铜、康铜、测量温度差和测量中心面温度。",
+    "media_types": [
+      "示意图",
+      "科学教育材料"
+    ],
+    "top_tags": [
+      "热电偶",
+      "物理实验",
+      "温度测量",
+      "教育材料",
+      "科学图示"
+    ],
+    "ocr_text": "中心面热电偶接口 绝热材料 可移动组件 薄膜加热器 热电偶连接 置中心面 置加热面 数字电压表 测量温度差Δt 测量中心面温度",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "示意图 科学教育材料 热电偶 物理实验 温度测量 教育材料 科学图示 一张展示热电偶连接和测量原理的示意图。 图中包含热电偶连接示意图，标明了铜、康铜、测量温度差和测量中心面温度。",
+    "retrieval_text": "示意图 科学教育材料 热电偶 物理实验 温度测量 教育材料 科学图示 一张展示热电偶连接和测量原理的示意图。 图中包含热电偶连接示意图，标明了铜、康铜、测量温度差和测量中心面温度。 中心面热电偶接口 绝热材料 可移动组件 薄膜加热器 热电偶连接 置中心面 置加热面 数字电压表 测量温度差Δt 测量中心面温度",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-09-09T14:11:14",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-09-09T14:11:18",
+    "time_info": {
+      "year": 2024,
+      "month": 9,
+      "day": 9,
+      "hour": 14,
+      "season": "秋天",
+      "time_period": "下午",
+      "weekday": "星期一",
+      "datetime_str": "2024-09-09T14:11:14"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20240918_000925.jpg",
+    "description": "书架上摆放着多本计算机科学相关书籍。",
+    "outer_scene_summary": "书架上整齐排列着多本书籍。",
+    "inner_content_summary": "书籍主要涉及计算机科学领域，包括操作系统、编译原理、算法导论等。",
+    "media_types": [
+      "纸质书籍"
+    ],
+    "top_tags": [
+      "计算机科学",
+      "操作系统",
+      "编译原理",
+      "算法导论",
+      "书架",
+      "教材",
+      "编程",
+      "学术"
+    ],
+    "ocr_text": "大学生数学竞赛教程 深入理解计算机系统 操作系统导论 计算机网络 自顶向下方法 编译原理 算法导论 并行程序设计导论 算法与应用 算法引论 凸优化 离散数学引论",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "纸质书籍 计算机科学 操作系统 编译原理 算法导论 书架 教材 编程 学术 书架上整齐排列着多本书籍。 书籍主要涉及计算机科学领域，包括操作系统、编译原理、算法导论等。",
+    "retrieval_text": "纸质书籍 计算机科学 操作系统 编译原理 算法导论 书架 教材 编程 学术 书架上整齐排列着多本书籍。 书籍主要涉及计算机科学领域，包括操作系统、编译原理、算法导论等。 大学生数学竞赛教程 深入理解计算机系统 操作系统导论 计算机网络 自顶向下方法 编译原理 算法导论 并行程序设计导论 算法与应用 算法引论 凸优化 离散数学引论",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-09-18T00:09:25",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-09-18T00:09:28",
+    "time_info": {
+      "year": 2024,
+      "month": 9,
+      "day": 18,
+      "hour": 0,
+      "season": "秋天",
+      "time_period": "凌晨",
+      "weekday": "星期三",
+      "datetime_str": "2024-09-18T00:09:25"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\Camera_XHS_17268853109241040g008312t3l648js605p38kk8kmvkgiurhe5o.jpg",
+    "description": "一幅动漫风格的插画，描绘了一位金发女孩被抚摸头发的场景。",
+    "outer_scene_summary": "插画中展示了一位金发女孩，她闭着眼睛，似乎在享受被抚摸头发的感觉。",
+    "inner_content_summary": "插画中的女孩有着金色的长发，穿着带有蕾丝边的服装，表情温柔。",
+    "media_types": [
+      "数字插画",
+      "动漫风格"
+    ],
+    "top_tags": [
+      "动漫",
+      "插画",
+      "金发",
+      "女孩",
+      "抚摸",
+      "温柔",
+      "蕾丝边",
+      "闭眼"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "数字插画 动漫风格 动漫 插画 金发 女孩 抚摸 温柔 蕾丝边 闭眼 插画中展示了一位金发女孩，她闭着眼睛，似乎在享受被抚摸头发的感觉。 插画中的女孩有着金色的长发，穿着带有蕾丝边的服装，表情温柔。",
+    "retrieval_text": "数字插画 动漫风格 动漫 插画 金发 女孩 抚摸 温柔 蕾丝边 闭眼 插画中展示了一位金发女孩，她闭着眼睛，似乎在享受被抚摸头发的感觉。 插画中的女孩有着金色的长发，穿着带有蕾丝边的服装，表情温柔。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2024-09-21T10:21:50",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\Camera_XHS_17270153283671040g008312ujs99kli605p38kk8kmvkgqi1offg.jpg",
+    "description": "一幅动漫风格的插画，描绘了一位戴黑帽的白发女孩。",
+    "outer_scene_summary": "夜晚背景下的动漫风格插画。",
+    "inner_content_summary": "插画中的女孩有白色短发，绿色眼睛，戴着黑色贝雷帽，穿着绿色背心和白色衬衫。",
+    "media_types": [
+      "数字插画",
+      "动漫风格"
+    ],
+    "top_tags": [
+      "动漫",
+      "插画",
+      "女孩",
+      "短发",
+      "贝雷帽",
+      "绿色眼睛",
+      "夜晚",
+      "月亮"
+    ],
+    "ocr_text": "Deocin",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "数字插画 动漫风格 动漫 插画 女孩 短发 贝雷帽 绿色眼睛 夜晚 月亮 夜晚背景下的动漫风格插画。 插画中的女孩有白色短发，绿色眼睛，戴着黑色贝雷帽，穿着绿色背心和白色衬衫。",
+    "retrieval_text": "数字插画 动漫风格 动漫 插画 女孩 短发 贝雷帽 绿色眼睛 夜晚 月亮 夜晚背景下的动漫风格插画。 插画中的女孩有白色短发，绿色眼睛，戴着黑色贝雷帽，穿着绿色背心和白色衬衫。 Deocin",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2024-09-22T22:28:48",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\Camera_XHS_17270153314151040g008312ujs99kli5g5p38kk8kmvkge3ijma8.jpg",
+    "description": "一幅动漫风格的插画，描绘了一位戴黑色蝴蝶结的银发女孩。",
+    "outer_scene_summary": "动漫风格的插画，背景为白色。",
+    "inner_content_summary": "插画中的女孩有银白色的短发，绿色的眼睛，头上戴着黑色的蝴蝶结，穿着带有黑色领结的绿色衣服。",
+    "media_types": [
+      "数字插画",
+      "动漫风格"
+    ],
+    "top_tags": [
+      "动漫",
+      "插画",
+      "女孩",
+      "银发",
+      "蝴蝶结",
+      "绿色眼睛",
+      "可爱"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": false,
+      "has_stage": false,
+      "has_screen": false,
+      "has_packaging": false,
+      "has_public_figure_likelihood": false,
+      "classification_uncertain": false
+    },
+    "embedding_text": "数字插画 动漫风格 动漫 插画 女孩 银发 蝴蝶结 绿色眼睛 可爱 动漫风格的插画，背景为白色。 插画中的女孩有银白色的短发，绿色的眼睛，头上戴着黑色的蝴蝶结，穿着带有黑色领结的绿色衣服。",
+    "retrieval_text": "数字插画 动漫风格 动漫 插画 女孩 银发 蝴蝶结 绿色眼睛 可爱 动漫风格的插画，背景为白色。 插画中的女孩有银白色的短发，绿色的眼睛，头上戴着黑色的蝴蝶结，穿着带有黑色领结的绿色衣服。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2024-09-22T22:28:51",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20241130_204033.jpg",
+    "description": "一只手拿着一张印有眼睛和彩虹图案的卡片。",
+    "outer_scene_summary": "一只手拿着卡片，背景是电脑键盘。",
+    "inner_content_summary": "卡片上印有一只眼睛，眼睛中有一道彩虹，下方是绿色草地和蓝色天空。",
+    "media_types": [
+      "卡片",
+      "插画"
+    ],
+    "top_tags": [
+      "眼睛",
+      "彩虹",
+      "草地",
+      "天空",
+      "插画",
+      "卡片",
+      "艺术",
+      "创意"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "卡片 插画 眼睛 彩虹 草地 天空 插画 卡片 艺术 创意 一只手拿着卡片，背景是电脑键盘。 卡片上印有一只眼睛，眼睛中有一道彩虹，下方是绿色草地和蓝色天空。",
+    "retrieval_text": "卡片 插画 眼睛 彩虹 草地 天空 插画 卡片 艺术 创意 一只手拿着卡片，背景是电脑键盘。 卡片上印有一只眼睛，眼睛中有一道彩虹，下方是绿色草地和蓝色天空。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-11-30T20:40:33",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-11-30T20:40:38",
+    "time_info": {
+      "year": 2024,
+      "month": 11,
+      "day": 30,
+      "hour": 20,
+      "season": "秋天",
+      "time_period": "夜晚",
+      "weekday": "星期六",
+      "datetime_str": "2024-11-30T20:40:33"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20241201_192617.jpg",
+    "description": "这是一张展示动漫风格插画的海报。",
+    "outer_scene_summary": "海报展示在一个室内环境中，背景有模糊的灯光和展台。",
+    "inner_content_summary": "插画中有一位站在乡间小路上的女孩，背景是稻田和电线塔。",
+    "media_types": [
+      "动漫海报",
+      "插画"
+    ],
+    "top_tags": [
+      "动漫",
+      "女孩",
+      "乡村",
+      "稻田",
+      "电线塔",
+      "夏日",
+      "海报"
+    ],
+    "ocr_text": "アイデンティティ 泉まくら",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "动漫海报 插画 动漫 女孩 乡村 稻田 电线塔 夏日 海报 海报展示在一个室内环境中，背景有模糊的灯光和展台。 插画中有一位站在乡间小路上的女孩，背景是稻田和电线塔。",
+    "retrieval_text": "动漫海报 插画 动漫 女孩 乡村 稻田 电线塔 夏日 海报 海报展示在一个室内环境中，背景有模糊的灯光和展台。 插画中有一位站在乡间小路上的女孩，背景是稻田和电线塔。 アイデンティティ 泉まくら",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2024-12-01T19:26:17",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2024-12-01T19:26:20",
+    "time_info": {
+      "year": 2024,
+      "month": 12,
+      "day": 1,
+      "hour": 19,
+      "season": "冬天",
+      "time_period": "夜晚",
+      "weekday": "星期日",
+      "datetime_str": "2024-12-01T19:26:17"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250107_203029.jpg",
+    "description": "一幅描绘自然景观和人物的画作。",
+    "outer_scene_summary": "画作展示在一本打开的画册上。",
+    "inner_content_summary": "画中有一个人物站在床边，背景是山丘、湖泊和彩虹。",
+    "media_types": [
+      "绘画",
+      "画册"
+    ],
+    "top_tags": [
+      "自然景观",
+      "人物",
+      "彩虹",
+      "山丘",
+      "湖泊",
+      "床",
+      "画册",
+      "艺术"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "绘画 画册 自然景观 人物 彩虹 山丘 湖泊 床 画册 艺术 画作展示在一本打开的画册上。 画中有一个人物站在床边，背景是山丘、湖泊和彩虹。",
+    "retrieval_text": "绘画 画册 自然景观 人物 彩虹 山丘 湖泊 床 画册 艺术 画作展示在一本打开的画册上。 画中有一个人物站在床边，背景是山丘、湖泊和彩虹。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-01-07T20:30:29",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-01-07T20:30:31",
+    "time_info": {
+      "year": 2025,
+      "month": 1,
+      "day": 7,
+      "hour": 20,
+      "season": "冬天",
+      "time_period": "夜晚",
+      "weekday": "星期二",
+      "datetime_str": "2025-01-07T20:30:29"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250131_110901.jpg",
+    "description": "一只橘色小猫在室内桌子上被抚摸。",
+    "outer_scene_summary": "室内环境，桌子上有笔和纸张。",
+    "inner_content_summary": "小猫在桌子上被抚摸，桌上有笔和纸张，旁边有一张名片。",
+    "media_types": [
+      "照片",
+      "室内场景"
+    ],
+    "top_tags": [
+      "小猫",
+      "抚摸",
+      "室内",
+      "桌子",
+      "笔",
+      "纸张",
+      "名片",
+      "宠物",
+      "可爱"
+    ],
+    "ocr_text": "名片上可能有文字信息",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "retrieval_signal_sparse": true
+    },
+    "embedding_text": "照片 室内场景 小猫 抚摸 室内 桌子 笔 纸张 名片 宠物 可爱 室内环境，桌子上有笔和纸张。 小猫在桌子上被抚摸，桌上有笔和纸张，旁边有一张名片。",
+    "retrieval_text": "照片 室内场景 小猫 抚摸 室内 桌子 笔 纸张 名片 宠物 可爱 室内环境，桌子上有笔和纸张。 小猫在桌子上被抚摸，桌上有笔和纸张，旁边有一张名片。 名片上可能有文字信息",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-01-31T11:09:01",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-01-31T11:09:03",
+    "time_info": {
+      "year": 2025,
+      "month": 1,
+      "day": 31,
+      "hour": 11,
+      "season": "冬天",
+      "time_period": "上午",
+      "weekday": "星期五",
+      "datetime_str": "2025-01-31T11:09:01"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250313_172100.jpg",
+    "description": "一只手拿着一个形状不规则的白色物体。",
+    "outer_scene_summary": "一只手拿着一个白色不规则物体，背景模糊。",
+    "inner_content_summary": "白色物体表面有纹理和裂痕，形状类似叶子。",
+    "media_types": [
+      "实物照片"
+    ],
+    "top_tags": [
+      "叶子形状"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "retrieval_signal_sparse": true
+    },
+    "embedding_text": "实物照片 叶子形状 一只手拿着一个白色不规则物体，背景模糊。 白色物体表面有纹理和裂痕，形状类似叶子。",
+    "retrieval_text": "实物照片 叶子形状 一只手拿着一个白色不规则物体，背景模糊。 白色物体表面有纹理和裂痕，形状类似叶子。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-03-13T17:21:00",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-03-13T17:21:04",
+    "time_info": {
+      "year": 2025,
+      "month": 3,
+      "day": 13,
+      "hour": 17,
+      "season": "春天",
+      "time_period": "傍晚",
+      "weekday": "星期四",
+      "datetime_str": "2025-03-13T17:21:00"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250425_193805.jpg",
+    "description": "示波器显示的波形图和测量数据",
+    "outer_scene_summary": "实验室环境中的示波器设备",
+    "inner_content_summary": "示波器屏幕上显示的波形图和测量数据",
+    "media_types": [
+      "电子测量",
+      "波形图"
+    ],
+    "top_tags": [
+      "示波器",
+      "波形图",
+      "测量",
+      "电子",
+      "实验室",
+      "频率",
+      "电压",
+      "时间"
+    ],
+    "ocr_text": "Tektronix DPO 3052 Digital Phosphor Oscilloscope 500MHz 2.5GS/s 1.256次/秒 376mV 80.0μs 16.0000μs 688mV 9.921M 100.8n",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": false,
+      "has_stage": false,
+      "has_screen": true,
+      "has_packaging": false,
+      "has_public_figure_likelihood": false,
+      "classification_uncertain": false
+    },
+    "embedding_text": "电子测量 波形图 示波器 波形图 测量 电子 实验室 频率 电压 时间 实验室环境中的示波器设备 示波器屏幕上显示的波形图和测量数据",
+    "retrieval_text": "电子测量 波形图 示波器 波形图 测量 电子 实验室 频率 电压 时间 实验室环境中的示波器设备 示波器屏幕上显示的波形图和测量数据 Tektronix DPO 3052 Digital Phosphor Oscilloscope 500MHz 2.5GS/s 1.256次/秒 376mV 80.0μs 16.0000μs 688mV 9.921M 100.8n",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-04-25T19:38:05",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-04-25T19:38:08",
+    "time_info": {
+      "year": 2025,
+      "month": 4,
+      "day": 25,
+      "hour": 19,
+      "season": "春天",
+      "time_period": "夜晚",
+      "weekday": "星期五",
+      "datetime_str": "2025-04-25T19:38:05"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250425_194720.jpg",
+    "description": "频谱分析仪显示特定频率下的信号强度。",
+    "outer_scene_summary": "一台频谱分析仪的屏幕显示。",
+    "inner_content_summary": "频谱图显示9.995000MHz频率处的信号强度为59.45mV。",
+    "media_types": [
+      "电子测量设备",
+      "频谱分析"
+    ],
+    "top_tags": [
+      "频谱分析仪",
+      "信号强度",
+      "频率测量",
+      "电子设备",
+      "技术图表"
+    ],
+    "ocr_text": "KEYSIGHT N9320B Spectrum Analyzer 9kHz-3GHz Ref 350.0nV Atten 22dB 标记 9.995000MHz 59.45mV Center 10.00MHz RBW 300.0Hz VBW 300.0Hz Span 20.00kHz Sweep T6.20ms",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "电子测量设备 频谱分析 频谱分析仪 信号强度 频率测量 电子设备 技术图表 一台频谱分析仪的屏幕显示。 频谱图显示9.995000MHz频率处的信号强度为59.45mV。",
+    "retrieval_text": "电子测量设备 频谱分析 频谱分析仪 信号强度 频率测量 电子设备 技术图表 一台频谱分析仪的屏幕显示。 频谱图显示9.995000MHz频率处的信号强度为59.45mV。 KEYSIGHT N9320B Spectrum Analyzer 9kHz-3GHz Ref 350.0nV Atten 22dB 标记 9.995000MHz 59.45mV Center 10.00MHz RBW 300.0Hz VBW 300.0Hz Span 20.00kHz Sweep T6.20ms",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-04-25T19:47:21",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-04-25T19:47:24",
+    "time_info": {
+      "year": 2025,
+      "month": 4,
+      "day": 25,
+      "hour": 19,
+      "season": "春天",
+      "time_period": "夜晚",
+      "weekday": "星期五",
+      "datetime_str": "2025-04-25T19:47:21"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250425_204121.jpg",
+    "description": "频谱分析仪显示特定频率的信号强度。",
+    "outer_scene_summary": "一台频谱分析仪的屏幕显示。",
+    "inner_content_summary": "频谱分析仪显示10.01304MHz频率处的信号强度为1.581mV。",
+    "media_types": [
+      "电子测量设备",
+      "数字显示"
+    ],
+    "top_tags": [
+      "频谱分析仪",
+      "信号强度",
+      "频率测量",
+      "电子设备",
+      "技术仪器",
+      "信号分析",
+      "数字界面",
+      "科学测量"
+    ],
+    "ocr_text": "KEYSIGHT N9320B Spectrum Analyzer 9kHz-3GHz 20:53:15 04-25-2025 Ref 7.500mV #Atten 0dB Lin 标记 10.01304MHz 1581mV Start 9.600MHz Stop 10.50MHz RBW 30.00Hz VBW 30.00Hz Sweep 27.76s",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "电子测量设备 数字显示 频谱分析仪 信号强度 频率测量 电子设备 技术仪器 信号分析 数字界面 科学测量 一台频谱分析仪的屏幕显示。 频谱分析仪显示10.01304MHz频率处的信号强度为1.581mV。",
+    "retrieval_text": "电子测量设备 数字显示 频谱分析仪 信号强度 频率测量 电子设备 技术仪器 信号分析 数字界面 科学测量 一台频谱分析仪的屏幕显示。 频谱分析仪显示10.01304MHz频率处的信号强度为1.581mV。 KEYSIGHT N9320B Spectrum Analyzer 9kHz-3GHz 20:53:15 04-25-2025 Ref 7.500mV #Atten 0dB Lin 标记 10.01304MHz 1581mV Start 9.600MHz Stop 10.50MHz RBW 30.00Hz VBW 30.00Hz Sweep 27.76s",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-04-25T20:41:22",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-04-25T20:41:25",
+    "time_info": {
+      "year": 2025,
+      "month": 4,
+      "day": 25,
+      "hour": 20,
+      "season": "春天",
+      "time_period": "夜晚",
+      "weekday": "星期五",
+      "datetime_str": "2025-04-25T20:41:22"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250515_172202.jpg",
+    "description": "一只手拿着紫色背景的动漫风格卡片。",
+    "outer_scene_summary": "一只手拿着卡片，背景有纸张和桌面。",
+    "inner_content_summary": "卡片上是动漫风格人物的白色线条画，人物有长发，穿着带袖口的衣服。",
+    "media_types": [
+      "卡片",
+      "动漫风格"
+    ],
+    "top_tags": [
+      "动漫",
+      "卡片",
+      "手绘",
+      "紫色背景",
+      "线条画"
+    ],
+    "ocr_text": "无明显文字信息",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "retrieval_signal_sparse": true
+    },
+    "embedding_text": "卡片 动漫风格 动漫 卡片 手绘 紫色背景 线条画 一只手拿着卡片，背景有纸张和桌面。 卡片上是动漫风格人物的白色线条画，人物有长发，穿着带袖口的衣服。",
+    "retrieval_text": "卡片 动漫风格 动漫 卡片 手绘 紫色背景 线条画 一只手拿着卡片，背景有纸张和桌面。 卡片上是动漫风格人物的白色线条画，人物有长发，穿着带袖口的衣服。 无明显文字信息",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-05-15T17:22:03",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-05-15T17:22:07",
+    "time_info": {
+      "year": 2025,
+      "month": 5,
+      "day": 15,
+      "hour": 17,
+      "season": "春天",
+      "time_period": "傍晚",
+      "weekday": "星期四",
+      "datetime_str": "2025-05-15T17:22:03"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250609_195932.jpg",
+    "description": "一碗牛肉面，配有香菜和萝卜。",
+    "outer_scene_summary": "桌上的一碗牛肉面。",
+    "inner_content_summary": "牛肉面中有牛肉片、香菜、萝卜和面条。",
+    "media_types": [
+      "食物摄影"
+    ],
+    "top_tags": [
+      "牛肉面",
+      "香菜",
+      "萝卜",
+      "面条",
+      "汤面",
+      "中式美食",
+      "餐具",
+      "餐桌"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "食物摄影 牛肉面 香菜 萝卜 面条 汤面 中式美食 餐具 餐桌 桌上的一碗牛肉面。 牛肉面中有牛肉片、香菜、萝卜和面条。",
+    "retrieval_text": "食物摄影 牛肉面 香菜 萝卜 面条 汤面 中式美食 餐具 餐桌 桌上的一碗牛肉面。 牛肉面中有牛肉片、香菜、萝卜和面条。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-06-09T19:59:33",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-06-09T19:59:35",
+    "time_info": {
+      "year": 2025,
+      "month": 6,
+      "day": 9,
+      "hour": 19,
+      "season": "夏天",
+      "time_period": "夜晚",
+      "weekday": "星期一",
+      "datetime_str": "2025-06-09T19:59:33"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250806_152016.jpg",
+    "description": "一个被彩色灯光照亮的洞穴内部景观。",
+    "outer_scene_summary": "洞穴内部，顶部和墙壁由岩石构成。",
+    "inner_content_summary": "洞穴内有彩色灯光投射在岩石上，水面反射出灯光。",
+    "media_types": [
+      "自然景观",
+      "洞穴摄影"
+    ],
+    "top_tags": [
+      "洞穴",
+      "彩色灯光",
+      "自然景观",
+      "岩石",
+      "水面反射",
+      "旅游"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": false,
+      "has_stage": false,
+      "has_screen": false,
+      "has_packaging": false,
+      "has_public_figure_likelihood": false,
+      "classification_uncertain": false
+    },
+    "embedding_text": "自然景观 洞穴摄影 洞穴 彩色灯光 自然景观 岩石 水面反射 旅游 洞穴内部，顶部和墙壁由岩石构成。 洞穴内有彩色灯光投射在岩石上，水面反射出灯光。",
+    "retrieval_text": "自然景观 洞穴摄影 洞穴 彩色灯光 自然景观 岩石 水面反射 旅游 洞穴内部，顶部和墙壁由岩石构成。 洞穴内有彩色灯光投射在岩石上，水面反射出灯光。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-08-06T15:20:16",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-08-06T15:20:19",
+    "time_info": {
+      "year": 2025,
+      "month": 8,
+      "day": 6,
+      "hour": 15,
+      "season": "夏天",
+      "time_period": "下午",
+      "weekday": "星期三",
+      "datetime_str": "2025-08-06T15:20:16"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\Camera_XHS_17550590720021040g2sg31l2to9dgj4l043v1jvmnfssntc3nli8.jpg",
+    "description": "一幅卡通企鹅形象的幽默图片，涉及Linux和Q币的对话。",
+    "outer_scene_summary": "两只卡通企鹅形象，背景为浅色。",
+    "inner_content_summary": "企鹅形象与Linux和Q币相关的文字对话。",
+    "media_types": [
+      "卡通插图",
+      "幽默漫画"
+    ],
+    "top_tags": [
+      "企鹅",
+      "Linux",
+      "Q币",
+      "幽默",
+      "对话",
+      "卡通"
+    ],
+    "ocr_text": "如果腾讯接管了Linux 充Q币吗？",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "卡通插图 幽默漫画 企鹅 Linux Q币 幽默 对话 卡通 两只卡通企鹅形象，背景为浅色。 企鹅形象与Linux和Q币相关的文字对话。",
+    "retrieval_text": "卡通插图 幽默漫画 企鹅 Linux Q币 幽默 对话 卡通 两只卡通企鹅形象，背景为浅色。 企鹅形象与Linux和Q币相关的文字对话。 如果腾讯接管了Linux 充Q币吗？",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2025-08-13T12:24:32",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250817_113449.jpg",
+    "description": "展示在博物馆中的古代陶器。",
+    "outer_scene_summary": "博物馆内展示的陶器，背景有其他文物。",
+    "inner_content_summary": "陶器表面有裂纹，内部有红色和白色图案。",
+    "media_types": [
+      "陶器",
+      "文物"
+    ],
+    "top_tags": [
+      "陶器",
+      "博物馆",
+      "文物",
+      "古代",
+      "裂纹",
+      "红色",
+      "白色",
+      "图案"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "陶器 文物 陶器 博物馆 文物 古代 裂纹 红色 白色 图案 博物馆内展示的陶器，背景有其他文物。 陶器表面有裂纹，内部有红色和白色图案。",
+    "retrieval_text": "陶器 文物 陶器 博物馆 文物 古代 裂纹 红色 白色 图案 博物馆内展示的陶器，背景有其他文物。 陶器表面有裂纹，内部有红色和白色图案。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-08-17T11:34:50",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-08-17T11:34:54",
+    "time_info": {
+      "year": 2025,
+      "month": 8,
+      "day": 17,
+      "hour": 11,
+      "season": "夏天",
+      "time_period": "上午",
+      "weekday": "星期日",
+      "datetime_str": "2025-08-17T11:34:50"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250817_121328.jpg",
+    "description": "博物馆内展示的透明立方体中装有文物，旁边有人用手机拍摄。",
+    "outer_scene_summary": "博物馆内展示的透明立方体，内部有文物。",
+    "inner_content_summary": "透明立方体中装有一块方形文物。",
+    "media_types": [
+      "博物馆展示",
+      "文物",
+      "透明立方体"
+    ],
+    "top_tags": [
+      "博物馆",
+      "文物",
+      "透明立方体",
+      "手机拍摄",
+      "展览"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_stage": true
+    },
+    "embedding_text": "博物馆展示 文物 透明立方体 博物馆 文物 透明立方体 手机拍摄 展览 博物馆内展示的透明立方体，内部有文物。 透明立方体中装有一块方形文物。",
+    "retrieval_text": "博物馆展示 文物 透明立方体 博物馆 文物 透明立方体 手机拍摄 展览 博物馆内展示的透明立方体，内部有文物。 透明立方体中装有一块方形文物。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-08-17T12:13:28",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-08-17T12:13:34",
+    "time_info": {
+      "year": 2025,
+      "month": 8,
+      "day": 17,
+      "hour": 12,
+      "season": "夏天",
+      "time_period": "中午",
+      "weekday": "星期日",
+      "datetime_str": "2025-08-17T12:13:28"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250817_121333.jpg",
+    "description": "博物馆内展示的透明玻璃盒中的文物。",
+    "outer_scene_summary": "博物馆内展示柜，灯光照明。",
+    "inner_content_summary": "展示柜中透明玻璃盒内的小型文物。",
+    "media_types": [
+      "实物展示",
+      "博物馆"
+    ],
+    "top_tags": [
+      "小型文物"
+    ],
+    "ocr_text": "无明显文字信息",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "retrieval_signal_sparse": true
+    },
+    "embedding_text": "实物展示 博物馆 小型文物 博物馆内展示柜，灯光照明。 展示柜中透明玻璃盒内的小型文物。",
+    "retrieval_text": "实物展示 博物馆 小型文物 博物馆内展示柜，灯光照明。 展示柜中透明玻璃盒内的小型文物。 无明显文字信息",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-08-17T12:13:33",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-08-17T12:13:38",
+    "time_info": {
+      "year": 2025,
+      "month": 8,
+      "day": 17,
+      "hour": 12,
+      "season": "夏天",
+      "time_period": "中午",
+      "weekday": "星期日",
+      "datetime_str": "2025-08-17T12:13:33"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250817_124444.jpg",
+    "description": "博物馆内展示的一件古代金属工艺品。",
+    "outer_scene_summary": "博物馆内，观众在昏暗的灯光下观看展品。",
+    "inner_content_summary": "金属工艺品上刻有精美的图案，放置在透明的展示台上。",
+    "media_types": [
+      "摄影",
+      "博物馆展品"
+    ],
+    "top_tags": [
+      "博物馆",
+      "金属工艺品",
+      "古代文物",
+      "展示台",
+      "观众",
+      "灯光"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_stage": true
+    },
+    "embedding_text": "摄影 博物馆展品 博物馆 金属工艺品 古代文物 展示台 观众 灯光 博物馆内，观众在昏暗的灯光下观看展品。 金属工艺品上刻有精美的图案，放置在透明的展示台上。",
+    "retrieval_text": "摄影 博物馆展品 博物馆 金属工艺品 古代文物 展示台 观众 灯光 博物馆内，观众在昏暗的灯光下观看展品。 金属工艺品上刻有精美的图案，放置在透明的展示台上。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-08-17T12:44:44",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-08-17T12:44:48",
+    "time_info": {
+      "year": 2025,
+      "month": 8,
+      "day": 17,
+      "hour": 12,
+      "season": "夏天",
+      "time_period": "中午",
+      "weekday": "星期日",
+      "datetime_str": "2025-08-17T12:44:44"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250817_125537.jpg",
+    "description": "博物馆展示的古代酒器。",
+    "outer_scene_summary": "博物馆内展示的文物。",
+    "inner_content_summary": "古代酒器，具有装饰性把手和流线型设计。",
+    "media_types": [
+      "实物展示"
+    ],
+    "top_tags": [
+      "青铜器",
+      "古代工艺"
+    ],
+    "ocr_text": "无可见文字",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "实物展示 青铜器 古代工艺 博物馆内展示的文物。 古代酒器，具有装饰性把手和流线型设计。",
+    "retrieval_text": "实物展示 青铜器 古代工艺 博物馆内展示的文物。 古代酒器，具有装饰性把手和流线型设计。 无可见文字",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-08-17T12:55:38",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-08-17T12:55:42",
+    "time_info": {
+      "year": 2025,
+      "month": 8,
+      "day": 17,
+      "hour": 12,
+      "season": "夏天",
+      "time_period": "中午",
+      "weekday": "星期日",
+      "datetime_str": "2025-08-17T12:55:38"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250824_214543.jpg",
+    "description": "一场大型演唱会上，歌手正在表演。",
+    "outer_scene_summary": "演唱会现场，观众众多，舞台灯光明亮。",
+    "inner_content_summary": "舞台上的歌手正在弹吉他并演唱，背景屏幕上显示歌词。",
+    "media_types": [
+      "现场表演",
+      "音乐演唱会"
+    ],
+    "top_tags": [
+      "演唱会",
+      "歌手",
+      "吉他",
+      "舞台",
+      "观众",
+      "歌词",
+      "现场"
+    ],
+    "ocr_text": "忽然一场大雨降下来",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_stage": true,
+      "has_public_figure_likelihood": true
+    },
+    "embedding_text": "现场表演 音乐演唱会 演唱会 歌手 吉他 舞台 观众 歌词 现场 演唱会现场，观众众多，舞台灯光明亮。 舞台上的歌手正在弹吉他并演唱，背景屏幕上显示歌词。",
+    "retrieval_text": "现场表演 音乐演唱会 演唱会 歌手 吉他 舞台 观众 歌词 现场 演唱会现场，观众众多，舞台灯光明亮。 舞台上的歌手正在弹吉他并演唱，背景屏幕上显示歌词。 忽然一场大雨降下来",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-08-24T21:45:43",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-08-24T21:45:49",
+    "time_info": {
+      "year": 2025,
+      "month": 8,
+      "day": 24,
+      "hour": 21,
+      "season": "夏天",
+      "time_period": "夜晚",
+      "weekday": "星期日",
+      "datetime_str": "2025-08-24T21:45:43"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250910_210218.jpg",
+    "description": "一幅手绘风格的街头艺术作品，描绘了一位街头歌手。",
+    "outer_scene_summary": "墙面上的手绘涂鸦，包含人物和文字。",
+    "inner_content_summary": "画中人物手持吉他，旁边有麦克风，穿着印有图案的T恤。",
+    "media_types": [
+      "街头艺术",
+      "手绘涂鸦"
+    ],
+    "top_tags": [
+      "街头歌手",
+      "吉他",
+      "麦克风",
+      "手绘",
+      "涂鸦",
+      "艺术",
+      "音乐",
+      "街头"
+    ],
+    "ocr_text": "永远都像初次见你 那样使我心荡漾 赵小雷 ZHAOXIAOLEI 风声",
+    "person_roles": [],
+    "identity_candidates": [
+      {
+        "name": "赵小雷",
+        "aliases": [
+          "ZHAOXIAOLEI"
+        ],
+        "confidence": 0.8,
+        "evidence_sources": [
+          "text"
+        ],
+        "evidence_types": [
+          "text"
+        ],
+        "scope": "mentioned"
+      }
+    ],
+    "identity_names": [
+      "赵小雷",
+      "ZHAOXIAOLEI"
+    ],
+    "identity_evidence": [
+      "text"
+    ],
+    "analysis_flags": {},
+    "embedding_text": "街头艺术 手绘涂鸦 街头歌手 吉他 麦克风 手绘 涂鸦 艺术 音乐 街头 墙面上的手绘涂鸦，包含人物和文字。 画中人物手持吉他，旁边有麦克风，穿着印有图案的T恤。",
+    "retrieval_text": "街头艺术 手绘涂鸦 街头歌手 吉他 麦克风 手绘 涂鸦 艺术 音乐 街头 墙面上的手绘涂鸦，包含人物和文字。 画中人物手持吉他，旁边有麦克风，穿着印有图案的T恤。 永远都像初次见你 那样使我心荡漾 赵小雷 ZHAOXIAOLEI 风声 赵小雷 ZHAOXIAOLEI",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-09-10T21:02:18",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-09-10T21:02:22",
+    "time_info": {
+      "year": 2025,
+      "month": 9,
+      "day": 10,
+      "hour": 21,
+      "season": "秋天",
+      "time_period": "夜晚",
+      "weekday": "星期三",
+      "datetime_str": "2025-09-10T21:02:18"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250910_210947.jpg",
+    "description": "一张手写中文文字的图片，内容为“现在你才不幸福”。",
+    "outer_scene_summary": "一张白纸，上面有手写中文。",
+    "inner_content_summary": "手写中文“现在你才不幸福”。",
+    "media_types": [
+      "手写文字"
+    ],
+    "top_tags": [
+      "中文手写",
+      "情感表达",
+      "书法",
+      "纸张"
+    ],
+    "ocr_text": "现在你才不幸福",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "手写文字 中文手写 情感表达 书法 纸张 一张白纸，上面有手写中文。 手写中文“现在你才不幸福”。",
+    "retrieval_text": "手写文字 中文手写 情感表达 书法 纸张 一张白纸，上面有手写中文。 手写中文“现在你才不幸福”。 现在你才不幸福",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-09-10T21:09:47",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-09-10T21:09:48",
+    "time_info": {
+      "year": 2025,
+      "month": 9,
+      "day": 10,
+      "hour": 21,
+      "season": "秋天",
+      "time_period": "夜晚",
+      "weekday": "星期三",
+      "datetime_str": "2025-09-10T21:09:47"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250910_211202.jpg",
+    "description": "墙上的涂鸦表达了对艺术的思考。",
+    "outer_scene_summary": "墙上有彩色涂鸦。",
+    "inner_content_summary": "涂鸦内容涉及对艺术和时间的思考。",
+    "media_types": [
+      "涂鸦"
+    ],
+    "top_tags": [
+      "涂鸦",
+      "艺术",
+      "时间",
+      "思考"
+    ],
+    "ocr_text": "爱？唉！艺术 500年前，500年后，我都不存在",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "涂鸦 涂鸦 艺术 时间 思考 墙上有彩色涂鸦。 涂鸦内容涉及对艺术和时间的思考。",
+    "retrieval_text": "涂鸦 涂鸦 艺术 时间 思考 墙上有彩色涂鸦。 涂鸦内容涉及对艺术和时间的思考。 爱？唉！艺术 500年前，500年后，我都不存在",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-09-10T21:12:02",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-09-10T21:12:04",
+    "time_info": {
+      "year": 2025,
+      "month": 9,
+      "day": 10,
+      "hour": 21,
+      "season": "秋天",
+      "time_period": "夜晚",
+      "weekday": "星期三",
+      "datetime_str": "2025-09-10T21:12:02"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250918_181923.jpg",
+    "description": "米哈游2026年校园招聘宣讲会在哈尔滨工业大学举行。",
+    "outer_scene_summary": "室内会议厅，观众坐在椅子上观看前方大屏幕。",
+    "inner_content_summary": "大屏幕上显示米哈游2026校园招聘信息，背景为游戏画面。",
+    "media_types": [
+      "数字投影",
+      "游戏画面",
+      "招聘宣讲"
+    ],
+    "top_tags": [
+      "米哈游",
+      "校园招聘",
+      "哈尔滨工业大学",
+      "宣讲会",
+      "游戏公司",
+      "招聘",
+      "大学"
+    ],
+    "ocr_text": "米哈游2026校园招聘——哈尔滨工业大学站",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_screen": true
+    },
+    "embedding_text": "数字投影 游戏画面 招聘宣讲 米哈游 校园招聘 哈尔滨工业大学 宣讲会 游戏公司 招聘 大学 室内会议厅，观众坐在椅子上观看前方大屏幕。 大屏幕上显示米哈游2026校园招聘信息，背景为游戏画面。",
+    "retrieval_text": "数字投影 游戏画面 招聘宣讲 米哈游 校园招聘 哈尔滨工业大学 宣讲会 游戏公司 招聘 大学 室内会议厅，观众坐在椅子上观看前方大屏幕。 大屏幕上显示米哈游2026校园招聘信息，背景为游戏画面。 米哈游2026校园招聘——哈尔滨工业大学站",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-09-18T18:19:24",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-09-18T18:19:30",
+    "time_info": {
+      "year": 2025,
+      "month": 9,
+      "day": 18,
+      "hour": 18,
+      "season": "秋天",
+      "time_period": "傍晚",
+      "weekday": "星期四",
+      "datetime_str": "2025-09-18T18:19:24"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20250925_193308.jpg",
+    "description": "一场在哈尔滨举行的演唱会宣传见面会。",
+    "outer_scene_summary": "一位女性在舞台上演讲，背景是一块大屏幕。",
+    "inner_content_summary": "屏幕上显示演唱会信息，包括日期、地点和票价。",
+    "media_types": [
+      "现场活动",
+      "投影屏幕"
+    ],
+    "top_tags": [
+      "演唱会",
+      "见面会",
+      "哈尔滨",
+      "舞台演讲",
+      "大屏幕"
+    ],
+    "ocr_text": "谁能给我爱 9·25 哈尔滨 原料库VAST FACTORY(金属店) ¥99/¥129/¥229/¥666",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_stage": true,
+      "has_screen": true
+    },
+    "embedding_text": "现场活动 投影屏幕 演唱会 见面会 哈尔滨 舞台演讲 大屏幕 一位女性在舞台上演讲，背景是一块大屏幕。 屏幕上显示演唱会信息，包括日期、地点和票价。",
+    "retrieval_text": "现场活动 投影屏幕 演唱会 见面会 哈尔滨 舞台演讲 大屏幕 一位女性在舞台上演讲，背景是一块大屏幕。 屏幕上显示演唱会信息，包括日期、地点和票价。 谁能给我爱 9·25 哈尔滨 原料库VAST FACTORY(金属店) ¥99/¥129/¥229/¥666",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-09-25T19:33:08",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-09-25T19:33:14",
+    "time_info": {
+      "year": 2025,
+      "month": 9,
+      "day": 25,
+      "hour": 19,
+      "season": "秋天",
+      "time_period": "夜晚",
+      "weekday": "星期四",
+      "datetime_str": "2025-09-25T19:33:08"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20251013_121716.jpg",
+    "description": "一杯带有巧克力酱装饰的冰咖啡。",
+    "outer_scene_summary": "一杯冰咖啡放在木质桌面上。",
+    "inner_content_summary": "冰咖啡顶部有巧克力酱拉花。",
+    "media_types": [
+      "饮品摄影"
+    ],
+    "top_tags": [
+      "冷饮",
+      "奶泡",
+      "拉花"
+    ],
+    "ocr_text": "无明显文字信息",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "retrieval_signal_sparse": true
+    },
+    "embedding_text": "饮品摄影 冷饮 奶泡 拉花 一杯冰咖啡放在木质桌面上。 冰咖啡顶部有巧克力酱拉花。",
+    "retrieval_text": "饮品摄影 冷饮 奶泡 拉花 一杯冰咖啡放在木质桌面上。 冰咖啡顶部有巧克力酱拉花。 无明显文字信息",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-10-13T12:17:16",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-10-13T12:17:23",
+    "time_info": {
+      "year": 2025,
+      "month": 10,
+      "day": 13,
+      "hour": 12,
+      "season": "秋天",
+      "time_period": "中午",
+      "weekday": "星期一",
+      "datetime_str": "2025-10-13T12:17:16"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\1761561719805.png",
+    "description": "一幅动漫风格的孕妇与小男孩的插画。",
+    "outer_scene_summary": "动漫风格的孕妇和小男孩站在一起。",
+    "inner_content_summary": "小男孩对孕妇说‘上次是我赢了’，孕妇面带微笑。",
+    "media_types": [
+      "动漫插画"
+    ],
+    "top_tags": [
+      "孕妇",
+      "小男孩",
+      "动漫",
+      "对话",
+      "家庭",
+      "卡通",
+      "微笑"
+    ],
+    "ocr_text": "上次是我赢了",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "retrieval_signal_sparse": true
+    },
+    "embedding_text": "动漫插画 孕妇 小男孩 动漫 对话 家庭 卡通 微笑 动漫风格的孕妇和小男孩站在一起。 小男孩对孕妇说‘上次是我赢了’，孕妇面带微笑。",
+    "retrieval_text": "动漫插画 孕妇 小男孩 动漫 对话 家庭 卡通 微笑 动漫风格的孕妇和小男孩站在一起。 小男孩对孕妇说‘上次是我赢了’，孕妇面带微笑。 上次是我赢了",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2025-10-27T18:41:59",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\1762232397452.jpeg",
+    "description": "漫画中一个戴眼镜的男子与一位戴发饰的女性角色对话。",
+    "outer_scene_summary": "漫画风格的黑白插图。",
+    "inner_content_summary": "男子流泪，女性角色闭眼，两人进行对话。",
+    "media_types": [
+      "漫画"
+    ],
+    "top_tags": [
+      "眼镜",
+      "流泪",
+      "对话",
+      "黑白",
+      "动漫角色",
+      "情感",
+      "发饰",
+      "闭眼"
+    ],
+    "ocr_text": "你，你可有何话说？再无话说，请速动手！",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "漫画 眼镜 流泪 对话 黑白 动漫角色 情感 发饰 闭眼 漫画风格的黑白插图。 男子流泪，女性角色闭眼，两人进行对话。",
+    "retrieval_text": "漫画 眼镜 流泪 对话 黑白 动漫角色 情感 发饰 闭眼 漫画风格的黑白插图。 男子流泪，女性角色闭眼，两人进行对话。 你，你可有何话说？再无话说，请速动手！",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2025-11-04T12:59:57",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\Screenshot_20251109_203607.jpg",
+    "description": "本周音乐人排行榜展示三位艺术家及其收听次数。",
+    "outer_scene_summary": "一个展示本周音乐人排行榜的界面。",
+    "inner_content_summary": "排行榜显示三位艺术家：河南说唱之神、KenRobb、河北吴孟达，及其对应的收听次数。",
+    "media_types": [
+      "数字界面",
+      "排行榜"
+    ],
+    "top_tags": [
+      "音乐排行榜",
+      "艺术家",
+      "收听次数",
+      "数字界面"
+    ],
+    "ocr_text": "本周音乐人 260次 收听TOP1 140次 收听TOP2 49次 收听TOP3 河南说唱之神 KenRobb 河北吴孟达",
+    "person_roles": [],
+    "identity_candidates": [
+      {
+        "name": "河南说唱之神",
+        "aliases": [],
+        "confidence": 1.0,
+        "evidence_sources": [
+          "text"
+        ],
+        "evidence_types": [
+          "text"
+        ],
+        "scope": "mentioned"
+      },
+      {
+        "name": "KenRobb",
+        "aliases": [],
+        "confidence": 1.0,
+        "evidence_sources": [
+          "text"
+        ],
+        "evidence_types": [
+          "text"
+        ],
+        "scope": "mentioned"
+      },
+      {
+        "name": "河北吴孟达",
+        "aliases": [],
+        "confidence": 1.0,
+        "evidence_sources": [
+          "text"
+        ],
+        "evidence_types": [
+          "text"
+        ],
+        "scope": "mentioned"
+      }
+    ],
+    "identity_names": [
+      "河南说唱之神",
+      "KenRobb",
+      "河北吴孟达"
+    ],
+    "identity_evidence": [
+      "text"
+    ],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "数字界面 排行榜 音乐排行榜 艺术家 收听次数 数字界面 一个展示本周音乐人排行榜的界面。 排行榜显示三位艺术家：河南说唱之神、KenRobb、河北吴孟达，及其对应的收听次数。",
+    "retrieval_text": "数字界面 排行榜 音乐排行榜 艺术家 收听次数 数字界面 一个展示本周音乐人排行榜的界面。 排行榜显示三位艺术家：河南说唱之神、KenRobb、河北吴孟达，及其对应的收听次数。 本周音乐人 260次 收听TOP1 140次 收听TOP2 49次 收听TOP3 河南说唱之神 KenRobb 河北吴孟达 河南说唱之神 KenRobb 河北吴孟达",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2025-11-09T20:36:07",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\Screenshot_20251120_152759.jpg",
+    "description": "展示游戏《Kio里世界》中的唱片收集界面。",
+    "outer_scene_summary": "游戏界面，显示唱片收集进度。",
+    "inner_content_summary": "唱片编号001，艺术家为yourboyfriendsucks!，来自广州的反智反友情乐队。",
+    "media_types": [
+      "游戏界面",
+      "虚拟唱片"
+    ],
+    "top_tags": [
+      "游戏",
+      "唱片",
+      "收集",
+      "界面",
+      "虚拟",
+      "音乐"
+    ],
+    "ocr_text": "唱片收集 001 波兰首都是上海 艺术家: yourboyfriendsucks! 来自广州的反智反友情乐队 yourboyfriendsucks!/你男友係碌葛。",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_screen": true,
+      "has_packaging": true
+    },
+    "embedding_text": "游戏界面 虚拟唱片 游戏 唱片 收集 界面 虚拟 音乐 游戏界面，显示唱片收集进度。 唱片编号001，艺术家为yourboyfriendsucks!，来自广州的反智反友情乐队。",
+    "retrieval_text": "游戏界面 虚拟唱片 游戏 唱片 收集 界面 虚拟 音乐 游戏界面，显示唱片收集进度。 唱片编号001，艺术家为yourboyfriendsucks!，来自广州的反智反友情乐队。 唱片收集 001 波兰首都是上海 艺术家: yourboyfriendsucks! 来自广州的反智反友情乐队 yourboyfriendsucks!/你男友係碌葛。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2025-11-20T15:27:59",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20251123_163012.jpg",
+    "description": "一个动漫角色玩偶手持冰淇淋，背景有卡通图案。",
+    "outer_scene_summary": "玩偶手持冰淇淋，背景有卡通图案和红色物体。",
+    "inner_content_summary": "玩偶穿着女仆装，表情平静，手持冰淇淋。",
+    "media_types": [
+      "玩偶",
+      "冰淇淋",
+      "卡通图案"
+    ],
+    "top_tags": [
+      "玩偶",
+      "冰淇淋",
+      "女仆装",
+      "卡通",
+      "动漫角色"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "玩偶 冰淇淋 卡通图案 玩偶 冰淇淋 女仆装 卡通 动漫角色 玩偶手持冰淇淋，背景有卡通图案和红色物体。 玩偶穿着女仆装，表情平静，手持冰淇淋。",
+    "retrieval_text": "玩偶 冰淇淋 卡通图案 玩偶 冰淇淋 女仆装 卡通 动漫角色 玩偶手持冰淇淋，背景有卡通图案和红色物体。 玩偶穿着女仆装，表情平静，手持冰淇淋。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-11-23T16:30:12",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-11-23T16:30:17",
+    "time_info": {
+      "year": 2025,
+      "month": 11,
+      "day": 23,
+      "hour": 16,
+      "season": "秋天",
+      "time_period": "下午",
+      "weekday": "星期日",
+      "datetime_str": "2025-11-23T16:30:12"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20251129_152935.jpg",
+    "description": "一幅街头艺术风格的壁画，描绘了一位双手合十的人物。",
+    "outer_scene_summary": "壁画位于一面墙上，周围有其他涂鸦。",
+    "inner_content_summary": "壁画中的人物双手合十，闭着眼睛，表情平静。",
+    "media_types": [
+      "街头艺术",
+      "壁画"
+    ],
+    "top_tags": [
+      "街头艺术",
+      "壁画",
+      "人物",
+      "双手合十",
+      "闭眼",
+      "涂鸦",
+      "艺术",
+      "墙绘"
+    ],
+    "ocr_text": "Mamb",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "街头艺术 壁画 街头艺术 壁画 人物 双手合十 闭眼 涂鸦 艺术 墙绘 壁画位于一面墙上，周围有其他涂鸦。 壁画中的人物双手合十，闭着眼睛，表情平静。",
+    "retrieval_text": "街头艺术 壁画 街头艺术 壁画 人物 双手合十 闭眼 涂鸦 艺术 墙绘 壁画位于一面墙上，周围有其他涂鸦。 壁画中的人物双手合十，闭着眼睛，表情平静。 Mamb",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2025-11-29T15:29:35",
+      "camera": "HUAWEI BRQ-AN00",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2025-11-29T15:29:41",
+    "time_info": {
+      "year": 2025,
+      "month": 11,
+      "day": 29,
+      "hour": 15,
+      "season": "秋天",
+      "time_period": "下午",
+      "weekday": "星期六",
+      "datetime_str": "2025-11-29T15:29:35"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\Screenshot_20251208_021654.jpg",
+    "description": "一周音乐收听时长统计界面。",
+    "outer_scene_summary": "手机应用界面显示一周音乐收听时长。",
+    "inner_content_summary": "本周总收听时长为38小时27分，其中周三收听时间最长，为8小时27分。",
+    "media_types": [
+      "数字图表",
+      "统计界面"
+    ],
+    "top_tags": [
+      "音乐",
+      "统计",
+      "图表",
+      "应用界面",
+      "时间管理",
+      "数据分析",
+      "周统计",
+      "收听时长"
+    ],
+    "ocr_text": "本周听歌时长超99%村民! 本周收听时长 38小时27分 已听7/7天 TOP 2025.12.03 听歌8小时27分 03:24 最晚听歌 33小时4分 比上周多听",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "数字图表 统计界面 音乐 统计 图表 应用界面 时间管理 数据分析 周统计 收听时长 手机应用界面显示一周音乐收听时长。 本周总收听时长为38小时27分，其中周三收听时间最长，为8小时27分。",
+    "retrieval_text": "数字图表 统计界面 音乐 统计 图表 应用界面 时间管理 数据分析 周统计 收听时长 手机应用界面显示一周音乐收听时长。 本周总收听时长为38小时27分，其中周三收听时间最长，为8小时27分。 本周听歌时长超99%村民! 本周收听时长 38小时27分 已听7/7天 TOP 2025.12.03 听歌8小时27分 03:24 最晚听歌 33小时4分 比上周多听",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2025-12-08T02:16:54",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\mmexport1766427078136.jpg",
+    "description": "一位穿着牛仔外套的歌手在舞台上表演。",
+    "outer_scene_summary": "夜晚户外，舞台背景有大字。",
+    "inner_content_summary": "歌手在户外夜晚的舞台上表演，手持麦克风，穿着牛仔外套。",
+    "media_types": [
+      "现场表演",
+      "音乐",
+      "演唱会"
+    ],
+    "top_tags": [
+      "歌手",
+      "牛仔外套",
+      "麦克风",
+      "舞台",
+      "夜晚",
+      "户外",
+      "表演",
+      "音乐",
+      "演唱会"
+    ],
+    "ocr_text": "像H·钱,我得",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_stage": true,
+      "has_vehicle": true
+    },
+    "embedding_text": "现场表演 音乐 演唱会 歌手 牛仔外套 麦克风 舞台 夜晚 户外 表演 音乐 演唱会 夜晚户外，舞台背景有大字。 歌手在户外夜晚的舞台上表演，手持麦克风，穿着牛仔外套。",
+    "retrieval_text": "现场表演 音乐 演唱会 歌手 牛仔外套 麦克风 舞台 夜晚 户外 表演 音乐 演唱会 夜晚户外，舞台背景有大字。 歌手在户外夜晚的舞台上表演，手持麦克风，穿着牛仔外套。 像H·钱,我得",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2025-12-23T02:11:18",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\mmexport1766427080623.jpg",
+    "description": "一位DJ在舞台上表演，背景有鼓手和观众。",
+    "outer_scene_summary": "舞台灯光下，DJ和鼓手正在表演。",
+    "inner_content_summary": "DJ穿着红黑相间的夹克，专注操作设备，鼓手在背景打鼓。",
+    "media_types": [
+      "现场表演",
+      "音乐演出"
+    ],
+    "top_tags": [
+      "DJ",
+      "鼓手",
+      "舞台",
+      "灯光",
+      "观众"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "has_stage": true,
+      "has_public_figure_likelihood": true
+    },
+    "embedding_text": "现场表演 音乐演出 DJ 鼓手 舞台 灯光 观众 舞台灯光下，DJ和鼓手正在表演。 DJ穿着红黑相间的夹克，专注操作设备，鼓手在背景打鼓。",
+    "retrieval_text": "现场表演 音乐演出 DJ 鼓手 舞台 灯光 观众 舞台灯光下，DJ和鼓手正在表演。 DJ穿着红黑相间的夹克，专注操作设备，鼓手在背景打鼓。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2025-12-23T02:11:20",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\img.jpg",
+    "description": "一张宣传河南说唱之神2025年巡演的海报。",
+    "outer_scene_summary": "海报上有签名和照片，背景为室内环境。",
+    "inner_content_summary": "海报上有“河南说唱之神 2025 TOUR”字样，包含三名人物的照片。",
+    "media_types": [
+      "海报",
+      "签名"
+    ],
+    "top_tags": [
+      "巡演海报",
+      "签名",
+      "说唱",
+      "河南",
+      "2025",
+      "人物照片"
+    ],
+    "ocr_text": "河南说唱之神 2025 TOUR",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "海报 签名 巡演海报 签名 说唱 河南 2025 人物照片 海报上有签名和照片，背景为室内环境。 海报上有“河南说唱之神 2025 TOUR”字样，包含三名人物的照片。",
+    "retrieval_text": "海报 签名 巡演海报 签名 说唱 河南 2025 人物照片 海报上有签名和照片，背景为室内环境。 海报上有“河南说唱之神 2025 TOUR”字样，包含三名人物的照片。 河南说唱之神 2025 TOUR",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2026-01-03T12:07:21",
+      "camera": "HUAWEI OCE-AN50",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2026-01-03T12:07:24",
+    "time_info": {
+      "year": 2026,
+      "month": 1,
+      "day": 3,
+      "hour": 12,
+      "season": "冬天",
+      "time_period": "中午",
+      "weekday": "星期六",
+      "datetime_str": "2026-01-03T12:07:21"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\IMG_20260103_120721.jpg",
+    "description": "一张宣传河南说唱之神2025年巡演的海报。",
+    "outer_scene_summary": "海报上有签名和照片，背景为室内环境。",
+    "inner_content_summary": "海报上有“河南说唱之神 2025 TOUR”字样，包含三名人物的照片。",
+    "media_types": [
+      "海报",
+      "签名"
+    ],
+    "top_tags": [
+      "巡演海报",
+      "签名",
+      "说唱",
+      "河南",
+      "2025",
+      "人物照片"
+    ],
+    "ocr_text": "河南说唱之神 2025 TOUR",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "海报 签名 巡演海报 签名 说唱 河南 2025 人物照片 海报上有签名和照片，背景为室内环境。 海报上有“河南说唱之神 2025 TOUR”字样，包含三名人物的照片。",
+    "retrieval_text": "海报 签名 巡演海报 签名 说唱 河南 2025 人物照片 海报上有签名和照片，背景为室内环境。 海报上有“河南说唱之神 2025 TOUR”字样，包含三名人物的照片。 河南说唱之神 2025 TOUR",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": "2026-01-03T12:07:21",
+      "camera": "HUAWEI OCE-AN50",
+      "gps": null,
+      "orientation": 0
+    },
+    "file_time": "2026-01-03T12:07:24",
+    "time_info": {
+      "year": 2026,
+      "month": 1,
+      "day": 3,
+      "hour": 12,
+      "season": "冬天",
+      "time_period": "中午",
+      "weekday": "星期六",
+      "datetime_str": "2026-01-03T12:07:21"
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\PixPin_2025-12-16_17-10-42.png",
+    "description": "一个包含作业和截止日期的表格。",
+    "outer_scene_summary": "表格展示作业和截止日期。",
+    "inner_content_summary": "列出了作业名称和对应的截止日期，分为每周作业和期末项目。",
+    "media_types": [
+      "电子表格",
+      "任务列表"
+    ],
+    "top_tags": [
+      "作业",
+      "截止日期",
+      "任务列表",
+      "电子表格",
+      "项目管理",
+      "时间管理",
+      "学术任务",
+      "进度跟踪"
+    ],
+    "ocr_text": "作业 截止日期 作业 1 Sun, 9月28日, 11:59 PM 项目提案 Wed, 10月1日, 11:59 PM 作业 2 Sun, 10月5日, 11:59 PM 作业 3 Sun, 10月12日, 11:59 PM 技术规范与大语言模型集成计划 Wed, 10月15日, 11:59 PM 作业 4 Sun, 10月19日, 11:59 PM 作业 5 Sun, 10月26日, 11:59 PM 作业 6 Sun, 11月2日, 11:59 PM 内测版发布与任务清单 Wed, 11月5日, 11:59 PM 作业 7 Sun, 11月9日, 11:59 PM 作业 8 Sun, 11月16日, 11:59 PM 感恩节假期 作业 9 Sun, 11月23日, 11:59 PM 最终发布、报告与演示 Wed, 12月10日, 11:59 PM",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "text_heavy": true
+    },
+    "embedding_text": "电子表格 任务列表 作业 截止日期 任务列表 电子表格 项目管理 时间管理 学术任务 进度跟踪 表格展示作业和截止日期。 列出了作业名称和对应的截止日期，分为每周作业和期末项目。",
+    "retrieval_text": "电子表格 任务列表 作业 截止日期 任务列表 电子表格 项目管理 时间管理 学术任务 进度跟踪 表格展示作业和截止日期。 列出了作业名称和对应的截止日期，分为每周作业和期末项目。 作业 截止日期 作业 1 Sun, 9月28日, 11:59 PM 项目提案 Wed, 10月1日, 11:59 PM 作业 2 Sun, 10月5日, 11:59 PM 作业 3 Sun, 10月12日, 11:59 PM 技术规范与大语言模型集成计划 Wed, 10月15日, 11:59 PM 作业 4 Sun, 10月19日, 11:59 PM 作业 5 Sun, 10月26日, 11:59 PM 作业 6 Sun, 11月2日, 11:59 PM 内测版发布与任务清单 Wed, 11月5日, 11:59 PM 作业 7 Sun, 11月9日, 11:59 PM 作业 8 Sun, 11月16日, 11:59 PM 感恩节假期 作业 9 Sun, 11月23日, 11:59 PM 最终发布、报告与演示 Wed, 12月10日, 11:59 PM",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2026-02-06T12:54:02.635607",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  },
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\test_photos\\aug_15350_4_1741601593545023151.jpg",
+    "description": "地面上有一个模糊的蓝色物体，可能是瓶子。",
+    "outer_scene_summary": "地面上有一个模糊的蓝色瓶子。",
+    "inner_content_summary": "无法识别物体的具体内容。",
+    "media_types": [
+      "模糊图像"
+    ],
+    "top_tags": [
+      "地面",
+      "蓝色",
+      "瓶子",
+      "模糊"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {
+      "classification_uncertain": true
+    },
+    "embedding_text": "模糊图像 地面 蓝色 瓶子 模糊 地面上有一个模糊的蓝色瓶子。 无法识别物体的具体内容。",
+    "retrieval_text": "模糊图像 地面 蓝色 瓶子 模糊 地面上有一个模糊的蓝色瓶子。 无法识别物体的具体内容。",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2026-02-10T22:50:24.525024",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
     }
   }
 ]

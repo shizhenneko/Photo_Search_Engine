@@ -157,8 +157,24 @@ uv pip install --python .venv/bin/python -r requirements.txt
 | `LLM_BASE_URL` or `SU8_BASE_URL` | No | `https://www.su8.codes/codex/v1` | 通用聊天/视觉模型入口 |
 | `EMBEDDING_API_KEY` | Online / Kimi 通常必填，Ollama 可空 | None | 文本和图片检索 embedding |
 | `EMBEDDING_BASE_URL` | No | `https://router.tumuer.me/v1` | embedding 服务入口；Offline 模式应改为 `http://localhost:11434` |
-| `ELASTICSEARCH_HOST` | No | `localhost` | 关键词检索与过滤增强；设为空可禁用 |
+| `ELASTICSEARCH_HOST` | No | `localhost` | 关键词检索与过滤增强；Windows 启动脚本在本机地址时会自动托管本地 ES，设为空可禁用 |
+| `ELASTICSEARCH_VERSION` | No | Python 客户端同版本，回退到 `9.3.1` | 仅用于 Windows 本地托管 ES 时覆盖下载版本 |
+| `ELASTICSEARCH_HOME` | No | None | 指向已有 Elasticsearch 安装目录；Windows 启动脚本会优先复用 |
+| `ELASTICSEARCH_BAT_PATH` | No | None | 直接指向已有 `bin/elasticsearch.bat`；优先级高于 `ELASTICSEARCH_HOME` |
 | `SERVER_PORT` | No | `10001` | 本地 Web 服务端口 |
+
+多轮查询相关的常用变量：
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `QUERY_MULTI_ROUND_ENABLED` | `false` | 仅在 `high_recall` 模式下启用多轮查询 |
+| `QUERY_REFLECTION_ENABLED` | `false` | 是否允许在扩展后继续进入反思轮 |
+| `QUERY_MAX_EXPANSION_ROUNDS` | `2` | 扩展轮上限；设为 `0` 表示自动迭代直到找满、结果不再变化或触达阈值下限 |
+| `QUERY_MAX_REFLECTION_ROUNDS` | `2` | 反思轮上限；设为 `0` 表示自动迭代直到找满、结果不再变化或触达阈值下限 |
+| `QUERY_EXPANSION_MAX_ALTERNATIVES` | `2` | 兼容旧变量名，当前等价于 `QUERY_MAX_EXPANSION_ROUNDS` |
+| `QUERY_DYNAMIC_THRESHOLD_FLOOR` | `0.05` | 动态阈值的全局最低保护值 |
+| `QUERY_STRICT_FLOOR_MIN` | `0.22` | 多轮放宽过程中 strict 阈值的最低值 |
+| `QUERY_BROAD_FLOOR_MIN` | `0.12` | 多轮放宽过程中 broad 阈值的最低值 |
 
 最小可运行配置示例：
 
@@ -196,6 +212,13 @@ ENHANCED_ANALYSIS_ENABLED=true
 TIME_PARSE_MODEL=gpt-5.1
 QUERY_FORMAT_ENABLED=true
 QUERY_EXPANSION_ENABLED=true
+QUERY_MULTI_ROUND_ENABLED=true
+QUERY_REFLECTION_ENABLED=true
+QUERY_MAX_EXPANSION_ROUNDS=0
+QUERY_MAX_REFLECTION_ROUNDS=0
+QUERY_DYNAMIC_THRESHOLD_FLOOR=0.05
+QUERY_STRICT_FLOOR_MIN=0.22
+QUERY_BROAD_FLOOR_MIN=0.12
 EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B
 TEXT_RERANK_MODEL=Qwen/Qwen3-Reranker-8B
 TEXT_RERANK_BACKEND=api
@@ -340,6 +363,49 @@ curl -X POST http://127.0.0.1:10001/init_index \
 - `visual_reranked`：视觉 rerank 是否实际执行
 - `elapsed_time`：请求耗时
 
+## Query Reflection
+
+反思轮不是简单“再搜一遍”。它的目标是：
+
+- 当前一轮结果数量不足，或者前排结果偏弱、偏泛化、依赖回填结果时，分析“为什么没搜准”
+- 在不偏离原始意图的前提下，对检索表达做一次更稳健的收紧或重述
+- 保留 `intent_contract` 约束，避免 strict 查询在多轮过程中漂移到别的人、别的物体或别的场景
+
+当前触发条件大致是：
+
+- 结果数量没填满 `top_k`
+- 首条分数偏低
+- 返回结果里有较多 fallback / generalized 项，而不是 reliable 项
+
+当前停止条件大致是：
+
+- 已经找满 `top_k`
+- 新一轮结果和上一轮相比没有实质变化
+- 自动放宽阈值已经降到环境变量设定的 floor 下限
+
+如果你想让系统“尽量自动迭代直到找满”，推荐：
+
+```bash
+QUERY_MULTI_ROUND_ENABLED=true
+QUERY_REFLECTION_ENABLED=true
+QUERY_MAX_EXPANSION_ROUNDS=0
+QUERY_MAX_REFLECTION_ROUNDS=0
+```
+
+如果你想更保守，避免把弱结果放得太宽，可以提高：
+
+```bash
+QUERY_STRICT_FLOOR_MIN=0.28
+QUERY_BROAD_FLOOR_MIN=0.18
+```
+
+如果你想更激进，允许自动模式继续下探更多弱结果，可以适当降低：
+
+```bash
+QUERY_STRICT_FLOOR_MIN=0.18
+QUERY_BROAD_FLOOR_MIN=0.08
+```
+
 ## Indexing Strategy
 
 当前版本已经支持增量索引。大多数日常使用场景不需要全量重建。
@@ -373,14 +439,8 @@ curl -X POST http://127.0.0.1:10001/init_index \
 
 如果你希望完全避开 WSL，并且把索引、`metadata.json`、状态文件都固定写到项目根目录下的 `data/`，可以直接使用：
 
-```bat
-start_windows.bat
-```
-
-或：
-
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\start_windows.ps1"
+.\start_windows.ps1
 ```
 
 这个脚本会自动：
@@ -389,12 +449,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\
 - 创建独立的 Windows 虚拟环境 `.venv-windows/`
 - 安装或更新 `requirements.txt`
 - 读取 `.env` 中的 `PHOTO_DIR`，并在遇到 `/mnt/c/...` 时自动转成 Windows 路径
+- 优先复用 `.env` 中配置的 `ELASTICSEARCH_BAT_PATH` 或 `ELASTICSEARCH_HOME`
+- 当 `ELASTICSEARCH_HOST` 指向本机地址时，自动下载、解压并启动本地 Elasticsearch
+- 等待 Elasticsearch 健康检查通过后再启动 Flask，避免 `localhost:9200` 拒绝连接
 - 强制把 `DATA_DIR`、`RUNTIME_DATA_DIR`、`INDEX_PATH`、`METADATA_PATH` 都固定到当前项目根目录下的 `data/`
+- 把 Elasticsearch 运行日志和状态文件写到 `artifacts/runtime-windows/`
 
 如果要换端口：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\artifacts\start_windows.ps1" -Port 10002
+.\start_windows.ps1 -Port 10002
 ```
 
 ### Native WSL

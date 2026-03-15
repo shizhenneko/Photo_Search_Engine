@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime
@@ -39,6 +40,11 @@ class Indexer:
         batch_size: int = 10,
         max_retries: int = 3,
         timeout: int = 30,
+        background_mode: str = "thread",
+        worker_python_executable: Optional[str] = None,
+        worker_entrypoint: Optional[str] = None,
+        worker_log_path: Optional[str] = None,
+        worker_cwd: Optional[str] = None,
     ) -> None:
         """
         初始化索引构建器，并准备数据目录与状态文件路径。
@@ -55,6 +61,16 @@ class Indexer:
         self.timeout = max(1, timeout)
         self.data_dir = data_dir
         os.makedirs(self.data_dir, exist_ok=True)
+        normalized_background_mode = str(background_mode or "thread").strip().lower()
+        self.background_mode = normalized_background_mode if normalized_background_mode in {"thread", "process"} else "thread"
+        self.worker_python_executable = worker_python_executable
+        self.worker_entrypoint = worker_entrypoint
+        self._worker_log_path = worker_log_path or os.path.join(self.data_dir, "index_worker.log")
+        self._worker_cwd = worker_cwd or (
+            os.path.dirname(os.path.abspath(worker_entrypoint))
+            if worker_entrypoint
+            else None
+        )
         if hasattr(self.vision_llm_service, "timeout"):
             try:
                 self.vision_llm_service.timeout = self.timeout
@@ -68,6 +84,7 @@ class Indexer:
         self._fallback_count = 0
         self._current_run_id: Optional[str] = None
         self._background_thread: Optional[threading.Thread] = None
+        self._background_process: Optional[subprocess.Popen[Any]] = None
         self._background_lock = threading.Lock()
         self._lock_stale_seconds = max(900, self.timeout * self.batch_size * 3)
         # 缓存用于复用的现有结构化分析
@@ -95,9 +112,6 @@ class Indexer:
 
             total_count = len(self.scan_photos())
             indexed_count = 0 if force_rebuild else self.vector_store.get_total_items()
-            if not self._create_lock():
-                return self.get_status()
-
             self._remove_ready_marker()
             self._update_status(
                 status="processing",
@@ -108,6 +122,16 @@ class Indexer:
                 fallback_ratio=0.0,
                 elapsed_time=0.0,
             )
+
+            if self.background_mode == "process" and self.worker_python_executable and self.worker_entrypoint:
+                return self._start_build_in_process(
+                    force_rebuild=force_rebuild,
+                    total_count=total_count,
+                    indexed_count=indexed_count,
+                )
+
+            if not self._create_lock():
+                return self.get_status()
 
             def _runner() -> None:
                 try:
@@ -134,6 +158,76 @@ class Indexer:
             )
             self._background_thread.start()
             return self._status.copy()
+
+    def _start_build_in_process(
+        self,
+        *,
+        force_rebuild: bool,
+        total_count: int,
+        indexed_count: int,
+    ) -> Dict[str, Any]:
+        command = self._build_worker_command(force_rebuild=force_rebuild)
+        log_dir = os.path.dirname(self._worker_log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+
+        log_file = None
+        try:
+            log_file = open(self._worker_log_path, "a", encoding="utf-8")
+            log_file.write(
+                f"\n[{datetime.now().isoformat()}] spawn index worker: force_rebuild={force_rebuild}\n"
+            )
+            log_file.flush()
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+            process = subprocess.Popen(
+                command,
+                cwd=self._worker_cwd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                creationflags=creationflags,
+            )
+        except Exception as exc:
+            self._update_status(
+                status="failed",
+                message=f"后台索引进程启动失败: {exc}",
+                total_count=total_count,
+                indexed_count=indexed_count,
+                failed_count=0,
+                fallback_ratio=0.0,
+                elapsed_time=0.0,
+            )
+            return self._status.copy()
+        finally:
+            if log_file is not None:
+                log_file.close()
+
+        if not self._create_lock(owner_pid=process.pid):
+            self._terminate_process(process)
+            return self.get_status()
+
+        self._background_process = process
+        self._append_timing_log(
+            {
+                "event": "background_worker_spawned",
+                "mode": "process",
+                "worker_pid": process.pid,
+                "force_rebuild": force_rebuild,
+            }
+        )
+        return self._status.copy()
+
+    def _build_worker_command(self, *, force_rebuild: bool) -> List[str]:
+        command = [str(self.worker_python_executable), str(self.worker_entrypoint), "--index-worker"]
+        if force_rebuild:
+            command.append("--force-rebuild")
+        return command
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen[Any]) -> None:
+        try:
+            process.terminate()
+        except Exception:
+            pass
 
     def scan_photos(self) -> List[str]:
         """
@@ -982,14 +1076,14 @@ class Indexer:
             return 0.0
         return round(self._fallback_count / float(success_count), 4)
 
-    def _create_lock(self) -> bool:
+    def _create_lock(self, owner_pid: Optional[int] = None) -> bool:
         self._clear_stale_lock_if_needed()
         if os.path.exists(self._lock_path):
             return False
         try:
             now = datetime.now().isoformat()
             payload = {
-                "pid": os.getpid(),
+                "pid": int(owner_pid if owner_pid is not None else os.getpid()),
                 "created_at": now,
                 "updated_at": now,
             }
@@ -1077,8 +1171,9 @@ class Indexer:
     def _refresh_lock(self) -> None:
         payload = self._read_lock_payload()
         now = datetime.now().isoformat()
+        current_pid = payload.get("pid") if isinstance(payload.get("pid"), int) else os.getpid()
         next_payload = {
-            "pid": os.getpid(),
+            "pid": current_pid,
             "created_at": (payload or {}).get("created_at", now),
             "updated_at": now,
         }

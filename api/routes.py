@@ -129,6 +129,7 @@ def register_routes(
             data = request.get_json(silent=True) or {}
             mode = str(data.get("mode") or "incremental").strip().lower()
             force_rebuild = mode == "full"
+            searcher.index_loaded = False
             return jsonify(indexer.start_build_in_background(force_rebuild=force_rebuild))
         except Exception as exc:
             return jsonify(

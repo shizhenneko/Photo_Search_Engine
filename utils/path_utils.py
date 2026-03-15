@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import ntpath
+import posixpath
 import re
 import subprocess
 from pathlib import Path
@@ -9,6 +11,14 @@ from typing import Optional
 
 WINDOWS_DRIVE_RE = re.compile(r"^(?P<drive>[A-Za-z]):[\\/](?P<rest>.*)$")
 WSL_MOUNT_RE = re.compile(r"^/mnt/(?P<drive>[a-zA-Z])/(?P<rest>.*)$")
+
+
+def _normalize_windows_path(path: str) -> str:
+    return ntpath.abspath(path.replace("/", "\\"))
+
+
+def _normalize_wsl_path(path: str) -> str:
+    return posixpath.abspath(path.replace("\\", "/"))
 
 
 def windows_to_wsl_path(path: str) -> str:
@@ -35,8 +45,14 @@ def normalize_local_path(path: str) -> str:
 
     candidate = path.strip().strip('"').strip("'")
     if WINDOWS_DRIVE_RE.match(candidate):
-        wsl_candidate = windows_to_wsl_path(candidate)
-        return os.path.abspath(wsl_candidate if os.path.exists(wsl_candidate) else wsl_candidate)
+        if os.name == "nt":
+            return _normalize_windows_path(candidate)
+        return _normalize_wsl_path(windows_to_wsl_path(candidate))
+
+    if WSL_MOUNT_RE.match(candidate):
+        if os.name == "nt":
+            return _normalize_windows_path(wsl_to_windows_path(candidate))
+        return _normalize_wsl_path(candidate)
 
     expanded = os.path.abspath(os.path.expanduser(candidate))
     return expanded

@@ -38,7 +38,7 @@ class VisualRerankService:
         client: Optional[OpenAI] = None,
     ) -> None:
         if requires_api_key(base_url) and not api_key:
-            raise ValueError("SU8_API_KEY 未设置")
+            raise ValueError("VISUAL_RERANK_API_KEY 未设置")
         if not model_name:
             raise ValueError("VISUAL_RERANK_MODEL 未设置")
         resolved_api_key = resolve_api_key(api_key, base_url)

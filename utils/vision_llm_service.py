@@ -82,7 +82,7 @@ class SU8VisionLLMService(VisionLLMService):
         client: Optional[OpenAI] = None,
     ) -> None:
         if requires_api_key(base_url) and not api_key:
-            raise ValueError("SU8_API_KEY 未设置")
+            raise ValueError("VISION_API_KEY 未设置")
         resolved_api_key = resolve_api_key(api_key, base_url)
         self.api_key = resolved_api_key
         self.model_name = model_name

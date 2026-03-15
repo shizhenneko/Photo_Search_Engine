@@ -131,16 +131,20 @@ class RouteTests(unittest.TestCase):
         self.assertIn("全量重建", html)
 
     def test_init_index_defaults_to_incremental_mode(self) -> None:
+        self.searcher.index_loaded = True
         with patch.object(self.indexer, "start_build_in_background", return_value={"status": "processing"}) as start_build:
             response = self.client.post("/init_index", json={})
         self.assertEqual(response.status_code, 200)
         start_build.assert_called_once_with(force_rebuild=False)
+        self.assertFalse(self.searcher.index_loaded)
 
     def test_init_index_supports_full_rebuild_mode(self) -> None:
+        self.searcher.index_loaded = True
         with patch.object(self.indexer, "start_build_in_background", return_value={"status": "processing"}) as start_build:
             response = self.client.post("/init_index", json={"mode": "full"})
         self.assertEqual(response.status_code, 200)
         start_build.assert_called_once_with(force_rebuild=True)
+        self.assertFalse(self.searcher.index_loaded)
 
     def test_init_index_recovers_from_stale_lock(self) -> None:
         with open(self.indexer._lock_path, "w", encoding="utf-8") as file:

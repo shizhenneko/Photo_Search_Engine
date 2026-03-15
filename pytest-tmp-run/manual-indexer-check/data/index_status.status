@@ -1,0 +1,11 @@
+{
+  "status": "processing",
+  "message": "索引构建中",
+  "total_count": 0,
+  "indexed_count": 0,
+  "failed_count": 0,
+  "fallback_ratio": 0.0,
+  "index_path": "C:\\Users\\86159\\Desktop\\Photo_Search_Engine\\pytest-tmp-run\\manual-indexer-check\\data\\idx",
+  "elapsed_time": 0.0,
+  "timing_log_path": "C:\\Users\\86159\\Desktop\\Photo_Search_Engine\\pytest-tmp-run\\manual-indexer-check\\data\\index_timing.jsonl"
+}

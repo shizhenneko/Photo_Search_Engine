@@ -1,11 +1,11 @@
 {
-  "status": "processing",
-  "message": "正在处理: IMG_20231119_202028.jpg",
+  "status": "success",
+  "message": "索引构建成功",
   "total_count": 77,
-  "indexed_count": 11,
+  "indexed_count": 77,
   "failed_count": 0,
   "fallback_ratio": 0.0,
-  "index_path": "./data/photo_search.index",
-  "elapsed_time": 84.2667,
-  "timing_log_path": "./data/index_timing.jsonl"
+  "index_path": "C:\\Users\\86159\\Desktop\\Photo_Search_Engine\\data\\photo_search.index",
+  "elapsed_time": 534.8221,
+  "timing_log_path": "C:\\Users\\86159\\Desktop\\Photo_Search_Engine\\data\\index_timing.jsonl"
 }

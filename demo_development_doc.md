@@ -37,19 +37,21 @@ TEXT_RERANK_MODEL=Qwen/Qwen3-Reranker-8B
 SERVER_PORT=10002 ./.venv/bin/python main.py
 ```
 
-如果你在 Windows + WSL 环境下做本地演示，推荐直接使用单一入口脚本：
+如果你在 Windows 上做本地演示，推荐直接使用 Windows 启动入口：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\start_stack.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\86159\Desktop\Photo_Search_Engine\start_windows.ps1"
 ```
 
 补充说明：
 
 - 脚本会自动选择前端端口，从 `10001` 开始向后避让
+- 当 `ELASTICSEARCH_HOST` 为 `localhost`、`127.0.0.1` 或 `::1` 时，脚本会自动下载并托管本地 Elasticsearch
+- 如果 `.env` 配置了 `ELASTICSEARCH_BAT_PATH` 或 `ELASTICSEARCH_HOME`，脚本会优先复用现有本地 ES 安装
 - Elasticsearch 会固定使用 `1g/1g` 堆，避免 Windows 上自动堆过大导致启动失败
 - 运行完成后，终端会打印最终的前端 URL 和 Elasticsearch URL
-- 运行日志和状态文件会写入 `artifacts/runtime/`
-- 现在只保留一个启动入口，不再需要分别手动启动 Elasticsearch 和 Flask
+- 运行日志和状态文件会写入 `artifacts/runtime-windows/`
+- 现在不需要先手动启动 Elasticsearch，再手动启动 Flask
 - 如需诊断当前服务状态，可运行：
 
 ```powershell

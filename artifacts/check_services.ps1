@@ -1,6 +1,13 @@
 $ErrorActionPreference = "Stop"
 
-$statusFile = "C:\Users\86159\Desktop\Photo_Search_Engine\artifacts\runtime\stack-status.json"
+$scriptDir = Split-Path -Parent $PSCommandPath
+$projectRoot = Split-Path -Parent $scriptDir
+$candidateStatusFiles = @(
+    (Join-Path $projectRoot "artifacts\runtime-windows\stack-status.json"),
+    (Join-Path $projectRoot "artifacts\runtime-wsl\stack-status.json"),
+    (Join-Path $projectRoot "artifacts\runtime\stack-status.json")
+)
+
 $ports = [System.Collections.Generic.List[int]]::new()
 foreach ($port in @(9200, 10001, 10002, 10003, 10004, 10005)) {
     if (-not $ports.Contains($port)) {
@@ -8,23 +15,40 @@ foreach ($port in @(9200, 10001, 10002, 10003, 10004, 10005)) {
     }
 }
 
-if (Test-Path $statusFile) {
-    Write-Host "=== STATUS FILE ==="
-    $statusRaw = Get-Content $statusFile -Raw
-    Write-Host $statusRaw
-    try {
-        $status = $statusRaw | ConvertFrom-Json
-        foreach ($port in @($status.elasticsearch_port, $status.frontend_port)) {
-            if ($port -and -not $ports.Contains([int]$port)) {
-                $ports.Add([int]$port)
+$urls = [System.Collections.Generic.List[string]]::new()
+foreach ($url in @("http://127.0.0.1:9200", "http://127.0.0.1:10001", "http://127.0.0.1:10002")) {
+    if (-not $urls.Contains($url)) {
+        $urls.Add($url)
+    }
+}
+
+$statusFiles = @($candidateStatusFiles | Where-Object { Test-Path $_ })
+if ($statusFiles.Count -eq 0) {
+    Write-Host "No stack status file found."
+} else {
+    foreach ($statusFile in $statusFiles) {
+        Write-Host "=== STATUS FILE: $statusFile ==="
+        $statusRaw = Get-Content $statusFile -Raw
+        Write-Host $statusRaw
+        try {
+            $status = $statusRaw | ConvertFrom-Json
+            foreach ($port in @($status.elasticsearch_port, $status.frontend_port)) {
+                if ($port -and -not $ports.Contains([int]$port)) {
+                    $ports.Add([int]$port)
+                }
             }
+            foreach ($url in @($status.elasticsearch_url, $status.frontend_url)) {
+                if ($url -and -not $urls.Contains([string]$url)) {
+                    $urls.Add([string]$url)
+                }
+            }
+        } catch {
         }
-    } catch {
     }
 }
 
 Write-Host "NOTE: WSL forwarded ports may show 'No listener' in Get-NetTCPConnection."
-Write-Host "NOTE: The HTTP results below are the authoritative health check for the frontend."
+Write-Host "NOTE: The HTTP results below are the authoritative health check for the frontend and Elasticsearch."
 
 foreach ($port in $ports) {
     Write-Host "=== PORT $port ==="
@@ -57,7 +81,7 @@ foreach ($port in $ports) {
 }
 
 Write-Host "=== HTTP ==="
-foreach ($url in @("http://127.0.0.1:9200", "http://127.0.0.1:10001", "http://127.0.0.1:10002")) {
+foreach ($url in $urls) {
     try {
         $resp = Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 5
         Write-Host "$url -> $($resp.StatusCode)"

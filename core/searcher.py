@@ -41,6 +41,10 @@ class Searcher:
         query_expansion_max_alternatives: int = 2,
         query_multi_round_enabled: bool = False,
         query_reflection_enabled: bool = False,
+        query_max_reflection_rounds: int = 2,
+        query_dynamic_threshold_floor: float = 0.05,
+        query_strict_floor_min: float = 0.22,
+        query_broad_floor_min: float = 0.12,
         time_parse_strategy: str = "local_first",
         validate_file_exists: bool = False,
         query_cache_enabled: bool = True,
@@ -82,6 +86,12 @@ class Searcher:
         self.query_expansion_max_alternatives = max(0, int(query_expansion_max_alternatives))
         self.query_multi_round_enabled = bool(query_multi_round_enabled)
         self.query_reflection_enabled = bool(query_reflection_enabled)
+        self.query_max_reflection_rounds = max(0, int(query_max_reflection_rounds))
+        self.query_dynamic_threshold_floor = max(0.0, min(1.0, float(query_dynamic_threshold_floor)))
+        self.query_strict_floor_min = max(0.0, min(1.0, float(query_strict_floor_min)))
+        self.query_broad_floor_min = max(0.0, min(1.0, float(query_broad_floor_min)))
+        if self.query_broad_floor_min > self.query_strict_floor_min:
+            self.query_broad_floor_min = self.query_strict_floor_min
         self.time_parse_strategy = str(time_parse_strategy or "local_first").strip().lower()
         self.validate_file_exists = bool(validate_file_exists)
         self.query_cache_enabled = bool(query_cache_enabled)
@@ -334,6 +344,14 @@ class Searcher:
         top_k: int,
     ) -> bool:
         return self._should_expand_to_fill_results(results, top_k) or self._should_expand_results(results, top_k)
+
+    def _max_relaxation_rounds_until_floor(self, start_level: int = 1) -> int:
+        level = max(0, int(start_level))
+        rounds = 1
+        while self._get_round_score_floors(level + 1) != self._get_round_score_floors(level):
+            rounds += 1
+            level += 1
+        return rounds
 
     def _refresh_metadata_cache(self) -> None:
         cache: Dict[str, Dict[str, Any]] = {}
@@ -623,7 +641,7 @@ class Searcher:
 
         # 如果候选数量很少，使用第top_k位置的分数作为基准
         if n <= top_k * 2:
-            return max(scores[-1] * 0.9, 0.05)
+            return max(scores[-1] * 0.9, self.query_dynamic_threshold_floor)
 
         # 使用第一四分位数作为基础阈值
         q25 = np.percentile(scores, 25)
@@ -653,7 +671,7 @@ class Searcher:
             threshold = max(threshold, min_threshold)
 
         # 下限保护
-        return round(max(threshold, 0.05), 6)
+        return round(max(threshold, self.query_dynamic_threshold_floor), 6)
 
     @staticmethod
     def _should_expand_results(
@@ -801,11 +819,10 @@ class Searcher:
         # 不超过实际数据量
         return min(candidate_k, total_items)
 
-    @staticmethod
-    def _get_round_score_floors(relaxation_level: int) -> tuple[float, float]:
+    def _get_round_score_floors(self, relaxation_level: int) -> tuple[float, float]:
         normalized_level = max(0, int(relaxation_level))
-        strict_floor = max(0.22, MIN_RESULT_SCORE - 0.08 * normalized_level)
-        broad_floor = max(0.12, strict_floor - 0.12)
+        strict_floor = max(self.query_strict_floor_min, MIN_RESULT_SCORE - 0.08 * normalized_level)
+        broad_floor = max(self.query_broad_floor_min, strict_floor - 0.12)
         return round(strict_floor, 6), round(broad_floor, 6)
 
     def _assign_confidence_bucket(
@@ -1294,12 +1311,23 @@ class Searcher:
     ) -> List[Dict[str, Any]]:
         if not self.query_formatter or not self.query_formatter.is_enabled():
             return current_results
+        if not self.query_reflection_enabled:
+            return current_results
+        if self.query_max_reflection_rounds < 0:
+            return current_results
 
         reflection_round = max(2, int(start_relaxation_level))
         results = current_results
         seen_intent_signatures: set[tuple[Any, ...]] = set()
+        reflection_attempts = 0
+        max_reflection_rounds = self.query_max_reflection_rounds
+        if max_reflection_rounds == 0:
+            max_reflection_rounds = self._max_relaxation_rounds_until_floor(reflection_round)
 
-        while self._should_continue_multi_round_search(results, normalized_top_k):
+        while (
+            reflection_attempts < max_reflection_rounds
+            and self._should_continue_multi_round_search(results, normalized_top_k)
+        ):
             before_signature = self._results_signature(results)
             updated_results = self._maybe_reflect_query_results(
                 query=query,
@@ -1317,6 +1345,7 @@ class Searcher:
                 break
             results = updated_results
             reflection_round += 1
+            reflection_attempts += 1
 
         return results
 
@@ -1334,7 +1363,12 @@ class Searcher:
     ) -> List[Dict[str, Any]]:
         if not self.query_formatter or not self.query_formatter.is_enabled():
             return base_results
-        if not self.query_expansion_enabled or self.query_expansion_max_alternatives <= 0:
+        if not self.query_expansion_enabled:
+            return base_results
+        max_expansion_rounds = self.query_expansion_max_alternatives
+        if max_expansion_rounds == 0:
+            max_expansion_rounds = self._max_relaxation_rounds_until_floor(1)
+        if max_expansion_rounds < 0:
             return base_results
         should_expand_for_quality = self._should_expand_results(
             base_results,
@@ -1348,14 +1382,14 @@ class Searcher:
         alternatives = self.query_formatter.expand_query_intents(
             user_query=query,
             base_intent=base_intent,
-            max_alternatives=self.query_expansion_max_alternatives,
+            max_alternatives=max_expansion_rounds,
         )
         merged: List[Dict[str, Any]] = [dict(item) for item in base_results]
         best_results: List[Dict[str, Any]] = base_results
         final_results = base_results
         if alternatives:
             debug["expansion_triggered"] = True
-            for alt_index, alt in enumerate(alternatives, start=1):
+            for alt_index, alt in enumerate(alternatives[:max_expansion_rounds], start=1):
                 if not self._intent_contract_is_satisfied(base_intent, alt):
                     continue
                 embedding_query = self._build_query_text(
@@ -1594,22 +1628,35 @@ class Searcher:
             "precision": "none",
         }
         cleaned_query = formatted_query
-        has_filter = bool(
-            time_hints.get("time_hint")
-            or time_hints.get("season")
-            or time_hints.get("time_period")
+        explicit_time_filter_requested = self.time_parser.detect_time_terms(
+            query,
+            strategy=self.time_parse_strategy,
         )
 
-        if has_filter and self.time_parser.detect_time_terms(query, strategy=self.time_parse_strategy):
+        if explicit_time_filter_requested:
             time_parse_started_at = time.perf_counter()
             constraints = self._extract_time_constraints(query)
             self._record_timing(debug, "time_parse_ms", time_parse_started_at)
 
-        # 合并 QueryFormatter 的时间提示到 ES 过滤条件
-        if time_hints.get("season") and not constraints.get("season"):
-            constraints["season"] = time_hints["season"]
-        if time_hints.get("time_period") and not constraints.get("time_period"):
-            constraints["time_period"] = time_hints["time_period"]
+            # 只有用户查询中真的包含时间语义时，才把 QueryFormatter 的 season/time_period
+            # 作为 EXIF 过滤条件；否则它们只是视觉语义，不应把普通雪景/夜景查询误伤为 0 结果。
+            if time_hints.get("season") and not constraints.get("season"):
+                constraints["season"] = time_hints["season"]
+            if time_hints.get("time_period") and not constraints.get("time_period"):
+                constraints["time_period"] = time_hints["time_period"]
+
+        if retrieval_mode == "filter_only" and not explicit_time_filter_requested:
+            retrieval_mode = "hybrid"
+
+        has_filter = bool(
+            constraints.get("start_date")
+            or constraints.get("end_date")
+            or constraints.get("year")
+            or constraints.get("month")
+            or constraints.get("day")
+            or constraints.get("season")
+            or constraints.get("time_period")
+        )
 
         # 3. 只有“纯 EXIF/时间过滤查询”才降级为纯关键字检索。
         # 其判定依据是：LLM 没有抽出任何视觉语义，且确实存在过滤条件。

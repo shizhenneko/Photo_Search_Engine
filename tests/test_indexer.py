@@ -6,7 +6,7 @@ import unittest
 import json
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
@@ -325,6 +325,47 @@ class IndexerTests(unittest.TestCase):
                         break
                     time.sleep(0.02)
                 self.assertTrue(build_index.called)
+
+    def test_start_build_in_background_process_mode_spawns_worker_process(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_dir = os.path.join(tmp, "photos")
+            data_dir = os.path.join(tmp, "data")
+            os.makedirs(photo_dir)
+            os.makedirs(data_dir)
+            _create_image(os.path.join(photo_dir, "photo_0.jpg"))
+
+            vector_store = VectorStore(
+                dimension=8,
+                index_path=os.path.join(data_dir, "idx"),
+                metadata_path=os.path.join(data_dir, "meta.json"),
+            )
+            indexer = Indexer(
+                photo_dir=photo_dir,
+                vision=LocalVisionLLMService(),
+                embedding=FakeEmbeddingService(dimension=8),
+                vector_store=vector_store,
+                data_dir=data_dir,
+                background_mode="process",
+                worker_python_executable=sys.executable,
+                worker_entrypoint=os.path.join(tmp, "worker.py"),
+                worker_log_path=os.path.join(data_dir, "worker.log"),
+                worker_cwd=tmp,
+            )
+
+            process = MagicMock()
+            process.pid = 43210
+
+            with patch("core.indexer.subprocess.Popen", return_value=process) as popen:
+                result = indexer.start_build_in_background(force_rebuild=True)
+
+            self.assertEqual(result["status"], "processing")
+            popen.assert_called_once()
+            self.assertTrue(os.path.exists(indexer._lock_path))
+            self.assertEqual(indexer._read_lock_payload().get("pid"), 43210)
+            self.assertEqual(
+                indexer._build_worker_command(force_rebuild=True),
+                [sys.executable, os.path.join(tmp, "worker.py"), "--index-worker", "--force-rebuild"],
+            )
 
     def test_get_status_clears_stale_legacy_lock(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,0 +1,11 @@
+{
+  "status": "success",
+  "message": "索引构建成功",
+  "total_count": 1,
+  "indexed_count": 1,
+  "failed_count": 0,
+  "fallback_ratio": 0.0,
+  "index_path": "C:\\Users\\86159\\Desktop\\Photo_Search_Engine\\pytest-tmp\\build-smoke\\data\\idx",
+  "elapsed_time": 0.0188,
+  "timing_log_path": "C:\\Users\\86159\\Desktop\\Photo_Search_Engine\\pytest-tmp\\build-smoke\\data\\index_timing.jsonl"
+}

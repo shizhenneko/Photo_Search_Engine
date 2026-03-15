@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import argparse
+import errno
 import os
+import socket
+import sys
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 if TYPE_CHECKING:
@@ -64,9 +68,17 @@ def initialize_services(
     )
 
     vision_service = SU8VisionLLMService(
-        api_key=str(config.get("VISION_API_KEY", config.get("SU8_API_KEY", ""))),
+        api_key=str(
+            config.get("VISION_API_KEY")
+            or config.get("LLM_API_KEY")
+            or config.get("SU8_API_KEY", "")
+        ),
         model_name=str(config.get("VISION_MODEL", "gpt-5.4")),
-        base_url=str(config.get("VISION_BASE_URL", config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1"))),
+        base_url=str(
+            config.get("VISION_BASE_URL")
+            or config.get("LLM_BASE_URL")
+            or config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
+        ),
         reasoning_effort=str(config.get("VISION_REASONING_EFFORT", "medium")),
         enhanced_reasoning_effort=str(config.get("VISION_ENHANCED_REASONING_EFFORT", "low")),
         timeout=int(config.get("TIMEOUT", 45)),
@@ -83,9 +95,17 @@ def initialize_services(
     setattr(vision_service, "enhanced_analysis_enabled", enhanced_analysis_enabled)
 
     time_parser = TimeParser(
-        api_key=str(config.get("SU8_API_KEY", "")),
+        api_key=str(
+            config.get("TIME_PARSE_API_KEY")
+            or config.get("LLM_API_KEY")
+            or config.get("SU8_API_KEY", "")
+        ),
         model_name=str(config.get("TIME_PARSE_MODEL", "gpt-5.1")),
-        base_url=str(config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")),
+        base_url=str(
+            config.get("TIME_PARSE_BASE_URL")
+            or config.get("LLM_BASE_URL")
+            or config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
+        ),
         reasoning_effort=str(config.get("TIME_PARSE_REASONING_EFFORT", "low")),
         timeout=int(config.get("TIMEOUT", 45)),
         max_retries=int(config.get("MAX_RETRIES", 3)),
@@ -109,6 +129,7 @@ def initialize_services(
     query_formatter = None
     query_format_base_url = str(
         config.get("QUERY_FORMAT_BASE_URL")
+        or config.get("LLM_BASE_URL", "https://www.su8.codes/codex/v1")
         or config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
     )
     if config.get("QUERY_FORMAT_ENABLED", True) and _has_usable_api_config(
@@ -139,6 +160,11 @@ def initialize_services(
         batch_size=int(config.get("BATCH_SIZE", 8)),
         max_retries=int(config.get("MAX_RETRIES", 3)),
         timeout=int(config.get("TIMEOUT", 45)),
+        background_mode=str(config.get("INDEX_BACKGROUND_MODE", "process")),
+        worker_python_executable=sys.executable,
+        worker_entrypoint=os.path.abspath(__file__),
+        worker_log_path=os.path.join(data_dir, "index_worker.log"),
+        worker_cwd=os.path.dirname(os.path.abspath(__file__)),
     )
 
     searcher = Searcher(
@@ -155,6 +181,10 @@ def initialize_services(
         query_expansion_max_alternatives=int(config.get("QUERY_EXPANSION_MAX_ALTERNATIVES", 2)),
         query_multi_round_enabled=bool(config.get("QUERY_MULTI_ROUND_ENABLED", False)),
         query_reflection_enabled=bool(config.get("QUERY_REFLECTION_ENABLED", False)),
+        query_max_reflection_rounds=int(config.get("QUERY_MAX_REFLECTION_ROUNDS", 2)),
+        query_dynamic_threshold_floor=float(config.get("QUERY_DYNAMIC_THRESHOLD_FLOOR", 0.05)),
+        query_strict_floor_min=float(config.get("QUERY_STRICT_FLOOR_MIN", 0.22)),
+        query_broad_floor_min=float(config.get("QUERY_BROAD_FLOOR_MIN", 0.12)),
         time_parse_strategy=str(config.get("TIME_PARSE_STRATEGY", "local_first")),
         validate_file_exists=bool(config.get("SEARCH_VALIDATE_FILE_EXISTS", False)),
         query_cache_enabled=bool(config.get("QUERY_CACHE_ENABLED", True)),
@@ -183,11 +213,13 @@ def initialize_services(
     visual_rerank_api_key = (
         config.get("VISUAL_RERANK_API_KEY")
         or config.get("VISION_API_KEY")
+        or config.get("LLM_API_KEY", "")
         or config.get("SU8_API_KEY", "")
     )
     visual_rerank_base_url = str(
         config.get("VISUAL_RERANK_BASE_URL")
         or config.get("VISION_BASE_URL")
+        or config.get("LLM_BASE_URL", "https://www.su8.codes/codex/v1")
         or config.get("SU8_BASE_URL", "https://www.su8.codes/codex/v1")
     )
     if config.get("VISUAL_RERANK_ENABLED", True) and _has_usable_api_config(
@@ -248,12 +280,54 @@ def create_app(
 def _validate_required_config(config: Dict[str, object]) -> None:
     if not config.get("PHOTO_DIR"):
         raise ValueError("PHOTO_DIR环境变量未设置")
-    llm_api_key = config.get("SU8_API_KEY") or config.get("LLM_API_KEY")
-    llm_base_url = config.get("SU8_BASE_URL") or config.get("LLM_BASE_URL")
+    llm_api_key = config.get("LLM_API_KEY") or config.get("SU8_API_KEY")
+    llm_base_url = config.get("LLM_BASE_URL") or config.get("SU8_BASE_URL")
     if not _has_usable_api_config(llm_api_key, llm_base_url):
-        raise ValueError("SU8_API_KEY环境变量未设置")
+        raise ValueError("LLM_API_KEY环境变量未设置")
     if not _has_usable_api_config(config.get("EMBEDDING_API_KEY"), config.get("EMBEDDING_BASE_URL")):
         raise ValueError("EMBEDDING_API_KEY环境变量未设置")
+
+
+def _socket_family_for_host(host: str) -> int:
+    return socket.AF_INET6 if ":" in host else socket.AF_INET
+
+
+def _can_bind(host: str, port: int) -> bool:
+    family = _socket_family_for_host(host)
+    with socket.socket(family, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def _find_available_port(host: str, preferred_port: int, max_attempts: int = 20) -> int:
+    for offset in range(1, max_attempts + 1):
+        candidate = preferred_port + offset
+        if _can_bind(host, candidate):
+            return candidate
+
+    family = _socket_family_for_host(host)
+    with socket.socket(family, socket.SOCK_STREAM) as sock:
+        sock.bind((host, 0))
+        return int(sock.getsockname()[1])
+
+
+def _is_port_bind_error(exc: OSError) -> bool:
+    win_error = getattr(exc, "winerror", None)
+    return bool(
+        win_error in {10013, 10048}
+        or exc.errno in {errno.EACCES, errno.EADDRINUSE}
+    )
+
+
+def _resolve_server_port(host: str, preferred_port: int) -> tuple[int, bool]:
+    if _can_bind(host, preferred_port):
+        return preferred_port, False
+    fallback_port = _find_available_port(host, preferred_port)
+    return fallback_port, True
 
 
 def main() -> None:
@@ -270,10 +344,42 @@ def main() -> None:
     )
 
     host = str(config.get("SERVER_HOST", "127.0.0.1"))
-    port = int(config.get("SERVER_PORT", 10001))
+    requested_port = int(config.get("SERVER_PORT", 10001))
+    port, used_fallback = _resolve_server_port(host, requested_port)
+    if used_fallback:
+        print(f"Warning: 端口 {requested_port} 无法绑定，自动切换到端口 {port}。")
     print(f"启动服务器: http://{host}:{port}")
-    app.run(host=host, port=port, debug=False)
+    try:
+        app.run(host=host, port=port, debug=False)
+    except OSError as exc:
+        if not _is_port_bind_error(exc):
+            raise
+        fallback_port = _find_available_port(host, port)
+        if fallback_port == port:
+            raise
+        print(f"Warning: 端口 {port} 无法绑定 ({exc})，自动切换到端口 {fallback_port}。")
+        print(f"启动服务器: http://{host}:{fallback_port}")
+        app.run(host=host, port=fallback_port, debug=False)
+
+
+def run_index_worker(*, force_rebuild: bool = False) -> int:
+    config = load_config()
+    _validate_required_config(config)
+    indexer, _, _, _ = initialize_services(config)
+    result = indexer.build_index(force_rebuild=force_rebuild, lock_already_held=True)
+    return 0 if result.get("status") in {"success", "ready"} else 1
+
+
+def run_cli(argv: Optional[list[str]] = None) -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--index-worker", action="store_true")
+    parser.add_argument("--force-rebuild", action="store_true")
+    args, _ = parser.parse_known_args(argv)
+    if args.index_worker:
+        return run_index_worker(force_rebuild=bool(args.force_rebuild))
+    main()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run_cli())

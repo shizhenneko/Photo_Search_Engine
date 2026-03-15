@@ -45,6 +45,28 @@ class SearcherTests(unittest.TestCase):
         self.assertEqual(searcher._distance_to_score(0.0), 1.0)
         self.assertLess(searcher._distance_to_score(2.0), 1.0)
 
+    def test_dynamic_threshold_floor_is_configurable(self) -> None:
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=VectorStore(dimension=8, index_path="test.index", metadata_path="test.json"),
+            query_dynamic_threshold_floor=0.2,
+        )
+        threshold = searcher._calculate_dynamic_threshold([0.12, 0.1, 0.08], top_k=5)
+        self.assertEqual(threshold, 0.2)
+
+    def test_round_score_floors_respect_configured_minimums(self) -> None:
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=VectorStore(dimension=8, index_path="test.index", metadata_path="test.json"),
+            query_strict_floor_min=0.3,
+            query_broad_floor_min=0.2,
+        )
+        strict_floor, broad_floor = searcher._get_round_score_floors(10)
+        self.assertEqual(strict_floor, 0.3)
+        self.assertEqual(broad_floor, 0.2)
+
     def test_get_index_stats_not_loaded(self) -> None:
         searcher = self._build_searcher()
         stats = searcher.get_index_stats()
@@ -220,6 +242,53 @@ class SearcherTests(unittest.TestCase):
 
         self.assertFalse(searcher._check_time_match_v2(metadata, {"season": "夏天"}))
         self.assertFalse(searcher._check_time_match_v2(metadata, {"year": 2025}))
+
+    def test_search_does_not_apply_formatter_season_as_hard_filter_without_explicit_time_terms(self) -> None:
+        photo_path = "C:/photos/snow-scene.jpg"
+        mock_vector_store = Mock()
+        mock_vector_store.metric = "cosine"
+        mock_vector_store.metadata = [
+            {
+                "photo_path": photo_path,
+                "description": "雪后松树与现代建筑的对比景象。",
+                "retrieval_text": "户外摄影 自然景观 建筑摄影 雪景 松树 现代建筑 冬季 几何图案 户外",
+                "time_info": {},
+                "exif_data": {},
+            }
+        ]
+        mock_vector_store.search.return_value = [
+            {"metadata": mock_vector_store.metadata[0], "distance": 0.96},
+        ]
+        mock_vector_store.get_total_items.return_value = 1
+
+        formatter = FakeQueryFormatter(
+            mapping={
+                "雪后松树与现代建筑的对比景象。": {
+                    "search_text": "雪后松树与现代建筑形成强烈对比的景象",
+                    "media_terms": ["风景", "城市景观"],
+                    "identity_terms": [],
+                    "strict_identity_filter": False,
+                    "time_hint": None,
+                    "season": "winter",
+                    "time_period": None,
+                    "retrieval_mode": "hybrid",
+                    "original_query": "雪后松树与现代建筑的对比景象。",
+                }
+            }
+        )
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=mock_vector_store,
+            query_formatter=formatter,
+        )
+        searcher.index_loaded = True
+
+        results = searcher.search("雪后松树与现代建筑的对比景象。", top_k=5, search_mode="high_recall")
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["photo_path"], photo_path)
 
     def test_search_by_image_path_excludes_self(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1827,6 +1896,359 @@ class SearcherTests(unittest.TestCase):
         debug = searcher.get_last_search_debug()
         self.assertTrue(debug["reflection_triggered"])
         self.assertEqual(debug["rounds"][-1]["round"], "reflection")
+
+    def test_search_skips_reflection_when_query_reflection_disabled(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 10
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "河南说唱之神": {
+                    "search_text": "",
+                    "media_terms": [],
+                    "identity_terms": ["河南说唱之神"],
+                    "strict_identity_filter": True,
+                    "intent_mode": "strict",
+                    "intent_contract": {
+                        "core_target": "河南说唱之神的照片",
+                        "must_keep": ["河南说唱之神"],
+                        "avoid_drift": "不要漂移到截图或其他人物",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "河南说唱之神",
+                }
+            }
+        )
+        query_formatter.expansion_mapping["河南说唱之神"] = [
+            {
+                "search_text": "舞台现场 说唱歌手 演出照",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "河南说唱之神的照片",
+                    "must_keep": ["河南说唱之神"],
+                    "avoid_drift": "不要漂移到截图或其他人物",
+                },
+                "contract_satisfied": True,
+                "reason": "补充演出现场语义",
+            }
+        ]
+        query_formatter.reflect_on_weak_results = Mock(
+            return_value={
+                "search_text": "舞台近景 现场表演 人像特写",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": True,
+                "intent_mode": "strict",
+                "intent_contract": {
+                    "core_target": "河南说唱之神的照片",
+                    "must_keep": ["河南说唱之神"],
+                    "avoid_drift": "不要漂移到截图或其他人物",
+                },
+                "contract_satisfied": True,
+                "reason": "结果数量仍不足，补充更直接的人像现场语义",
+            }
+        )
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=False,
+        )
+
+        weak_results = [
+            {
+                "photo_path": "/tmp/netease.jpg",
+                "description": "网易云截图",
+                "score": 0.61,
+                "vector_score": 0.61,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/netease.jpg", "identity_names": []},
+            },
+        ]
+        still_sparse_results = [
+            {
+                "photo_path": "/tmp/show-1.jpg",
+                "description": "现场照片 1",
+                "score": 0.74,
+                "vector_score": 0.74,
+                "keyword_score": 0.0,
+                "rank": 1,
+                "metadata": {"photo_path": "/tmp/show-1.jpg", "identity_names": ["河南说唱之神"]},
+            },
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[weak_results, still_sparse_results]), \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("河南说唱之神", top_k=4, search_mode="high_recall")
+
+        self.assertEqual([item["photo_path"] for item in results], ["/tmp/show-1.jpg", "/tmp/netease.jpg"])
+        query_formatter.reflect_on_weak_results.assert_not_called()
+        debug = searcher.get_last_search_debug()
+        self.assertFalse(debug["reflection_triggered"])
+
+    def test_search_limits_reflection_rounds_by_config(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 20
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "河南说唱之神演出照片": {
+                    "search_text": "说唱歌手 舞台演出",
+                    "media_terms": ["stage_performance"],
+                    "identity_terms": ["河南说唱之神"],
+                    "strict_identity_filter": False,
+                    "intent_mode": "open",
+                    "intent_contract": {
+                        "core_target": "河南说唱之神演出照片",
+                        "must_keep": ["演出"],
+                        "avoid_drift": "不要扩成生活照或截图",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "河南说唱之神演出照片",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[])
+        query_formatter.reflect_on_weak_results = Mock(side_effect=[
+            {
+                "search_text": "舞台近景 现场表演",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "河南说唱之神演出照片",
+                    "must_keep": ["演出"],
+                    "avoid_drift": "不要扩成生活照或截图",
+                },
+                "contract_satisfied": True,
+                "reason": "第一轮结果数量不足，补充近景现场表达",
+            },
+            {
+                "search_text": "舞台特写 麦克风 现场人像",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "河南说唱之神演出照片",
+                    "must_keep": ["演出"],
+                    "avoid_drift": "不要扩成生活照或截图",
+                },
+                "contract_satisfied": True,
+                "reason": "继续补充更直接的人像舞台特写",
+            },
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
+            query_max_reflection_rounds=1,
+        )
+
+        base_results = [
+            {
+                "photo_path": "/tmp/show-a.jpg",
+                "description": "演出照片 A",
+                "score": 0.84,
+                "vector_score": 0.84,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-a.jpg", "media_types": ["stage_performance"]},
+            },
+            {
+                "photo_path": "/tmp/screen.jpg",
+                "description": "截图",
+                "score": 0.31,
+                "vector_score": 0.31,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/screen.jpg", "media_types": ["screen"]},
+            },
+        ]
+        reflected_round_one = [
+            {
+                "photo_path": "/tmp/show-b.jpg",
+                "description": "演出照片 B",
+                "score": 0.76,
+                "vector_score": 0.76,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-b.jpg", "media_types": ["stage_performance"]},
+            },
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[base_results, reflected_round_one]), \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("河南说唱之神演出照片", top_k=4, search_mode="high_recall")
+
+        self.assertEqual(
+            [item["photo_path"] for item in results],
+            ["/tmp/show-a.jpg", "/tmp/show-b.jpg", "/tmp/screen.jpg"],
+        )
+        self.assertEqual(query_formatter.reflect_on_weak_results.call_count, 1)
+        debug = searcher.get_last_search_debug()
+        reflection_rounds = [round_info for round_info in debug["rounds"] if round_info["round"] == "reflection"]
+        self.assertEqual(len(reflection_rounds), 1)
+
+    def test_zero_reflection_rounds_means_auto_until_no_progress(self) -> None:
+        vector_store = Mock()
+        vector_store.load.return_value = True
+        vector_store.dimension = 8
+        vector_store.metric = "cosine"
+        vector_store.metadata = []
+        vector_store.get_total_items.return_value = 20
+
+        query_formatter = FakeQueryFormatter(
+            {
+                "河南说唱之神演出照片": {
+                    "search_text": "说唱歌手 舞台演出",
+                    "media_terms": ["stage_performance"],
+                    "identity_terms": ["河南说唱之神"],
+                    "strict_identity_filter": False,
+                    "intent_mode": "open",
+                    "intent_contract": {
+                        "core_target": "河南说唱之神演出照片",
+                        "must_keep": ["演出"],
+                        "avoid_drift": "不要扩成生活照或截图",
+                    },
+                    "time_hint": None,
+                    "season": None,
+                    "time_period": None,
+                    "original_query": "河南说唱之神演出照片",
+                }
+            }
+        )
+        query_formatter.expand_query_intents = Mock(return_value=[])
+        query_formatter.reflect_on_weak_results = Mock(side_effect=[
+            {
+                "search_text": "舞台近景 现场表演",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "河南说唱之神演出照片",
+                    "must_keep": ["演出"],
+                    "avoid_drift": "不要扩成生活照或截图",
+                },
+                "contract_satisfied": True,
+                "reason": "第一轮结果数量不足，补充近景现场表达",
+            },
+            {
+                "search_text": "舞台特写 麦克风 现场人像",
+                "media_terms": ["stage_performance"],
+                "identity_terms": ["河南说唱之神"],
+                "strict_identity_filter": False,
+                "intent_mode": "open",
+                "intent_contract": {
+                    "core_target": "河南说唱之神演出照片",
+                    "must_keep": ["演出"],
+                    "avoid_drift": "不要扩成生活照或截图",
+                },
+                "contract_satisfied": True,
+                "reason": "继续补充更直接的人像舞台特写",
+            },
+            {},
+        ])
+
+        searcher = Searcher(
+            embedding=FakeEmbeddingService(dimension=8),
+            time_parser=FakeTimeParser(),
+            vector_store=vector_store,
+            keyword_store=Mock(),
+            query_formatter=query_formatter,
+            query_multi_round_enabled=True,
+            query_reflection_enabled=True,
+            query_max_reflection_rounds=0,
+        )
+
+        base_results = [
+            {
+                "photo_path": "/tmp/show-a.jpg",
+                "description": "演出照片 A",
+                "score": 0.84,
+                "vector_score": 0.84,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-a.jpg", "media_types": ["stage_performance"]},
+            },
+            {
+                "photo_path": "/tmp/screen.jpg",
+                "description": "截图",
+                "score": 0.31,
+                "vector_score": 0.31,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/screen.jpg", "media_types": ["screen"]},
+            },
+        ]
+        reflected_round_one = [
+            {
+                "photo_path": "/tmp/show-b.jpg",
+                "description": "演出照片 B",
+                "score": 0.76,
+                "vector_score": 0.76,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-b.jpg", "media_types": ["stage_performance"]},
+            },
+        ]
+        reflected_round_two = [
+            {
+                "photo_path": "/tmp/show-c.jpg",
+                "description": "演出照片 C",
+                "score": 0.71,
+                "vector_score": 0.71,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-c.jpg", "media_types": ["stage_performance"]},
+            },
+            {
+                "photo_path": "/tmp/show-d.jpg",
+                "description": "演出照片 D",
+                "score": 0.66,
+                "vector_score": 0.66,
+                "keyword_score": 0.0,
+                "rank": 0,
+                "metadata": {"photo_path": "/tmp/show-d.jpg", "media_types": ["stage_performance"]},
+            },
+        ]
+
+        with patch.object(searcher, "_hybrid_search", side_effect=[base_results, reflected_round_one, reflected_round_two]), \
+             patch.object(searcher.embedding_service, "generate_embedding", return_value=[0.1] * 8):
+            results = searcher.search("河南说唱之神演出照片", top_k=4, search_mode="high_recall")
+
+        self.assertEqual(
+            [item["photo_path"] for item in results],
+            ["/tmp/show-a.jpg", "/tmp/show-b.jpg", "/tmp/show-c.jpg", "/tmp/show-d.jpg"],
+        )
+        self.assertEqual(query_formatter.reflect_on_weak_results.call_count, 2)
 
     def test_reflection_merge_does_not_replace_existing_results_when_reflected_round_is_still_sparse(self) -> None:
         vector_store = Mock()

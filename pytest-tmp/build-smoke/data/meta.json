@@ -1,0 +1,41 @@
+[
+  {
+    "photo_path": "C:\\Users\\86159\\Desktop\\Photo_Search_Engine\\pytest-tmp\\build-smoke\\photos\\sample.jpg",
+    "description": "一张本地生成的图片描述，分辨率为32x24",
+    "outer_scene_summary": "一张分辨率为32x24的图片",
+    "inner_content_summary": "",
+    "media_types": [
+      "photo"
+    ],
+    "top_tags": [
+      "图片",
+      "32x24"
+    ],
+    "ocr_text": "",
+    "person_roles": [],
+    "identity_candidates": [],
+    "identity_names": [],
+    "identity_evidence": [],
+    "analysis_flags": {},
+    "embedding_text": "photo 图片 32x24",
+    "retrieval_text": "photo 图片 32x24",
+    "index_text_version": 2,
+    "exif_data": {
+      "datetime": null,
+      "camera": null,
+      "gps": null,
+      "orientation": null
+    },
+    "file_time": "2026-03-15T02:07:28.181109",
+    "time_info": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "hour": null,
+      "season": null,
+      "time_period": null,
+      "weekday": null,
+      "datetime_str": null
+    }
+  }
+]

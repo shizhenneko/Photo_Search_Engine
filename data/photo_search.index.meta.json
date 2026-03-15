@@ -1,0 +1,8 @@
+{
+  "index_type": "hnsw",
+  "metric": "cosine",
+  "dimension": 4096,
+  "hnsw_m": 48,
+  "hnsw_ef_construction": 320,
+  "hnsw_ef_search": 192
+}
