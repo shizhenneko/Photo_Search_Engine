@@ -34,24 +34,6 @@ def _enrich_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return enriched
 
 
-def _calculate_rerank_search_pool_k(
-    *,
-    top_k: int,
-    rerank_top_k: int,
-    enable_text_rerank: bool,
-    enable_visual_rerank: bool,
-) -> int:
-    normalized_top_k = max(1, min(int(top_k), 50))
-    normalized_rerank_top_k = max(1, min(int(rerank_top_k), normalized_top_k))
-    if not (enable_text_rerank or enable_visual_rerank):
-        return normalized_top_k
-
-    desired = max(normalized_top_k, normalized_rerank_top_k)
-    multiplier = 3 if enable_visual_rerank else 2
-    adaptive_extra = max(4, desired // 2)
-    return min(50, max(desired * multiplier, desired + adaptive_extra))
-
-
 def _apply_rerank_pipeline(
     *,
     results: list[dict[str, Any]],
@@ -175,13 +157,7 @@ def register_routes(
             rerank_top_k = min(max(1, int(data.get("rerank_top_k", top_k))), top_k)
             enable_text_rerank = bool(data.get("enable_text_rerank", False))
             enable_visual_rerank = bool(data.get("enable_visual_rerank", False))
-            search_pool_k = _calculate_rerank_search_pool_k(
-                top_k=top_k,
-                rerank_top_k=rerank_top_k,
-                enable_text_rerank=enable_text_rerank,
-                enable_visual_rerank=enable_visual_rerank,
-            )
-            results = searcher.search(query, search_pool_k, search_mode=search_mode)
+            results = searcher.search(query, top_k, search_mode=search_mode)
             results, rerank_state = _apply_rerank_pipeline(
                 results=results,
                 top_k=top_k,
@@ -261,13 +237,7 @@ def register_routes(
             enable_text_rerank = bool(data.get("enable_text_rerank", False))
             enable_visual_rerank = bool(data.get("enable_visual_rerank", False))
             query_hint = (data.get("query_hint") or "").strip() or None
-            search_pool_k = _calculate_rerank_search_pool_k(
-                top_k=top_k,
-                rerank_top_k=rerank_top_k,
-                enable_text_rerank=enable_text_rerank,
-                enable_visual_rerank=enable_visual_rerank,
-            )
-            results = searcher.search_by_image_path(image_path, search_pool_k)
+            results = searcher.search_by_image_path(image_path, top_k)
             results, rerank_state = _apply_rerank_pipeline(
                 results=results,
                 top_k=top_k,
@@ -354,13 +324,7 @@ def register_routes(
             enable_visual_rerank = str(request.form.get("enable_visual_rerank", "")).lower() in {"true", "1", "on"}
             query_hint = (request.form.get("query_hint") or "").strip() or None
             analysis = indexer.generate_analysis(temp_path)
-            search_pool_k = _calculate_rerank_search_pool_k(
-                top_k=top_k,
-                rerank_top_k=rerank_top_k,
-                enable_text_rerank=enable_text_rerank,
-                enable_visual_rerank=enable_visual_rerank,
-            )
-            results = searcher.search_by_uploaded_image(temp_path, analysis=analysis, top_k=search_pool_k)
+            results = searcher.search_by_uploaded_image(temp_path, analysis=analysis, top_k=top_k)
             results, rerank_state = _apply_rerank_pipeline(
                 results=results,
                 top_k=top_k,

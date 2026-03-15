@@ -15,7 +15,7 @@ project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from api.routes import _apply_rerank_pipeline, _calculate_rerank_search_pool_k, register_routes
+from api.routes import _apply_rerank_pipeline, register_routes
 from core.indexer import Indexer
 from core.searcher import Searcher
 from tests.helpers import (
@@ -338,18 +338,7 @@ class RouteTests(unittest.TestCase):
         self.assertFalse(rerank_state["text_reranked"])
         self.assertFalse(rerank_state["visual_reranked"])
 
-    def test_calculate_rerank_search_pool_k_expands_candidate_pool_for_visual_rerank(self) -> None:
-        self.assertEqual(
-            _calculate_rerank_search_pool_k(
-                top_k=5,
-                rerank_top_k=5,
-                enable_text_rerank=False,
-                enable_visual_rerank=True,
-            ),
-            15,
-        )
-
-    def test_search_photos_expands_base_pool_when_rerank_enabled(self) -> None:
+    def test_search_photos_keeps_base_top_k_when_rerank_enabled(self) -> None:
         with patch.object(self.searcher, "search", return_value=[]) as search_mock:
             response = self.client.post(
                 "/search_photos",
@@ -362,7 +351,7 @@ class RouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        search_mock.assert_called_once_with("河南说唱之神", 15, search_mode="balanced")
+        search_mock.assert_called_once_with("河南说唱之神", 5, search_mode="balanced")
 
     def test_search_photos_passes_search_mode(self) -> None:
         with patch.object(self.searcher, "search", return_value=[]) as search_mock:
@@ -378,7 +367,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         search_mock.assert_called_once_with("河南说唱之神", 5, search_mode="high_recall")
 
-    def test_search_by_image_expands_base_pool_when_rerank_enabled(self) -> None:
+    def test_search_by_image_keeps_base_top_k_when_rerank_enabled(self) -> None:
         with patch.object(self.searcher, "search_by_image_path", return_value=[]) as search_mock:
             response = self.client.post(
                 "/search_by_image",
@@ -391,7 +380,30 @@ class RouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        search_mock.assert_called_once_with("/tmp/query.jpg", 12)
+        search_mock.assert_called_once_with("/tmp/query.jpg", 4)
+
+    def test_search_by_uploaded_image_keeps_base_top_k_when_rerank_enabled(self) -> None:
+        upload_buffer = BytesIO()
+        Image.new("RGB", (40, 40), color=(0, 128, 255)).save(upload_buffer, format="JPEG")
+        upload_buffer.seek(0)
+
+        with patch.object(self.indexer, "generate_analysis", return_value={"retrieval_text": "舞台演出"}), \
+             patch.object(self.searcher, "search_by_uploaded_image", return_value=[]) as search_mock:
+            response = self.client.post(
+                "/search_by_uploaded_image",
+                data={
+                    "image": (upload_buffer, "query.jpg"),
+                    "top_k": "3",
+                    "rerank_top_k": "2",
+                    "enable_visual_rerank": "true",
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        search_mock.assert_called_once()
+        _, kwargs = search_mock.call_args
+        self.assertEqual(kwargs["top_k"], 3)
 
     def test_open_photo_location(self) -> None:
         paths = self._index_photos(1)
